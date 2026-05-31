@@ -1,0 +1,169 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2016
+
+set -Eeuo pipefail
+[[ -z ${TRACE:-} ]] || set -x
+unset CDPATH
+
+readonly -a COMMANDS=(
+	'adopt|Adopt an app, config, package, or path into public `home` or private `home-`.'
+	'clean|Propose conservative cleanup, including duplicate candidates when relevant.'
+	'create|Create public/private home repository skeletons.'
+	'deploy|Prepare a host and install desired state.'
+	'doctor|Diagnose deployment, repository, host, router, and managed-link health.'
+	'help|Show public commands or detailed help for one public command.'
+	'init|Register existing public/private repositories on this host.'
+	'organize|Propose organization changes, including archive moves when relevant.'
+	'repair|Retry failed install phases from recorded state.'
+	'status|Show a short deployment, home-router, and managed-surface summary.'
+	'update|Reconcile desired state, then refresh managed external resources.'
+	'upgrade|Run broad package-manager upgrades after explicit confirmation.'
+)
+
+abort() {
+	warn "E: $*"
+	exit 2
+}
+
+warn() {
+	printf '%s\n' "$*" >&2
+}
+
+# ------------------------------------------------------------------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------------------------------------------------------------------
+
+action_for() {
+	local name=$1
+
+	local item
+	for item in "${COMMANDS[@]}"; do
+		if [[ ${item%%|*} = "$name" ]]; then
+			printf '%s\n' "${item#*|}"
+			return 0
+		fi
+	done
+
+	return 1
+}
+
+usage_suffix_for() {
+	local name=$1
+
+	case $name in
+	adopt)
+		printf '%s\n' ' <app|config|package|path>'
+		;;
+	clean | organize)
+		printf '%s\n' ' [subject] [dry-run|plan-only]'
+		;;
+	create)
+		printf '%s\n' ' [public-repo] [private-repo]'
+		;;
+	deploy)
+		printf '%s\n' ' [ssh:<host>] [dry-run|plan-only]'
+		;;
+	doctor | status)
+		printf '%s\n' ' [ssh:<host>]'
+		;;
+	help)
+		printf '%s\n' ' [command]'
+		;;
+	init)
+		printf '%s\n' ' [public-repo] [private-repo]'
+		;;
+	repair | update)
+		printf '%s\n' ' [dry-run|plan-only]'
+		;;
+	upgrade)
+		printf '%s\n' ''
+		;;
+	esac
+}
+
+# ------------------------------------------------------------------------------------------------------------------------
+# Main
+# ------------------------------------------------------------------------------------------------------------------------
+
+print_command_help() {
+	local name=$1
+
+	local action
+	local suffix
+
+	if ! action=$(action_for "$name"); then
+		printf 'No such public Tilde command: `%s`.\n\n' "$name"
+		print_help
+		return
+	fi
+
+	suffix=$(usage_suffix_for "$name")
+
+	printf '## `%s`\n\n' "$name"
+	printf 'Usage: `$tilde %s%s`\n\n' "$name" "$suffix"
+	printf '%s\n' "$action"
+}
+
+print_help() {
+	local item
+	local name
+
+	printf 'Format: `$tilde <command> [<arguments>...]`\n\n'
+	printf '| Command | Action |\n'
+	printf '| --- | --- |\n'
+
+	for item in "${COMMANDS[@]}"; do
+		name=${item%%|*}
+		printf '| `%s` | %s |\n' "$name" "${item#*|}"
+	done
+
+	printf '\n'
+	printf 'Detailed command help: `$tilde help <command>`\n'
+	printf 'Bare `$tilde` means `help`.\n'
+}
+
+usage() {
+	cat <<'EOF'
+Usage: help [--format markdown] [command]
+EOF
+}
+
+main() {
+	local format=markdown
+	local subject=
+
+	while [[ $# -gt 0 ]]; do
+		case $1 in
+		--format)
+			shift
+			[[ $# -gt 0 ]] || abort "--format requires an argument"
+			format=$1
+			;;
+		--format=*)
+			format=${1#--format=}
+			;;
+		-h | --help)
+			usage
+			exit 0
+			;;
+		-*)
+			abort "Unknown option: $1"
+			;;
+		*)
+			[[ -z $subject ]] || abort "Too many arguments"
+			subject=$1
+			;;
+		esac
+		shift
+	done
+
+	[[ $format = markdown ]] || abort "Only markdown format is supported"
+
+	if [[ -n $subject ]]; then
+		print_command_help "$subject"
+	else
+		print_help
+	fi
+}
+
+main "$@"

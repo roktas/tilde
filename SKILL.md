@@ -38,12 +38,12 @@ Treat `$tilde [command] [subject...] [qualifiers...]` and first-word `tilde` mes
 commands, not strict shell invocations. Interpret each command by its spec semantics, and do not introduce a separate
 command-scope model.
 
-Bare `$tilde` means `update`: reconcile desired state with the live home, then refresh managed external resources after
-showing the planned phases and getting confirmation.
+Bare `$tilde` means `help`. It is read-only and must behave like `$tilde help`.
 
-`$tilde help` lists public commands with one-line action descriptions, then shows the general prompt format,
-detailed-help form, and bare-command default. `$tilde help COMMAND` shows only that public command. If `COMMAND` is
-unknown or internal, say so and then show the public command list.
+`$tilde help` prints the public command inventory as a GitHub-flavored Markdown table with `Command` and `Action`
+columns, then shows the general prompt format, detailed-help form, and bare-command default. `$tilde help COMMAND`
+shows only that public command. If `COMMAND` is unknown or internal, say so and then show the public command table.
+Prefer `bin/help --format markdown` when available for bare `$tilde` and `$tilde help`.
 
 Use proposal-first behavior for writes, moves, removals, repository edits, package changes, and remote-host actions.
 Prefer structured confirmation and choice UI over raw prompts such as `[Y/n]`. In Codex, use available structured

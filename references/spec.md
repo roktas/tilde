@@ -361,16 +361,15 @@ Tilde commands are a prompt contract, not a strict shell CLI. Treat `$tilde [com
 compact way to express intent. The command name is stable; the subject and qualifiers may be natural language. Each
 command defines its own semantics, and explicit arguments refine the target.
 
-Bare `$tilde` means `update`. This default should handle the most common returning-user workflow after deployment:
-reconcile desired state with the live home, then update managed external resources. It is still proposal-first and must
-show the planned phases before making changes.
+Bare `$tilde` means `help`. It is read-only and must behave like `$tilde help`.
 
 ### Public Commands
 
 `$tilde help` is the read-only public command reference. Start the output by showing the general format,
-`$tilde <command> [<arguments>...]`. With no subject, it lists public commands with one-line action descriptions. With
-one command subject, it shows detailed help for only that command. If the subject is not a public Tilde command, say
-that no such public Tilde command exists, then behave like bare `$tilde help`.
+`$tilde <command> [<arguments>...]`. With no subject, it lists public commands with one-line action descriptions in a
+GitHub-flavored Markdown table with `Command` and `Action` columns. With one command subject, it shows detailed help for
+only that command. If the subject is not a public Tilde command, say that no such public Tilde command exists, then
+behave like bare `$tilde help`. Agents should prefer the installed `bin/help --format markdown` helper when available.
 
 Use this public action inventory for help output:
 
@@ -392,7 +391,7 @@ Use this public action inventory for help output:
 After the table, show these short help notes:
 
 - Detailed command help: `$tilde help <command>`
-- Bare `$tilde` means `update`.
+- Bare `$tilde` means `help`.
 
 `apply`, `bootstrap`, `install`, `links`, `plan`, `refresh`, `archive`, and `dedupe` are not public prompt commands. Do
 not show internal commands in ordinary help. Treat `plan`, `dry-run`, and `plan-only` as qualifiers on public commands

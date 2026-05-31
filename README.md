@@ -57,7 +57,7 @@ $tilde status ssh:<host>
 $tilde doctor ssh:<host>
 ```
 
-Bare `$tilde` means `update`.
+Bare `$tilde` means `help`.
 
 ## Data Repositories
 
@@ -97,10 +97,12 @@ Source checkouts live under `~/Dropbox/src`.
 
 ## Command Inventory
 
-`$tilde help` shows only public commands. Internal semantic commands such as `internal.apply` are for Tilde development
-and are not shown in ordinary help.
+`$tilde help` shows public commands as a Markdown table. Internal semantic commands such as `internal.apply` are for
+Tilde development and are not shown in ordinary help.
 
-Bare `$tilde` means `update`.
+The installed helper `bin/help --format markdown` emits the same public table.
+
+Bare `$tilde` means `help`.
 
 Use `dry-run` or `plan-only` as a qualifier on commands such as `deploy` or `update` when you want the proposal without
 applying it.
