@@ -1,0 +1,369 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+[[ -z ${TRACE:-} ]] || set -x
+unset CDPATH
+
+cleanup_dirty_module=
+cleanup_extra_module=
+cleanup_platform_module=
+cleanup_repair_repo=
+cleanup_target_module=
+cleanup_tmpdir=
+
+# ------------------------------------------------------------------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------------------------------------------------------------------
+
+cleanup() {
+	rm -rf "$cleanup_dirty_module" "$cleanup_extra_module" "$cleanup_platform_module" "$cleanup_target_module"
+	[[ -z $cleanup_repair_repo ]] || rm -rf "$cleanup_repair_repo"
+	[[ -z $cleanup_tmpdir ]] || rm -rf "$cleanup_tmpdir"
+}
+
+# ------------------------------------------------------------------------------------------------------------------------
+# Main
+# ------------------------------------------------------------------------------------------------------------------------
+
+main() {
+	local dirty_module
+	local dirty_plan_err
+	local extra_module
+	local extra_plan_json
+	local head
+	local invalid_plan_err
+	local invalid_plan_json
+	local macos_plan_json
+	local normal_plan_json
+	local platform_module
+	local plan_json
+	local refresh_plan_json
+	local repair_repo=
+	local repair_plan_json
+	local repo
+	local script_dir
+	local target_module
+	local target_plan_json
+	local tmpdir
+
+	script_dir=$(cd -- "${BASH_SOURCE[0]%/*}" >/dev/null && pwd)
+	repo=${REPO_ROOT:-$(cd -- "$script_dir/../../.." >/dev/null && pwd)}
+	dirty_module=$repo/zz-dirty-smoke
+	extra_module=$repo/zz-extra-smoke
+	platform_module=$repo/zz-platform-smoke
+	target_module=$repo/zz-target-smoke
+	cleanup_dirty_module=$dirty_module
+	cleanup_extra_module=$extra_module
+	cleanup_platform_module=$platform_module
+	cleanup_target_module=$target_module
+
+	trap cleanup EXIT HUP INT QUIT TERM
+
+	cd "$repo"
+
+	tmpdir=$(mktemp -d)
+	cleanup_tmpdir=$tmpdir
+	dirty_plan_err=$tmpdir/dirty-plan.err
+	extra_plan_json=$tmpdir/extra-plan.json
+	invalid_plan_err=$tmpdir/invalid-package-plan.err
+	invalid_plan_json=$tmpdir/invalid-package-plan.json
+	macos_plan_json=$tmpdir/macos-plan.json
+	normal_plan_json=$tmpdir/normal-plan.json
+	plan_json=$tmpdir/plan.json
+	refresh_plan_json=$tmpdir/refresh-plan.json
+	repair_plan_json=$tmpdir/repair-plan.json
+	target_plan_json=$tmpdir/target-plan.json
+
+	export GIT_CONFIG_GLOBAL=${GIT_CONFIG_GLOBAL:-$tmpdir/gitconfig}
+
+	git config --global --add safe.directory "$repo"
+
+	ruby -c bin/plan
+
+	rm -rf "$dirty_module"
+	mkdir -p "$dirty_module"
+	cat >"$dirty_module/README.md" <<'EOF'
+# Dirty Guard Smoke
+EOF
+
+	if bin/plan >"$plan_json" 2>"$dirty_plan_err"; then
+		echo "expected dirty worktree guard to fail" >&2
+		exit 1
+	fi
+
+	grep -q "Dirty worktree" "$dirty_plan_err"
+	rm -rf "$dirty_module"
+
+	bin/plan --allow-dirty --platform linux --host smoke >"$plan_json"
+
+	PLAN_JSON=$plan_json ruby -rjson -e '
+		plan = JSON.parse(File.read(ENV.fetch("PLAN_JSON")))
+		abort "wrong mode" unless plan.fetch("mode") == "apply"
+		abort "wrong level" unless plan.fetch("level") == "normal"
+		abort "wrong platform" unless plan.fetch("platform") == "linux"
+		core_links = plan.fetch("core").fetch("links_to_create")
+		abort "missing core home router link" unless core_links.any? { |link| link.fetch("source") == "assets/AGENTS.md" && link.fetch("target") == "~/AGENTS.md" }
+		linux = plan.fetch("modules").find { |mod| mod.fetch("name") == "linux" }
+		abort "missing linux platform module" unless linux
+		abort "linux platform module should be first" unless plan.fetch("modules").first.fetch("name") == "linux"
+		abort "missing linux install section" unless linux.fetch("special_sections").key?("Install")
+		misc = plan.fetch("modules").find { |mod| mod.fetch("name") == "misc" }
+		abort "missing misc module" unless misc
+		abort "misc module should run alphabetically" unless plan.fetch("modules").map { |mod| mod.fetch("name") }.index("misc") > plan.fetch("modules").map { |mod| mod.fetch("name") }.index("markdown")
+		abort "misc module should install shared tools" unless misc.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "brew:zoxide" }
+		chrome = plan.fetch("modules").find { |mod| mod.fetch("name") == "chrome" }
+		abort "missing chrome module" unless chrome
+		abort "missing chrome linux install section" unless chrome.fetch("special_sections").dig("Install", "body").include?("google-chrome-beta")
+		abort "chrome linux plan should not install macos cask" unless chrome.fetch("packages_to_install").empty?
+		abort "linux dash variant should not be planned at normal level" if plan.fetch("modules").any? { |mod| mod.fetch("name") == "linux-" }
+		agents = plan.fetch("modules").find { |mod| mod.fetch("name") == "agents" }
+		abort "missing agents module" unless agents
+		abort "agents should default to normal level" unless agents.fetch("level") == "normal"
+		abort "agents should be a virtual shared-asset module" unless agents.fetch("virtual") == true
+		abort "agents should not install agent-specific packages" unless agents.fetch("packages_to_install").empty?
+		abort "agents should not own the home router link" if agents.fetch("links_to_create").any? { |link| link.fetch("target") == "~/AGENTS.md" }
+		abort "agents should link shared instructions under ~/.agents" unless agents.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.agents/AGENTS.md" }
+		abort "agents should keep common skills under ~/.agents" unless agents.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.agents/skills/colon" }
+		abort "agents should not expose codex-only commits globally" if agents.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.agents/skills/commits" }
+		abort "agents should not expose system skills globally" if agents.fetch("links_to_create").any? { |link| link.fetch("target").include?("/.system") }
+		abort "agents colon skill should be the common source" if File.symlink?("agents/skills/colon")
+		abort "agents TILDE alias should be removed" if File.exist?("agents/TILDE.md")
+		abort "agents- module should be removed" if plan.fetch("modules").any? { |mod| mod.fetch("name") == "agents-" }
+		codex = plan.fetch("modules").find { |mod| mod.fetch("name") == "codex" }
+		abort "missing codex module" unless codex
+		abort "missing codex cask" unless codex.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "cask:codex" }
+		abort "codex should link codex-only skills" unless codex.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.codex/skills/commits" }
+		abort "codex should not duplicate common bash skill" if codex.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.codex/skills/bash" }
+		abort "codex should link hooks by directory" unless codex.fetch("links_to_create").any? { |link| link.fetch("source") == "hooks/shellcheck" && link.fetch("target") == "~/.codex/hooks/shellcheck" && link.fetch("fan_in") == true }
+		abort "codex should not link system skills" if codex.fetch("links_to_create").any? { |link| link.fetch("target").include?("/.system") }
+		opencode = plan.fetch("modules").find { |mod| mod.fetch("name") == "opencode" }
+		abort "missing opencode module" unless opencode
+		abort "missing opencode package" unless opencode.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "brew:opencode" }
+		abort "missing aicommits package" unless opencode.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "brew:aicommits" }
+		abort "opencode should link heavy commits skill under opencode config" unless opencode.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.config/opencode/skills/commits" }
+		abort "opencode should link system skills under opencode config" unless opencode.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.config/opencode/skills/.system" }
+		abort "opencode should not link heavy skills through ~/.agents" if opencode.fetch("links_to_create").any? { |link| link.fetch("target").start_with?("~/.agents/") }
+		abort "opencode should keep heavy commits skill" unless File.exist?("opencode/skills/commits/SKILL.md")
+		abort "opencode should keep system skills out of shared agents" unless File.exist?("opencode/skills/.system/.codex-system-skills.marker")
+		git = plan.fetch("modules").find { |mod| mod.fetch("name") == "git" }
+		abort "missing git module" unless git
+		abort "git should not be virtual" unless git.fetch("virtual") == false
+		abort "missing brew:git" unless git.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "brew:git" }
+		abort "missing git config link" unless git.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.config/git/config" }
+		abort "missing git bin fan-in link" unless git.fetch("links_to_create").any? { |link| link.fetch("source") == "bin/git-renew" && link.fetch("target") == "~/.local/bin/git-renew" && link.fetch("fan_in") == true }
+		mc = plan.fetch("modules").find { |mod| mod.fetch("name") == "mc" }
+		abort "missing mc module" unless mc
+		abort "missing mc.ini copy" unless mc.fetch("copies_to_create").any? { |copy| copy.fetch("target") == "~/.config/mc/ini" }
+		abort "gnome module should not be planned" if plan.fetch("modules").any? { |mod| mod.fetch("name") == "gnome" }
+	'
+
+	rm -rf "$target_module"
+	mkdir -p "$target_module/bin"
+	touch "$target_module/config" "$target_module/bin/tool"
+	cat >"$target_module/README.md" <<'EOF'
+---
+all:
+  links:
+    config:
+      - ~/.config/target-list/a
+      - ~/.config/target-list/b
+    bin/:
+      - ~/.local/bin
+      - ~/.local/sbin
+---
+
+# Target List Smoke
+EOF
+
+	bin/plan --allow-dirty --platform linux --host smoke >"$target_plan_json"
+
+	TARGET_PLAN_JSON=$target_plan_json ruby -rjson -e '
+		plan = JSON.parse(File.read(ENV.fetch("TARGET_PLAN_JSON")))
+		smoke = plan.fetch("modules").find { |mod| mod.fetch("name") == "zz-target-smoke" }
+		abort "missing target module" unless smoke
+		links = smoke.fetch("links_to_create")
+		abort "missing first scalar source target" unless links.any? { |link| link.fetch("source") == "config" && link.fetch("target") == "~/.config/target-list/a" }
+		abort "missing second scalar source target" unless links.any? { |link| link.fetch("source") == "config" && link.fetch("target") == "~/.config/target-list/b" }
+		abort "missing first fan-in list target" unless links.any? { |link| link.fetch("source") == "bin/tool" && link.fetch("target") == "~/.local/bin/tool" && link.fetch("fan_in") == true }
+		abort "missing second fan-in list target" unless links.any? { |link| link.fetch("source") == "bin/tool" && link.fetch("target") == "~/.local/sbin/tool" && link.fetch("fan_in") == true }
+	'
+
+	rm -rf "$extra_module"
+	mkdir -p "$extra_module"
+	cat >"$extra_module/README.md" <<'EOF'
+---
+all:
+  level: extra
+---
+
+# Extra Smoke
+EOF
+
+	bin/plan --allow-dirty --platform linux --host smoke >"$normal_plan_json"
+	bin/plan --allow-dirty --level extra --platform linux --host smoke >"$extra_plan_json"
+
+	NORMAL_PLAN_JSON=$normal_plan_json EXTRA_PLAN_JSON=$extra_plan_json ruby -rjson -e '
+		normal_plan = JSON.parse(File.read(ENV.fetch("NORMAL_PLAN_JSON")))
+		extra_plan = JSON.parse(File.read(ENV.fetch("EXTRA_PLAN_JSON")))
+		abort "extra module should not be planned at normal level" if normal_plan.fetch("modules").any? { |mod| mod.fetch("name") == "zz-extra-smoke" }
+		linux_dash = extra_plan.fetch("modules").find { |mod| mod.fetch("name") == "linux-" }
+		abort "missing linux dash variant at extra level" unless linux_dash
+		abort "linux dash variant should follow linux" unless extra_plan.fetch("modules")[1].fetch("name") == "linux-"
+		abort "missing linux dash dropignore package" unless linux_dash.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "github:mweirauch/dropignore" }
+		abort "calibre should be a guarded install section" unless linux_dash.fetch("special_sections").dig("Install", "body").include?("com.calibre_ebook.calibre")
+		extra = extra_plan.fetch("modules").find { |mod| mod.fetch("name") == "zz-extra-smoke" }
+		abort "missing extra module at extra level" unless extra
+		abort "wrong extra module level" unless extra.fetch("level") == "extra"
+		c = extra_plan.fetch("modules").find { |mod| mod.fetch("name") == "c" }
+		abort "missing c extra module" unless c
+		abort "missing c llvm package" unless c.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "brew:llvm" }
+		javascript = extra_plan.fetch("modules").find { |mod| mod.fetch("name") == "javascript" }
+		abort "missing javascript module" unless javascript
+		abort "missing tapped bun formula" unless javascript.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "brew:oven-sh/bun/bun" }
+		virtualbox = extra_plan.fetch("modules").find { |mod| mod.fetch("name") == "virtualbox" }
+		abort "missing virtualbox extra module" unless virtualbox
+		abort "virtualbox should be virtual" unless virtualbox.fetch("virtual") == true
+		abort "missing virtualbox install section" unless virtualbox.fetch("special_sections").key?("Install")
+		abort "missing virtualbox postinstall section" unless virtualbox.fetch("special_sections").key?("Postinstall")
+		abort "ghostty should not be planned on linux" if extra_plan.fetch("modules").any? { |mod| mod.fetch("name") == "ghostty" }
+		vscode = extra_plan.fetch("modules").find { |mod| mod.fetch("name") == "vscode" }
+		abort "missing vscode module" unless vscode
+		abort "vscode linux plan should not install cask" if vscode.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "cask:visual-studio-code" }
+	'
+
+	rm -rf "$platform_module"
+	mkdir -p "$platform_module"
+	cat >"$platform_module/README.md" <<'EOF'
+---
+macos: ~
+---
+
+# Platform Smoke
+
+## All Platforms
+
+### Install
+
+```bash
+echo all
+```
+
+## MacOS
+
+### Install
+
+```bash
+echo macos
+```
+EOF
+
+	bin/plan --allow-dirty --platform macos --host smoke >"$macos_plan_json"
+
+	MACOS_PLAN_JSON=$macos_plan_json ruby -rjson -e '
+		plan = JSON.parse(File.read(ENV.fetch("MACOS_PLAN_JSON")))
+		abort "gnome should not be planned on macos" if plan.fetch("modules").any? { |mod| mod.fetch("name") == "gnome" }
+		abort "linux should not be planned on macos" if plan.fetch("modules").any? { |mod| mod.fetch("name") == "linux" }
+		ghostty = plan.fetch("modules").find { |mod| mod.fetch("name") == "ghostty" }
+		abort "missing ghostty module on macos" unless ghostty
+		abort "missing ghostty macos cask" unless ghostty.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "cask:ghostty" }
+		chrome = plan.fetch("modules").find { |mod| mod.fetch("name") == "chrome" }
+		abort "missing chrome module on macos" unless chrome
+		abort "missing chrome beta macos cask" unless chrome.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "cask:google-chrome@beta" }
+		abort "chrome macos plan should not include linux install" if chrome.fetch("special_sections").key?("Install")
+		abort "virtualbox should not be planned on macos" if plan.fetch("modules").any? { |mod| mod.fetch("name") == "virtualbox" }
+		smoke = plan.fetch("modules").find { |mod| mod.fetch("name") == "zz-platform-smoke" }
+		abort "missing platform module" unless smoke
+		abort "missing platform install section" unless smoke.fetch("special_sections").key?("Install")
+		body = smoke.fetch("special_sections").fetch("Install").fetch("body")
+		abort "platform scoped sections should preserve document order" unless body.index("echo all") < body.index("echo macos")
+	'
+
+	rm -rf "$platform_module"
+	mkdir -p "$platform_module"
+	cat >"$platform_module/README.md" <<'EOF'
+---
+all:
+  packages:
+    - "brew:"
+---
+
+# Invalid Package Smoke
+EOF
+
+	if bin/plan --allow-dirty --platform linux --host smoke >"$invalid_plan_json" 2>"$invalid_plan_err"; then
+		echo "expected invalid package name guard to fail" >&2
+		exit 1
+	fi
+
+	grep -q "Package name must not be empty" "$invalid_plan_err"
+
+	rm -rf "$platform_module"
+
+	bin/plan --mode refresh --platform linux --host smoke >"$refresh_plan_json"
+
+	REFRESH_PLAN_JSON=$refresh_plan_json ruby -rjson -e '
+		plan = JSON.parse(File.read(ENV.fetch("REFRESH_PLAN_JSON")))
+		abort "wrong refresh mode" unless plan.fetch("mode") == "refresh"
+		abort "refresh should not create core links" unless plan.fetch("core").fetch("links_to_create").empty?
+		neovim = plan.fetch("modules").find { |mod| mod.fetch("name") == "neovim" }
+		abort "missing neovim module" unless neovim
+		abort "refresh should not create links" unless neovim.fetch("links_to_create").empty?
+		abort "missing neovim refresh package" unless neovim.fetch("packages_to_refresh").any? { |pkg| pkg.fetch("value") == "brew:neovim" }
+		abort "missing neovim update section" unless neovim.fetch("special_sections").key?("Update")
+	'
+
+	NORMAL_PLAN_JSON=$normal_plan_json EXTRA_PLAN_JSON=$extra_plan_json MACOS_PLAN_JSON=$macos_plan_json REFRESH_PLAN_JSON=$refresh_plan_json ruby -rjson -ropen3 -e '
+		%w[
+			NORMAL_PLAN_JSON
+			EXTRA_PLAN_JSON
+			MACOS_PLAN_JSON
+			REFRESH_PLAN_JSON
+		].map { |name| ENV.fetch(name) }.each do |path|
+			plan = JSON.parse(File.read(path))
+			plan.fetch("modules").each do |mod|
+				mod.fetch("special_sections").each do |name, section|
+					section.fetch("bash_blocks").each_with_index do |block, index|
+						_stdout, stderr, status = Open3.capture3("bash", "-n", stdin_data: block)
+						next if status.success?
+
+						abort "invalid bash block in #{mod.fetch(%q[name])} #{name} ##{index + 1}: #{stderr}"
+					end
+				end
+			end
+		end
+	'
+
+	repair_repo=$(mktemp -d)
+	cleanup_repair_repo=$repair_repo
+	cp -a "$repo/." "$repair_repo"
+	mkdir -p "$repair_repo/.agents/state/hosts/smoke-repair"
+	head=$(git -C "$repair_repo" rev-parse HEAD)
+	cat >"$repair_repo/.agents/state/hosts/smoke-repair/tilde.md" <<EOF
+---
+head: $head
+done:
+  git: notok
+  mc: ok
+---
+EOF
+
+	"$repair_repo/bin/plan" --repo "$repair_repo" --allow-dirty --mode repair --platform linux --host smoke-repair >"$repair_plan_json"
+
+	REPAIR_PLAN_JSON=$repair_plan_json ruby -rjson -e '
+		plan = JSON.parse(File.read(ENV.fetch("REPAIR_PLAN_JSON")))
+		abort "wrong repair mode" unless plan.fetch("mode") == "repair"
+		git = plan.fetch("modules").find { |mod| mod.fetch("name") == "git" }
+		abort "missing git module in repair plan" unless git
+		abort "git should be repaired" if git.fetch("skipped")
+		abort "repair should include git packages" unless git.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "brew:git" }
+		abort "repair should include git links" if git.fetch("links_to_create").empty?
+		mc = plan.fetch("modules").find { |mod| mod.fetch("name") == "mc" }
+		abort "missing mc module in repair plan" unless mc
+		abort "mc should be skipped during repair" unless mc.fetch("skipped")
+		abort "skipped repair module should not include copies" unless mc.fetch("copies_to_create").empty?
+	'
+
+	echo "provision smoke ok"
+}
+
+main "$@"

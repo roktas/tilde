@@ -1,0 +1,6 @@
+interface:
+  display_name: "Tilde"
+  short_description: "Plan and apply this repo's provisioning"
+  default_prompt: "Use $tilde to choose the right provisioning action, show the plan, and ask before applying it."
+policy:
+  allow_implicit_invocation: true

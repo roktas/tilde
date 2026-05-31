@@ -1,0 +1,142 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+[[ -z ${TRACE:-} ]] || set -x
+unset CDPATH
+
+abort() {
+	warn "E: $*"
+	exit 1
+}
+
+warn() {
+	printf '%s\n' "$*" >&2
+}
+
+# ------------------------------------------------------------------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------------------------------------------------------------------
+
+detect_platform() {
+	case $(uname -s) in
+	Darwin)
+		echo macos
+		;;
+	Linux)
+		echo linux
+		;;
+	*)
+		abort "unsupported bootstrap platform: $(uname -s)"
+		;;
+	esac
+}
+
+# ------------------------------------------------------------------------------------------------------------------------
+# Commands
+# ------------------------------------------------------------------------------------------------------------------------
+
+ensure_command_line_tools() {
+	if xcode-select -p >/dev/null 2>&1; then
+		return
+	fi
+
+	xcode-select --install
+	abort "Xcode Command Line Tools installation started; rerun bootstrap after it finishes"
+}
+
+install_apt_base() {
+	command -v apt-get >/dev/null || return
+
+	sudo apt-get update
+	sudo apt-get install -y --no-install-recommends build-essential ca-certificates curl file git procps
+}
+
+install_homebrew() {
+	if command -v brew >/dev/null; then
+		return
+	fi
+
+	bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+	abort "Homebrew was installed; ensure brew is on PATH, then rerun bootstrap"
+}
+
+load_homebrew() {
+	command -v brew >/dev/null || abort "brew is not on PATH"
+	eval "$(brew shellenv)"
+}
+
+persist_homebrew() {
+	local platform=$1
+
+	local line
+	local profile
+
+	case $platform in
+	linux)
+		profile=$HOME/.profile
+		;;
+	macos)
+		profile=$HOME/.zprofile
+		;;
+	*)
+		abort "unsupported bootstrap platform: $platform"
+		;;
+	esac
+
+	line="eval \"\$($(brew --prefix)/bin/brew shellenv)\""
+
+	touch "$profile"
+	if ! grep -Fqx "$line" "$profile"; then
+		printf '\n%s\n' "$line" >>"$profile"
+	fi
+}
+
+# ------------------------------------------------------------------------------------------------------------------------
+# Main
+# ------------------------------------------------------------------------------------------------------------------------
+
+usage() {
+	cat <<-EOF
+		Usage: bootstrap [linux|macos]
+	EOF
+}
+
+main() {
+	if (($# > 1)); then
+		usage
+		exit 2
+	fi
+
+	local platform
+
+	if (($# == 0)); then
+		platform=$(detect_platform)
+	else
+		platform=$1
+	fi
+
+	case $platform in
+	linux)
+		install_apt_base
+		;;
+	macos)
+		ensure_command_line_tools
+		;;
+	*)
+		abort "unsupported bootstrap platform: $platform"
+		;;
+	esac
+
+	install_homebrew
+	load_homebrew
+	persist_homebrew "$platform"
+
+	brew update
+	brew install curl git ruby
+
+	ruby --version
+	git --version
+	curl --version | head -n 1
+}
+
+main "$@"
