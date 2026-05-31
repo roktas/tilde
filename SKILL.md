@@ -59,7 +59,10 @@ present explicit choices with target, effect, and blast radius.
 - `update`: run the normal returning-user maintenance flow.
 - `repair`: retry failed install phases from recorded state.
 - `upgrade`: run broad package-manager upgrades after explicit confirmation.
-- `status`: show a short read-only deployment, home-router, and managed-surface summary.
+- `status`: show a short read-only deployment, home-router, and managed-surface summary. Keep it fast and state-first:
+  prefer `bin/status --format markdown` when available; do not regenerate plans, validate live links, query package
+  managers, or call Dropbox by default. If full deployment state or caches are missing, warn that status is partial and
+  suggest explicit `$tilde status discover`, `$tilde doctor`, or `$tilde deploy`.
 - `doctor`: run bounded diagnostics; this is not a whole-home audit.
 - `adopt`: inspect the requested app, config, package, or path and propose public `home` or private `home-` placement.
 - `clean`, `organize`: preference-sensitive home commands; read `home-/AGENTS.md` when present and otherwise stay

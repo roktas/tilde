@@ -305,6 +305,11 @@ Host state frontmatter records enough provenance to explain what was applied:
 
 The deployment state body is optional. Use it for details that may help resolve future `notok` modules.
 
+`last-plan.json` and `last-apply.json` are read-only status caches after provisioning. `status` may summarize managed
+module, link, copy, and package counts from these files without regenerating a plan or checking live targets. If these
+cache files are missing, `status` must say that managed-surface counts are unavailable instead of silently performing a
+longer discovery pass.
+
 For remote deployments, the target host's state under its own `~/.local/state/tilde` is authoritative. The controller
 machine may keep a read-only mirror for status and history under `~/.local/state/tilde/remotes/HOST/`, but remote state
 is not owned by the public/private data repositories.
@@ -407,7 +412,11 @@ Public command semantics:
 - `repair`: public wrapper over `internal.repair`.
 - `upgrade`: run broad package-manager upgrades only on explicit request after describing scope.
 - `status`: print a short read-only summary of configured public/private repositories, deployment state, and
-  home-router facts, plus a concise managed-link/copy/package surface summary. It should not perform broad diagnostics.
+  home-router facts, plus a concise managed-link/copy/package surface summary when cached state is available. It should
+  prefer the installed `bin/status` helper when available so the agent can produce the summary with one read-only
+  command. It must not perform broad diagnostics or regenerate plans by default. When full deployment state or status
+  caches are missing, print a limited-status warning and suggest explicit next commands such as
+  `$tilde status discover`, `$tilde doctor`, or `$tilde deploy`.
 - `doctor`: diagnose host/home health, repository discovery, dirty worktrees, broken managed links, missing state, and
   Dropbox/Git consistency. It reports findings and suggestions, but it is not a whole-home audit.
 - `adopt`: inspect a requested app, config, package identity, or explicit path; propose how to move it into public
@@ -432,6 +441,28 @@ a read-only managed-surface summary or `doctor` for broken/stale/conflicting lin
 `private` is not a built-in command. Use `home-` as the private companion repository and policy source.
 Natural-language requests such as "adopt this into private" or "check the private repo" are valid qualifiers on other
 commands.
+
+### Fast Status
+
+`status` is state-first and latency-sensitive. Its default path reads only cheap bounded sources:
+
+- local Tilde config at `~/.local/state/tilde/config.yml`;
+- host deployment state at `~/.local/state/tilde/hosts/HOST/state.md`;
+- cached `last-plan.json` and `last-apply.json` when present;
+- configured public/private repository summaries;
+- home-router and installed-skill link facts.
+
+Default `status` must not:
+
+- run `bin/plan` to regenerate desired state;
+- read every module `README.md` just to compute managed-surface counts;
+- walk all managed targets to validate live links;
+- query package managers, Dropbox, network remotes, or SSH targets unless the user explicitly requested that target.
+
+If config, host state, or cache files are missing, return a partial summary and say that full deployment state was not
+found. Long read-only fallback discovery is opt-in: use a qualifier such as `$tilde status discover` after telling the
+user that Tilde will inspect module metadata and managed targets and may take noticeably longer. Broken-link, stale-link,
+package, Dropbox, and consistency diagnostics belong to `doctor`, not default `status`.
 
 ### Internal Semantic Commands
 
@@ -657,6 +688,9 @@ Use bounded discovery from:
 - Cheap standard home metadata, such as XDG user dirs.
 - Known application/config locations relevant to the requested subject.
 - Cheap package or application metadata when available.
+
+`status` is the exception to ordinary bounded-discovery fallback. If status state is incomplete, report the limitation
+and stop unless the user explicitly requested a discovery qualifier or a diagnostic command.
 
 Localized subjects such as `downloads`, `indirilenler`, or `İndirilenler` should be resolved through runtime detection
 or private policy when possible. Hardcoded names are fallback only.

@@ -120,6 +120,10 @@ applying it.
 | `update` | Reconcile desired state, then refresh managed external resources. |
 | `upgrade` | Run broad package-manager upgrades after explicit confirmation. |
 
+`status` is intentionally fast and state-first. It reads local Tilde state, cached plan/apply summaries, configured
+repository summaries, and router facts. If deployment state or caches are missing, it returns a partial summary and
+suggests `$tilde status discover`, `$tilde doctor`, or `$tilde deploy` instead of silently doing a long discovery pass.
+
 ## References
 
 See `references/spec.md` for the protocol, command inventory, and provisioning semantics.

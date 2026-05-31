@@ -10,6 +10,7 @@ Load this reference when editing this repository, the Tilde skill, helper script
 - Durable provisioning spec: `references/spec.md`
 - Spec alias: `.agents/specs/tilde.md`
 - Tilde skill: `SKILL.md`
+- Status helper: `bin/status`
 - Plan helper: `bin/plan`
 - Bootstrap helper: `bin/bootstrap`
 - Provisioning state: `~/.local/state/tilde/hosts/HOST/state.md`
