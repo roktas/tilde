@@ -1,6 +1,6 @@
 ---
 name: tilde
-description: Use for Tilde deployment, provisioning, and home-management work. Trigger for `$tilde ...`, messages whose first word is `tilde`, or requests to create, initialize, deploy, update, diagnose managed state, adopt app/config files, or work with Tilde home behavior.
+description: Use for Tilde deployment, provisioning, and home-management work. Trigger for `$tilde ...`, `~ ...`, messages whose first word is `tilde`, or requests to create, initialize, deploy, update, diagnose managed state, adopt app/config files, or work with Tilde home behavior.
 ---
 
 # Tilde
@@ -34,9 +34,10 @@ Use these links to load the narrowest useful part of the spec:
 
 ## Prompt Contract
 
-Treat `$tilde [command] [subject...] [qualifiers...]` and first-word `tilde` messages as compact natural-language
-commands, not strict shell invocations. Interpret each command by its spec semantics, and do not introduce a separate
-command-scope model.
+Treat `$tilde [command] [subject...] [qualifiers...]`, `tilde`-prefixed, and `~`-prefixed (second word is a known
+public or internal tilde command) messages as compact natural-language commands, not strict shell invocations. `~`
+followed by a path (e.g. `~/.config`) is not a command. Interpret each command by its spec semantics, and do not
+introduce a separate command-scope model.
 
 Bare `$tilde` means `help`. It is read-only and must behave like `$tilde help`.
 
