@@ -26,7 +26,7 @@ class Plan
   }.freeze
   MODES = %w[apply refresh repair upgrade].freeze
 
-  PACKAGE_TYPES = %w[brew cask deb npm gem egg flatpak scoop github].freeze
+  PACKAGE_TYPES = %w[brew cask deb npm gem egg flatpak scoop github skill].freeze
   SPECIAL_SECTIONS = %w[
     Preinstall
     Install
@@ -543,8 +543,13 @@ class Plan
       SPECIAL_SECTIONS.find { |name| name == title }
     end
 
+    def state_root
+      root = ENV.fetch("XDG_STATE_HOME", File.join(Dir.home, ".local", "state"))
+      Pathname.new(root).expand_path.join("tilde")
+    end
+
     def state_path
-      @repo.join(".agents", "state", "hosts", @host, "tilde.md")
+      state_root.join("hosts", @host, "state.md")
     end
 
     def validate_platform!

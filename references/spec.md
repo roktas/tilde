@@ -1,7 +1,8 @@
 # Tilde Spec
 
-Tilde is a dotfiles and home provisioning repository operated by an agent. It can provision the current machine or a
-remote machine reached over SSH. The durable behavior lives here; skills and helpers implement this spec.
+Tilde is an agent skill and control plane for home provisioning and workspace management. It operates on public and
+private home data repositories, and it can provision the current machine or a remote machine reached over SSH. The
+durable behavior lives here; skills and helpers implement this spec.
 
 ## Terms
 
@@ -12,22 +13,26 @@ remote machine reached over SSH. The durable behavior lives here; skills and hel
   policy or platform defaults.
 - **Platform variant**: `linux-`, `macos-`, or `windows-`. The active variant runs immediately after the active platform
   module. The trailing dash has no global meaning; the module README defines the local semantics.
+- **Control plane**: the installed `tilde` skill, normally at `~/.agents/skills/tilde`. It owns prompt semantics,
+  protocol references, helper commands, router templates, diagnostics, and validation.
+- **Public data repository**: the user's public home repository, conventionally named `home`. It contains public-safe
+  modules, shared agent assets, and desired state declarations.
+- **Private data repository**: the optional private companion repository, conventionally named `home-`. It contains
+  private modules, private policy, and preference-sensitive home behavior.
 - **Host**: the short name derived from `hostname -f` by removing the trailing domain. For example, `kant.local` becomes
   `kant`.
 - **Home**: the target user's home directory on the machine being managed. After deployment, Tilde's main user-facing
   surface is the home directory, not the repository checkout.
-- **Home router**: the short Tilde-specific entrypoint linked to `~/AGENTS.md`. Its canonical template is
-  `.agents/skills/tilde/assets/AGENTS.md`. Tilde deployment manages the link directly as a core link, independent of
-  root modules. The router tells agents how to find this repository, how to find the private companion repository when
-  present, and which guardrails apply when working from home.
+- **Home router**: the short Tilde-specific entrypoint installed at `~/AGENTS.md`. It routes agents to the installed
+  Tilde skill and the configured public/private data repositories. Its template lives at `assets/AGENTS.md` in the
+  installed skill.
 - **Deployment**: applying Tilde's desired state to a local or remote host. Deployment is the user-facing operation that
-  may include bootstrap, repository preparation, planning, applying links/copies/packages, and state update.
+  may include initialization, bootstrap/preflight, repository preparation, planning, installing links/copies/packages,
+  and state update.
 - **Provisioning**: the lower-level module operation performed during deployment: evaluating module frontmatter and
   README instructions, then installing packages and creating links or copies.
 - **Managed surface**: files, directories, links, copies, packages, and deployment state that Tilde can explain from its
-  active repository definitions.
-- **Private companion repository**: optional sibling `tilde-` repository used for private modules, private policy, and
-  preference-sensitive home behavior. It is a policy/source companion, not a separate command scope.
+  active public/private repository definitions.
 - **Proposal**: an agent-produced plan for a home-management action. A proposal describes intended reads, writes, moves,
   links, copies, or removals before any action is taken.
 - **Deployment state**: runtime record for a host. Deployment state records module deployment results; home-management
@@ -35,11 +40,37 @@ remote machine reached over SSH. The durable behavior lives here; skills and hel
 
 ## Model
 
+- The installed skill is the control plane. User-specific home data and host runtime state do not live in the installed
+  skill.
+- Public and private data repositories declare their Tilde role in existing repository-facing files, preferably
+  `AGENTS.md` YAML frontmatter:
+
+  ```yaml
+  ---
+  tilde:
+    protocol: tilde/v1
+    role: public
+    private: ../home-
+  ---
+  ```
+
+  ```yaml
+  ---
+  tilde:
+    protocol: tilde/v1
+    role: private
+    public: ../home
+  ---
+  ```
+
+- Repository names such as `home` and `home-` are conventions only. Correctness comes from explicit repository
+  identity and bounded discovery.
 - Each module describes how to install or configure one application or virtual provisioning unit.
 - Module names usually match the common application name and default package name. Exceptions belong in the module
   `README.md`.
 - A module directory contains `README.md` and any files used during provisioning. README frontmatter is optional.
-- Root modules are direct child directories of the repository root. Dot directories, `.git`, and `.agents` are excluded.
+- Root modules are direct child directories of the active public/private data repository roots. Dot directories, `.git`,
+  and `.agents` are excluded.
 - A root directory is a module only when it contains `README.md`.
 - Provisioning decisions are made after host deployment state is loaded.
 - On fresh or underprovisioned hosts, run `bin/bootstrap` explicitly before normal provisioning when
@@ -49,17 +80,19 @@ remote machine reached over SSH. The durable behavior lives here; skills and hel
 - Normal plans process the active platform module first, the active platform variant second, and all other active root
   modules alphabetically. Inactive platform modules and inactive platform variants are excluded.
 - Root modules may be platform-gated by defining only platform keys such as `linux:`.
-- Deployment state for a host is written under `.agents/state/hosts/HOST/tilde.md` in the repository copy where work is
-  performed.
+- Deployment state for a host is written under `~/.local/state/tilde` by default.
 
 ## Paths
 
 - In tracked repository files, write home paths with `~`; do not write expanded home paths.
-- Use repository-relative or module-relative paths for files inside this repository.
+- Use repository-relative or module-relative paths for files inside the active data repository or installed skill.
 - Do not add machine-specific, user-specific, or local checkout-specific absolute filesystem paths to frontmatter,
   instructions, specs, notes, or scripts.
 
-## Repository Layout
+## Data Repository Layout
+
+A public home data repository commonly looks like this. Private companion repositories use the same module rules but
+may contain private policy and modules.
 
 ```text
 .
@@ -77,16 +110,14 @@ remote machine reached over SSH. The durable behavior lives here; skills and hel
     ignore
     hooks/
     bin/
-  .agents/
-    specs/
-      tilde.md
-    state/
-      hosts/
-        HOST/
-          tilde.md
+  agents/
+    README.md
+    skills/
+  AGENTS.md
 ```
 
-`.agents/state/` is runtime state. Whether it is tracked is a repository-owner decision; this spec does not require it.
+Repository-local `.agents/state/` is task/checkpoint/scratch state for agent work. It is not the canonical deployment
+state for a managed host.
 
 ## Module README
 
@@ -112,6 +143,7 @@ all:
     - egg:waldo
     - flatpak:org.foo.bar
     - github:user/project
+    - skill:github.com/roktas/tilde
   level: normal
   hosts:
     - hostname
@@ -170,12 +202,12 @@ confirmation. Copy targets removed from frontmatter are not removed unless the u
 **`packages`** is a flat YAML list of `[package-type:]package-name` strings. Do not nest package types as mapping keys;
 use `gemini-cli` or `brew:gemini-cli`, not `brew: [gemini-cli]`.
 
-Valid package types are `brew`, `cask`, `deb`, `npm`, `gem`, `egg`, `flatpak`, `scoop`, and `github`.
+Valid package types are `brew`, `cask`, `deb`, `npm`, `gem`, `egg`, `flatpak`, `scoop`, `github`, and `skill`.
 
 When no package type is provided, Linux and macOS default to `brew`; Windows defaults to `scoop`. `deb` installs are
 system-wide through `sudo`. Other package types are installed user-wide through their package managers. Prefer `bun` for
 `npm` packages and `uv` for `egg` Python tools. `github` packages are installed from release assets, with executables
-placed in `~/.local/bin`.
+placed in `~/.local/bin`. `skill` packages install agent skills from Git-backed sources into `~/.agents/skills`.
 
 If `packages` is missing, the module is virtual and installs no packages. Add package names explicitly for modules that
 install packages. `packages: []` is valid but usually unnecessary.
@@ -226,78 +258,133 @@ may avoid repeated confirmations for that run.
 
 ## Deployment State
 
-Deployment state is a Markdown file with YAML frontmatter at `.agents/state/hosts/HOST/tilde.md` in the source
-repository copy. `HOST` is the short name derived from `hostname -f`.
+Machine-specific runtime state lives outside the installed skill and outside the public/private data repositories by
+default.
 
-Frontmatter keys:
+Preferred state root:
 
-- `head`: the repository `HEAD` at provisioning time, from `git rev-parse HEAD`.
-- `date`: provisioning time, from `date --iso-8601=seconds`.
-- `done`: ordered map of provisioned module directories. Values are `ok`, `notok`, or `ignored`.
-
-Example:
-
-```markdown
----
-head: a10a8ae3db88c91f792b54b76db93dc30e09341e
-date: 2026-05-15T10:00:00+03:00
-done:
-  foo: ok
-  bar: notok
-  baz: ignored
----
-
-Optional details, for example why `bar` failed.
+```text
+~/.local/state/tilde
 ```
 
-Before writing deployment state, preserve the previous state file. Repeated provisioning at the same `head` may run; in
-that case, only `notok` modules are candidates while `ok` and `ignored` modules are skipped.
+Suggested structure:
+
+```text
+~/.local/state/tilde/
+  config.yml
+  hosts/
+    HOST/
+      state.md
+      last-plan.json
+      last-apply.json
+  remotes/
+    HOST/
+      state.md
+```
+
+`config.yml` records the local binding between the installed skill and the user's data repositories:
+
+```yaml
+protocol: tilde/v1
+skill: ~/.agents/skills/tilde
+public: ~/Dropbox/src/home
+private: ~/Dropbox/src/home-
+```
+
+`private` may be omitted when the user has no private companion repository.
+
+Host state frontmatter records enough provenance to explain what was applied:
+
+- `host`: short host name.
+- `date`: provisioning time.
+- `skill`: installed skill path or version.
+- `head`: public repository `HEAD` at provisioning time, retained for compatibility with current plan helpers.
+- `public`: public repository path and commit.
+- `private`: private repository path and commit when present.
+- `done`: ordered map of provisioned module directories. Values are `ok`, `notok`, or `ignored`.
 
 The deployment state body is optional. Use it for details that may help resolve future `notok` modules.
 
-Deployment state is first written to the repository copy where actions were applied. For local provisioning, this is the
-local repository. For SSH provisioning, this is the target machine's repository copy.
+For remote deployments, the target host's state under its own `~/.local/state/tilde` is authoritative. The controller
+machine may keep a read-only mirror for status and history under `~/.local/state/tilde/remotes/HOST/`, but remote state
+is not owned by the public/private data repositories.
 
-The local repository is the practical deployment state archive. After remote provisioning, if the target repository does
-not sync back through Dropbox, copy the target state file back into the local archive at
-`.agents/state/hosts/HOST/tilde.md`. When the target repository is Dropbox-backed, no explicit state copy-back is
-required. If the target repository is a Git clone and `.agents/state` is ignored by Git, this is normal; state is
-produced on the target and copied back at the end when needed.
+Repository-local `.agents/state/` remains appropriate for local task state, checkpoints, logs, and development scratch.
+It must not become the canonical deployment state for a user's host.
 
-## Command Semantics
+## Skill Installation and Updates
+
+Tilde itself is installed and updated as a skill. External package-manager distribution is out of scope for this spec.
+
+There are three lifecycle modes:
+
+- **Bootstrap**: an external path installs enough agent runtime and Tilde skill to run `$tilde create`, `$tilde init`,
+  or `$tilde deploy`.
+- **Managed steady state**: the user's public/private home configuration keeps the installed Tilde skill current.
+- **Development/local-current**: Tilde is already present on the machine, usually from a local checkout, and must not be
+  reinstalled, downgraded, or self-updated unless the user explicitly asks for it.
+
+Managing the Tilde skill must not create a bootstrapping loop. Deployment may require the skill to exist before public
+and private data repositories have been installed.
+
+The preferred managed form is a normal package entry in a home data module:
+
+```yaml
+---
+all:
+  packages:
+    - skill:github.com/roktas/tilde
+---
+```
+
+Local development may use ordinary links instead:
+
+```yaml
+---
+all:
+  links:
+    ../tilde: ~/.agents/skills/tilde
+---
+```
+
+Do not grow `skill:` into a broad skill-management schema. If a user needs different behavior for the Tilde skill, put
+those instructions in the owning module's `README.md` body and let normal module special-section semantics handle it.
+
+## Commands
 
 Tilde commands are a prompt contract, not a strict shell CLI. Treat `$tilde [command] [subject...] [qualifiers...]` as a
-compact way to express intent. The command name is stable; the subject and qualifiers may be natural language. Do not add
-a canonical command-scope axis. Each command defines its own semantics, and explicit arguments refine the target.
+compact way to express intent. The command name is stable; the subject and qualifiers may be natural language. Each
+command defines its own semantics, and explicit arguments refine the target.
 
 Bare `$tilde` means `update`. This default should handle the most common returning-user workflow after deployment:
-reconcile the repository's desired state with the live home, then update managed external resources. It is still
-proposal-first and must show the planned phases before making changes.
+reconcile desired state with the live home, then update managed external resources. It is still proposal-first and must
+show the planned phases before making changes.
 
-`$tilde help` is the read-only command reference. Start the output by showing the general format,
-`$tilde <command> [<arguments>...]`. With no subject, it lists all built-in and preference-sensitive commands with a
-one-line action description for each. With one command subject, it shows detailed help for only that command. If the
-subject is not a Tilde command, say that no such Tilde command exists, then behave like bare `$tilde help`.
+### Public Commands
 
-Use this action inventory for help output:
+`$tilde help` is the read-only public command reference. Start the output by showing the general format,
+`$tilde <command> [<arguments>...]`. With no subject, it lists public commands with one-line action descriptions. With
+one command subject, it shows detailed help for only that command. If the subject is not a public Tilde command, say
+that no such public Tilde command exists, then behave like bare `$tilde help`.
+
+Use this public action inventory for help output:
 
 | Command | Action |
 | --- | --- |
-| `adopt` | Adopt an app, config, package, or path into public `tilde` or private `tilde-`. |
+| `adopt` | Adopt an app, config, package, or path into public `home` or private `home-`. |
 | `archive` | Move selected home content into an archive according to private policy. |
-| `apply` | Apply the lower-level provisioning plan after confirmation. |
-| `bootstrap` | Run or guide the fresh-host bootstrap prelude. |
 | `clean` | Propose conservative cleanup for selected home content. |
+| `create` | Create public/private home repository skeletons. |
 | `dedupe` | Find and propose handling for duplicate selected home content. |
-| `deploy` | Prepare a local or remote host and apply desired state. |
+| `deploy` | Prepare a host and install desired state. |
 | `doctor` | Diagnose deployment, repository, host, router, and managed-link health. |
-| `help` | Show all commands or detailed help for one command. |
+| `help` | Show public commands or detailed help for one public command. |
+| `init` | Register existing public/private repositories on this host. |
 | `links` | Inspect managed links and copies. |
 | `organize` | Propose organization changes for selected home content. |
-| `plan` | Show the lower-level provisioning plan without applying it. |
-| `refresh` | Update managed external resources only. |
-| `repair` | Retry failed deployment modules at the recorded state. |
-| `status` | Show a short read-only deployment and home-router summary. |
+| `plan` | Show the install plan without applying it. |
+| `repair` | Retry failed install phases from recorded state. |
+| `status` | Show a short deployment and home-router summary. |
 | `update` | Reconcile desired state, then refresh managed external resources. |
 | `upgrade` | Run broad package-manager upgrades after explicit confirmation. |
 
@@ -306,8 +393,90 @@ After the table, show these short help notes:
 - Detailed command help: `$tilde help <command>`
 - Bare `$tilde` means `update`.
 
-Commands are proposal-first when they may change files, repositories, packages, or remote hosts. A proposal must describe
-the intended action and wait for confirmation before writes, moves, removals, package changes, or repository edits.
+`apply`, `bootstrap`, `install`, and `refresh` are not public prompt commands. Do not show internal commands in ordinary
+help.
+
+Public command semantics:
+
+- `help`: show the public Tilde command reference. Usage: `$tilde help [command]`.
+- `create`: create or propose public/private home repository skeletons. With no explicit path, use default-location
+  discovery before proposing writes.
+- `init`: bind existing public/private repositories to the current host. It writes local config and the home router only
+  after confirmation. It does not provision by itself.
+- `deploy`: the main first-run and new-host journey command. It may orchestrate `create`, `init`,
+  `internal.bootstrap`/preflight, planning, and `internal.install`, while preserving proposal-first behavior for each
+  phase.
+- `plan`: show the install plan without applying it. This is a public view over `internal.plan`.
+- `update`: run the returning-user maintenance flow: `internal.install`, then `internal.refresh`, after confirmation.
+- `repair`: public wrapper over `internal.repair`.
+- `upgrade`: run broad package-manager upgrades only on explicit request after describing scope.
+- `status`: print a short read-only summary of configured public/private repositories, deployment state, and
+  home-router facts. It should not perform broad diagnostics.
+- `doctor`: diagnose host/home health, repository discovery, dirty worktrees, broken managed links, missing state, and
+  Dropbox/Git consistency. It reports findings and suggestions, but it is not a whole-home audit.
+- `links`: inspect managed links and copies. It is limited to the managed surface and known managed targets.
+- `adopt`: inspect a requested app, config, package identity, or explicit path; propose how to move it into public
+  `home` or private `home-`; and wait for confirmation before any write.
+
+Preference-sensitive commands:
+
+- `clean`
+- `organize`
+- `archive`
+- `dedupe`
+
+These commands depend on personal policy. Before running them, read `home-/AGENTS.md` when available. If no private
+policy exists, produce only conservative proposals or suggest creating private policy; do not infer aggressive cleanup or
+organization rules from the public repository.
+
+`private` is not a built-in command. Use `home-` as the private companion repository and policy source.
+Natural-language requests such as "adopt this into private" or "check the private repo" are valid qualifiers on other
+commands.
+
+### Internal Semantic Commands
+
+Commands in the `internal.` namespace are internal semantic commands. They are not shown by ordinary `$tilde help`, are
+not intended as user-facing entrypoints, and may be used by the skill/spec to define higher-level behavior.
+
+For convenience while writing prompt-level specs or during Tilde development, `.name` may be accepted as shorthand for
+`internal.name`. The dotted form signals private/internal semantics and leaves room for future namespaces.
+
+Internal commands:
+
+- `internal.bootstrap` or `.bootstrap`: run or plan the fresh-host bootstrap prelude.
+- `internal.plan` or `.plan`: generate a provisioning plan.
+- `internal.apply` or `.apply`: apply a provisioning plan.
+- `internal.install` or `.install`: install desired state from public/private data repositories.
+- `internal.refresh` or `.refresh`: refresh managed external resources.
+- `internal.repair` or `.repair`: retry failed modules or failed installation phases from recorded state.
+
+If a user explicitly requests an internal command, explain that it is internal and suggest the public command that covers
+the same workflow, unless the user is developing Tilde itself.
+
+### Command Relationships
+
+```text
+deploy = init + internal.bootstrap/preflight + internal.install
+update = internal.install + internal.refresh
+plan   = public view over internal.plan
+repair = public wrapper over internal.repair
+```
+
+CLI implementations should treat dotted command tokens as command names before path or extension interpretation, or
+otherwise provide an unambiguous way to invoke internal commands during development.
+
+### Proposal-First Rules
+
+Repository creation, repository edits, router writes, state writes, package changes, file links, file copies,
+remote-host actions, and destructive home-management actions must be proposal-first.
+
+Proposals should name:
+
+- target paths or hosts;
+- what will be written, moved, removed, linked, copied, or installed;
+- whether public or private data will be touched;
+- whether runtime state will be updated;
+- the expected blast radius.
 
 ### User Interaction
 
@@ -321,37 +490,37 @@ blast radius. For multi-choice decisions, present a short numbered or bulleted l
 there is a safe default. For destructive or preference-sensitive actions, make the opt-in explicit; do not rely on a
 single-letter default prompt.
 
-When deployment has completed, commands may be issued from the home directory. For command routing, deployment is
-complete when the home router can resolve the canonical Tilde repository. Deployment state, when present, is additional
-status evidence rather than the router signal. When deployment has not completed or the home router cannot find the
-repository, commands that would mutate home stop and guide the user toward deployment, bootstrap, or an explicit
-repository path.
+Commands are proposal-first when they may change files, repositories, packages, state, router files, or remote hosts. A
+proposal must describe the intended action and wait for confirmation before writes, moves, removals, package changes, or
+repository edits.
+
+## Home Entrypoint
+
+Home entrypoint behavior covers the home router, bounded discovery from home, adoption, and preference-sensitive
+home-management workflows.
 
 ### Home Router
 
-`.agents/skills/tilde/assets/AGENTS.md` is the canonical public home router template. Tilde deployment links it directly
-to `~/AGENTS.md` as a core managed link, outside module frontmatter. Keep the router short. It routes agents; it does
-not carry detailed private preferences or repository development policy. The repository root `AGENTS.md` remains
-repository-local instructions for agents working inside this checkout.
+`assets/AGENTS.md` in the installed skill is the canonical home router template. Tilde deployment exposes it as
+`~/AGENTS.md` through a core managed link or generated short router, outside module frontmatter. Keep the router short.
+It routes agents; it does not carry detailed private preferences or full repository development policy.
 
 The router should tell agents to:
 
-- Treat the current directory as the user's home workspace.
-- Resolve the canonical Tilde repository from the resolved symlink target chain of `~/AGENTS.md` when possible. The
-  normal target is `.agents/skills/tilde/assets/AGENTS.md`.
+- Treat the current directory as the user's home workspace when loaded from `~`.
+- Resolve the installed Tilde skill from the resolved symlink target chain of `~/AGENTS.md` when possible. The normal
+  target is `~/.agents/skills/tilde/assets/AGENTS.md`.
 - Starting at the target file's parent directory, walk ancestors only until finding a directory that contains both
-  `.agents/skills/tilde/SKILL.md` and `.agents/skills/tilde/references/spec.md`. That directory is the canonical Tilde
-  repository. This is a bounded ancestor walk, not a home search.
-- If symlink resolution is unavailable or the target does not identify a Tilde repository, resolve from the current
-  repository when already inside Tilde, then from an explicit user-provided repository path. Do not search the whole home
-  directory for a repository.
-- Discover sibling `tilde-` as the private companion repository when present.
+  `SKILL.md` and `references/spec.md`. That directory is the installed Tilde skill.
+- Discover configured public/private home repositories from local Tilde state, router metadata, the current repository,
+  or explicit paths.
+- Discover sibling `home-` from `home` only when repository identity confirms it.
 - Avoid recursive home scans by default.
-- Read `tilde-/AGENTS.md` before preference-sensitive home commands when that file exists.
+- Read `home-/AGENTS.md` before preference-sensitive home commands when that file exists.
 - Require explicit confirmation for destructive actions and for repository writes.
 
 Do not put personal home layout policy in the public router. Layout policy such as localized directory names, cleanup
-preferences, archive rules, and organization rules belongs in `tilde-/AGENTS.md` when private policy exists. Public
+preferences, archive rules, and organization rules belongs in `home-/AGENTS.md` when private policy exists. Public
 behavior may use cheap runtime detection, such as XDG user dirs, but must not assume a personal layout.
 
 ### Core Managed Links
@@ -361,56 +530,60 @@ the same confirmation and application semantics as normal link actions.
 
 Core links:
 
-- `.agents/skills/tilde/assets/AGENTS.md` -> `~/AGENTS.md`
+- installed skill `assets/AGENTS.md` -> `~/AGENTS.md`
 
 Do not place the home router link in the `agents` module. The `agents` module owns shared `~/.agents` assets; the home
 router is a Tilde deployment invariant.
-
-### Built-In Commands
-
-Built-in command semantics:
-
-- `help`: show the Tilde command reference. Usage: `$tilde help [command]`.
-- `deploy`: deploy Tilde desired state to a local or remote host. It may perform bootstrap, repository preparation,
-  planning, applying, and state copy-back according to host kind.
-- `bootstrap`: run or guide the explicit bootstrap prelude for a fresh or underprovisioned target.
-- `update`: perform the normal returning-user maintenance flow. It first reconciles Tilde desired state with the live
-  home using lower-level `apply` semantics, then refreshes managed external resources using lower-level `refresh`
-  semantics. It is a prompt-level orchestration command, not a separate `bin/plan --mode` value.
-- `plan`: show the lower-level provisioning plan without applying it.
-- `apply`: apply the lower-level provisioning plan after confirmation.
-- `refresh`: update managed external resources only.
-- `repair`: retry modules marked `notok` in deployment state.
-- `upgrade`: run broad package-manager upgrades only on explicit request after describing scope.
-- `status`: print a short read-only summary of deployment state and concise home-router or host-kind facts when
-  available. It should not perform broad diagnostics.
-- `doctor`: diagnose host/home health, deployment readiness, repository discovery, Dropbox/Git consistency, dirty
-  worktrees, broken managed links, and missing state. It reports findings and suggestions, but it is not a whole-home
-  audit.
-- `links`: inspect managed links and copies. It is limited to the managed surface and known managed targets.
-- `adopt`: inspect a requested app, config, package identity, or explicit path; propose how to move it into public
-  `tilde` or private `tilde-`; and wait for confirmation before any write.
-
-Preference-sensitive commands:
-
-- `clean`
-- `organize`
-- `archive`
-- `dedupe`
-
-These commands depend on personal policy. Before running them, read `tilde-/AGENTS.md` when available. If no private
-policy exists, produce only conservative proposals or suggest creating private policy; do not infer aggressive cleanup or
-organization rules from the public repository.
-
-`private` is not a built-in command. Use `tilde-` as the private companion repository and policy source. Natural-language
-requests such as "adopt this into private" or "check the private repo" are valid qualifiers on other commands.
 
 ### Bounded Discovery
 
 Do not recursively scan `$HOME` by default. Do not run `find $HOME`, `fd $HOME`, or equivalent broad recursive searches
 unless the user explicitly requests a broad scan after the cost and scope are described.
 
-Use bounded discovery:
+Repository resolution order:
+
+1. Explicit command arguments or options.
+2. The current repository's `AGENTS.md` frontmatter, when it declares a Tilde role.
+3. The local Tilde state config at `~/.local/state/tilde/config.yml`.
+4. The home router at `~/AGENTS.md`.
+5. Sibling discovery from an identified public or private repository, confirmed by `AGENTS.md` frontmatter.
+6. Default location discovery for `create`, `init`, and first-run `deploy` only.
+7. A clarification question.
+
+Preferred command option names:
+
+```text
+--public PATH
+--private PATH
+--state-dir PATH
+```
+
+Positional convenience is allowed:
+
+```text
+$tilde create
+$tilde init
+$tilde init PUBLIC
+$tilde init PUBLIC PRIVATE
+```
+
+With no explicit public path, `create` and `init` may use default-location discovery and then present a proposal before
+creating or binding anything.
+
+With one positional repository argument, the argument is the public data repository. The private data repository may be
+discovered from frontmatter or a confirmed sibling path such as `home-`.
+
+With two positional repository arguments, the first is public and the second is private.
+
+Default repository locations are convenience only:
+
+1. `~/Dropbox/src/home` and `~/Dropbox/src/home-` when `~/Dropbox/src` exists.
+2. `~/.local/src/home` and `~/.local/src/home-` otherwise.
+
+If a default path already exists, Tilde should inspect it for Tilde repository identity before using it. If it does not
+exist, `create` or `deploy` may offer to create it after confirmation.
+
+Use bounded discovery from:
 
 - Existing public and private modules.
 - Explicit paths provided by the user.
@@ -433,19 +606,19 @@ For `$tilde adopt SUBJECT`, resolve the subject in this order:
 5. A clarification question.
 
 Adoption proposals should decide public versus private placement conservatively. Secrets, credentials, license files,
-host-specific values, private endpoints, account identifiers, and uncertain private material belong in `tilde-` or
-require clarification. Public-safe configuration may go in `tilde`.
+host-specific values, private endpoints, account identifiers, and uncertain private material belong in `home-` or
+require clarification. Public-safe configuration may go in `home`.
 
 Adoption must also propose `links` versus `copies`. Use `links` for stable user-owned config. Use `copies` for files or
 directories that target applications are expected to overwrite.
 
-Before writing an adoption, inspect dirty state in the target repository and in `tilde-` when it will be touched. Do not
+Before writing an adoption, inspect dirty state in the target repository and in `home-` when it will be touched. Do not
 overwrite uncommitted work without explicit confirmation.
 
 ### Home Workflow State
 
 Home-management proposals are not deployment state. Do not write adoption, cleanup, organization, or diagnostic
-proposals to `.agents/state/hosts/HOST/tilde.md`.
+proposals to `~/.local/state/tilde/hosts/HOST/state.md`.
 
 For broad, risky, multi-file, multi-session, or interrupted home workflows, use `.agents/state/tasks/` as local task
 state when useful. Keep durable decisions in this spec or in reviewed notes, not in deployment state.
@@ -456,7 +629,8 @@ Follow-up phrases such as `apply`, `apply proposal`, `do it`, or `adopt it` refe
 reference is unambiguous. If there is any ambiguity, summarize the proposal again before asking for confirmation.
 
 With an active unambiguous proposal, `apply` applies that proposal after confirmation. Without an active proposal,
-`apply` means the lower-level provisioning apply mode.
+suggest `plan`, `deploy`, or `update` as appropriate. Use `internal.apply` only for Tilde development or when the user
+explicitly asks for internal command behavior.
 
 If an action partially fails, report what changed, what did not change, and what remains. Do not promise automatic
 rollback unless a rollback plan was explicitly prepared.
@@ -466,13 +640,74 @@ and action set.
 
 ## Deployment
 
-Deployment is the user-facing operation that prepares a host and applies Tilde desired state. It may include bootstrap,
-repository preparation, provisioning plan generation, provisioning apply, and deployment state copy-back.
+Deployment is the user-facing operation that prepares a host and installs Tilde desired state from configured public and
+private data repositories. It may include initialization, bootstrap/preflight, repository preparation, provisioning plan
+generation, provisioning apply, and deployment state update.
 
-Deployment must not assume a fixed repository location. Links and copies resolve from the repository copy that is
-actually being applied. Deployment may run locally or over SSH. If the target machine already has a Dropbox-backed
-repository copy, use that copy. If the repository is cloned to a target machine, the default location is
-`~/.local/src/<repo-name>`. The directory name is the repository's own name; do not force it to `home`.
+Deployment must not assume a fixed data repository location. Links and copies resolve from the public/private repository
+copies that are actually being applied. Deployment may run locally or over SSH. Commands that deploy, initialize,
+inspect, diagnose, or update a remote host may accept a Git-like target syntax:
+
+```text
+$tilde deploy ssh:<host>
+$tilde deploy ssh:<host> ~/Dropbox/src/home
+$tilde deploy ssh:<host> --public ~/src/home --private ~/src/home-
+$tilde init ssh:<host> --public ~/src/home
+$tilde update ssh:<host>
+$tilde doctor ssh:<host>
+$tilde status ssh:<host>
+$tilde links ssh:<host>
+```
+
+`ssh:<host>` identifies the target host. Public/private repository arguments identify the controller-side data
+repositories by default. A future qualified syntax may distinguish controller-side sources from remote-side repository
+paths if needed.
+
+If no public/private arguments are given, Tilde resolves them from local state, router metadata, or the remote target's
+configured state according to the command's semantics.
+
+If the target machine already has a Dropbox-backed public data repository copy, use that copy. If the public repository
+is cloned to a target machine, the default location is `~/.local/src/<repo-name>`. The directory name is the
+repository's own name; do not force it to `home`.
+
+### User Scenarios
+
+When the Tilde skill is installed but no home repositories exist yet, the primary low-friction path is:
+
+```text
+$tilde create ~/Dropbox/src/home
+$tilde adopt zsh
+$tilde adopt git
+$tilde plan
+$tilde deploy
+```
+
+`deploy` may also guide this scenario in one journey:
+
+```text
+$tilde deploy ~/Dropbox/src/home
+```
+
+If the public path does not exist, `deploy` may propose a `create` phase. A newly created empty repository should not
+force immediate provisioning. Offer clear choices such as finishing initialization, running bootstrap checks, starting
+adoption, or applying an empty/minimal desired state.
+
+When public/private home repositories already exist, the typical local flow is:
+
+```text
+$tilde deploy ~/Dropbox/src/home
+```
+
+The equivalent explicit flow is:
+
+```text
+$tilde init ~/Dropbox/src/home
+$tilde deploy
+```
+
+This flow identifies public/private repositories, validates repository roles, writes local Tilde state after
+confirmation, writes or updates the home router after confirmation, runs bootstrap/preflight when needed, generates a
+provisioning plan, and applies only after explicit confirmation.
 
 ### Host Kinds
 
@@ -481,10 +716,10 @@ special provisioning semantics by itself; it only changes the likelihood that Dr
 
 | Kind | When | Bootstrap | Repository copy | Deployment state handling | Default flow |
 | --- | --- | --- | --- | --- | --- |
-| `dropbox` | Target has a synced Dropbox copy of this repository. This is typical for personal physical machines when Dropbox quota and device limits allow it. | Run the repo-local bootstrap from the target checkout. | Use the target's Dropbox-backed checkout. | Dropbox sync carries state; no explicit copy-back. | local apply or `remote-dropbox` |
-| `git` | Target does not use Dropbox for this repository. This covers VPS hosts and personal machines where Dropbox is unavailable or undesired. | Deliver bootstrap before cloning, usually over SSH or the public bootstrap URL when available. | Clone or fetch into `~/.local/src/<repo-name>`. | Write deployment state on target, then copy it back to the local archive when orchestration is remote. | `remote-git` or local git-backed apply |
-| `self` | A user clones the public repository or a fork and applies it on the same machine. | Prefer the public bootstrap URL when available; otherwise run repo-local bootstrap after cloning. | User-chosen checkout, usually `~/.local/src/<repo-name>`. | Local deployment state stays in that checkout; private archive and `tilde-` behavior are optional. | local apply |
-| `any` | The target has an existing repository path whose branch, `HEAD`, or dirty state is intentionally accepted. | Use the existing checkout's bootstrap unless the target lacks the checkout, then deliver bootstrap first. | Use the provided path as-is. | Copy deployment state back unless the path is known to sync. | `remote-any` |
+| `dropbox` | Target has a synced Dropbox copy of the public data repository. This is typical for personal physical machines when Dropbox quota and device limits allow it. | Run the installed skill bootstrap or the bootstrap helper available in the target context. | Use the target's Dropbox-backed public/private checkouts. | Target state under `~/.local/state/tilde` is authoritative; Dropbox may sync repository files, not runtime state. | local install or `remote-dropbox` |
+| `git` | Target does not use Dropbox for the public data repository. This covers VPS hosts and personal machines where Dropbox is unavailable or undesired. | Deliver bootstrap before cloning, usually over SSH or the public bootstrap URL when available. | Clone or fetch into `~/.local/src/<repo-name>`. | Write state on the target, then optionally mirror it under the controller's `~/.local/state/tilde/remotes/HOST/`. | `remote-git` or local git-backed install |
+| `self` | A user clones the public data repository or a fork and applies it on the same machine. | Prefer the public bootstrap URL when available; otherwise use the installed skill bootstrap after cloning. | User-chosen checkout, usually `~/.local/src/<repo-name>`. | Local deployment state stays under `~/.local/state/tilde`. Private `home-` behavior is optional. | local install |
+| `any` | The target has an existing repository path whose branch, `HEAD`, or dirty state is intentionally accepted. | Use the installed skill bootstrap unless the target lacks the skill, then deliver bootstrap first. | Use the provided path as-is. | Write state on the target and mirror it only when requested or useful for orchestration. | `remote-any` |
 
 Dropbox mode is valid only when the target machine's repository copy syncs through Dropbox. If a personal physical
 machine cannot or should not use Dropbox, treat it as `git`.
@@ -494,10 +729,10 @@ machine cannot or should not use Dropbox, treat it as `git`.
 Dropbox installation and account linking are interactive preconditions. Tilde must not treat Dropbox installation as an
 unattended provisioning action.
 
-When the chosen host kind is `dropbox`, the agent first checks the target context for a Dropbox-backed checkout of this
-repository. For remote SSH orchestration, inspect the target machine, not the local machine. If the checkout is missing,
-unreadable, or clearly not synced, stop before normal `apply` and guide the user through the platform-appropriate manual
-Dropbox setup:
+When the chosen host kind is `dropbox`, the agent first checks the target context for a Dropbox-backed checkout of the
+public data repository. For remote SSH orchestration, inspect the target machine, not the local machine. If the checkout
+is missing, unreadable, or clearly not synced, stop before normal install and guide the user through the
+platform-appropriate manual Dropbox setup:
 
 - macOS: install the Dropbox app, sign in, select or sync the repository, and wait until the checkout is present.
 - Linux desktop: install the Dropbox package or daemon, sign in through the interactive flow, select or sync the
@@ -506,36 +741,36 @@ Dropbox setup:
   the repository checkout is present. If headless Dropbox setup is not practical or the user declines it, switch to
   `git` host kind only after explicit confirmation.
 
-After the user confirms Dropbox is installed, linked, and synced, re-run the preflight. Only then run repo-local
-bootstrap from the Dropbox-backed checkout and continue to plan/apply.
+After the user confirms Dropbox is installed, linked, and synced, re-run the preflight. Only then run bootstrap when
+needed and continue to plan/install.
 
 Do not create a separate Git clone on a target that was selected as `dropbox` unless the user explicitly changes the
-host kind to `git`. This avoids two competing Tilde checkouts on personal machines.
+host kind to `git`. This avoids two competing public data checkouts on personal machines.
 
 ### Bootstrap
 
-The bootstrap helper is `bin/bootstrap`. It prepares the smallest baseline needed for normal
+The bootstrap helper is `bin/bootstrap` in the installed skill. It prepares the smallest baseline needed for normal
 provisioning: transport tools, Homebrew, Ruby, `curl`, and `git`. Bootstrap must be Bash, must not require Ruby, must be
 idempotent, and must remain outside normal module state.
 
 Bootstrap has two separate concerns:
 
-- **Delivery**: get the bootstrap script onto the target when the repository is not there yet.
-- **Preparation**: run the bootstrap script so the target can clone or operate the repository and run the planner.
+- **Delivery**: get the bootstrap script onto the target when the installed skill is not there yet.
+- **Preparation**: run the bootstrap script so the target can clone or operate repositories and run the planner.
 
-When the repository is already present on the target, run bootstrap from the repository:
+When the installed skill is already present on the target, run bootstrap from the installed skill:
 
 ```bash
 bin/bootstrap
 ```
 
-When bootstrapping a remote target that does not have the repository yet, deliver the script over SSH:
+When bootstrapping a remote target that does not have the installed skill yet, deliver the script over SSH:
 
 ```bash
 ssh HOST 'bash -s' < bin/bootstrap
 ```
 
-When `tilde.roktas.dev` exists as the GitHub-backed public site for this repository, prefer the public bootstrap endpoint
+When `tilde.roktas.dev` exists as the GitHub-backed public site for the installed skill, prefer the public bootstrap endpoint
 where HTTPS and `curl` are available:
 
 ```bash
@@ -544,7 +779,7 @@ curl -fsSL https://tilde.roktas.dev/bootstrap | bash
 
 This public transport is the default for `self` installs and a good default for `git` targets when the target can reach
 the site. SSH delivery remains the fallback for private in-flight changes, targets without `curl`, locked-down networks,
-or orchestrated installs that should use the local checkout's exact bootstrap script.
+or orchestrated installs that should use the local installed skill's exact bootstrap script.
 
 A public or fork-based install may also fetch the same script from official release or raw Git metadata, but that
 transport must be documented separately and should prefer immutable or trusted references when possible.
@@ -558,17 +793,18 @@ platform installer finishes.
 
 ### Remote Modes
 
-- `remote-git`: deterministic default for SSH provisioning when the target does not have a Dropbox-backed checkout.
-  Prepare the target repository by cloning or fetching it, usually under `~/.local/src/<repo-name>`. Use `main` and the
-  latest pushed commit unless instructed otherwise. Require a clean local worktree and a pushed commit.
-- `remote-dropbox`: use the target repository that already exists under Dropbox. Local and target Git `HEAD` do not need
-  to match. State is expected to sync through Dropbox.
+- `remote-git`: deterministic default for SSH provisioning when the target does not have a Dropbox-backed public data
+  checkout. Prepare the target public repository by cloning or fetching it, usually under `~/.local/src/<repo-name>`.
+  Use `main` and the latest pushed commit unless instructed otherwise. Require a clean local worktree and a pushed
+  commit.
+- `remote-dropbox`: use the target public repository that already exists under Dropbox. Local and target Git `HEAD` do
+  not need to match. Runtime state stays under `~/.local/state/tilde` on the target.
 - `remote-any`: use the provided target repository path as-is. This is intentionally less deterministic; call out
   branch, `HEAD`, and dirty-state uncertainty and continue only with explicit confirmation.
 
 In all remote modes, resolve links, copies, and home inspections against the target machine's home directory and target
-repository copy, not the local orchestrating repository. Write deployment state on the target first. If the target
-repository is not Dropbox-synced, fetch the resulting state file back into the local archive before finishing.
+repository copies, not the local orchestrating repository. Write deployment state on the target first. The controller may
+copy or summarize the target state into its read-only remote mirror before finishing.
 
 ## Provisioning
 
@@ -582,7 +818,7 @@ practical, but it is not perfectly idempotent.
 - `refresh`: update only managed external resources: active plan packages and `README.md` `Update` sections. It may run
   even when `HEAD` is unchanged.
 - `repair`: retry modules marked `notok` in deployment state at the same `HEAD`.
-- `upgrade`: broad package-manager upgrade mode. It may affect packages outside this repository and runs only on
+- `upgrade`: broad package-manager upgrade mode. It may affect packages outside the managed set and runs only on
   explicit user request after scope is described.
 
 `apply` and `repair` are deployment-state/`HEAD` driven. `refresh` and `upgrade` are external-resource/time driven.
@@ -632,8 +868,8 @@ state and existing managed external resources can both be brought current.
 - Run `Prelink` or `Presetup` instructions when present.
 - Create added symlinks.
 - Create added copies.
-- Remove a dropped link only if the target is a symlink into this repository or a dangling symlink. Do not touch dropped
-  link targets that are not symlinks or point outside this repository.
+- Remove a dropped link only if the target is a symlink into the active data repository or a dangling symlink. Do not
+  touch dropped link targets that are not symlinks or point outside the active data repository.
 - Do not automatically remove dropped copy targets.
 - Run `Link`, `Postlink`, or `Setup` instructions when present.
 
@@ -664,6 +900,10 @@ Installation commands:
   Select the asset that matches target platform and architecture, download to a temp directory, verify checksum or
   provenance when provided, extract it, and copy executables to `~/.local/bin`. If asset or executable layout is
   ambiguous, ask before installing.
+- `skill:<source>`: install an agent skill from a Git-backed source. Accepted scalar sources include
+  `github.com/<owner>/<repo>` and full Git URLs. The source repository contains the skill at its root; the skill name is
+  the source repository basename; and the target is `~/.agents/skills/<name>`. If the target is missing, clone the
+  source. If the target exists and is not a matching Git checkout, report a proposal-time conflict.
 
 For `github` assets, prefer official release metadata over scraping HTML:
 
@@ -697,7 +937,10 @@ Managed update commands:
 - `gem:<name>`: `gem update --user-install --no-document <name>`. Do not use bare `gem update`.
 - `egg:<name>`: `uv tool upgrade <name>`. Use `uv tool install <name>` when changing version constraints or install
   flags.
-- `flatpak:<app-id>`: `flatpak update --user <app-id>` for per-user installs created by this repository.
+- `flatpak:<app-id>`: `flatpak update --user <app-id>` for per-user installs created by Tilde.
 - `scoop:<name>`: run `scoop update` first, then `scoop update <name>`.
 - `github:<owner>/<repo>`: inspect latest release assets again, compare with the installed binary when possible, and
   replace the executable only after selecting the matching asset.
+- `skill:<source>`: fetch the matching Git checkout and update with a non-destructive fast-forward-only merge. Dirty
+  targets block automatic updates. Put any nonstandard Tilde skill update behavior in the owning module's `README.md`
+  body instead of expanding `skill:` into a broad skill-management schema.

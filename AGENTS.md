@@ -1,7 +1,7 @@
 # Agent Development Guide
 
 This repository contains the Tilde skill and control-plane helpers. It is intended to be installed as
-`~/.agents/skills/tilde`.
+`~/.agents/skills/tilde` and to operate on separate public/private home data repositories.
 
 ## Tilde Development
 
@@ -10,4 +10,3 @@ This repository contains the Tilde skill and control-plane helpers. It is intend
   docs.
 - Keep durable behavior in `references/spec.md`, reusable workflow in `SKILL.md`, and working drafts under
   `.agents/notes/`.
-

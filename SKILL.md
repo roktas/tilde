@@ -1,6 +1,6 @@
 ---
 name: tilde
-description: Use for Tilde deployment, provisioning, and home-management work. Trigger for `$tilde ...`, messages whose first word is `tilde`, or requests to deploy, bootstrap, help, plan, apply, refresh, repair, upgrade, diagnose, inspect links, adopt app/config files, or work with Tilde home behavior.
+description: Use for Tilde deployment, provisioning, and home-management work. Trigger for `$tilde ...`, messages whose first word is `tilde`, or requests to create, initialize, deploy, update, diagnose, inspect links, adopt app/config files, or work with Tilde home behavior.
 ---
 
 # Tilde
@@ -16,7 +16,7 @@ semantics belong in `references/spec.md`, and runnable helpers belong in `bin/`.
 
 Use these links to load the narrowest useful part of the spec:
 
-- Command parsing and confirmation: [Command Semantics](references/spec.md#command-semantics) and
+- Command parsing and confirmation: [Commands](references/spec.md#commands) and
   [User Interaction](references/spec.md#user-interaction).
 - Home entrypoint, discovery, and adoption: [Home Router](references/spec.md#home-router),
   [Core Managed Links](references/spec.md#core-managed-links), [Bounded Discovery](references/spec.md#bounded-discovery),
@@ -24,8 +24,9 @@ Use these links to load the narrowest useful part of the spec:
 - Fresh-host, Dropbox, and remote setup: [Deployment](references/spec.md#deployment),
   [Dropbox Preflight](references/spec.md#dropbox-preflight), [Bootstrap](references/spec.md#bootstrap), and
   [Remote Modes](references/spec.md#remote-modes).
-- Module semantics and plan/apply behavior: [Module README](references/spec.md#module-readme),
+- Module semantics and plan/install behavior: [Module README](references/spec.md#module-readme),
   [Deployment State](references/spec.md#deployment-state), and [Provisioning](references/spec.md#provisioning).
+- Tilde skill lifecycle: [Skill Installation and Updates](references/spec.md#skill-installation-and-updates).
 - Package work: [Package Installation](references/spec.md#package-installation) and
   [Package Updates](references/spec.md#package-updates).
 - Repository development: [Tilde Repository Development](references/development.md).
@@ -39,9 +40,9 @@ command-scope model.
 Bare `$tilde` means `update`: reconcile desired state with the live home, then refresh managed external resources after
 showing the planned phases and getting confirmation.
 
-`$tilde help` lists all commands with one-line action descriptions, then shows the general prompt format, detailed-help
-form, and bare-command default. `$tilde help COMMAND` shows only that command. If `COMMAND` is unknown, say so and then
-show the full command list.
+`$tilde help` lists public commands with one-line action descriptions, then shows the general prompt format,
+detailed-help form, and bare-command default. `$tilde help COMMAND` shows only that public command. If `COMMAND` is
+unknown or internal, say so and then show the public command list.
 
 Use proposal-first behavior for writes, moves, removals, repository edits, package changes, and remote-host actions.
 Prefer structured confirmation and choice UI over raw prompts such as `[Y/n]`. In Codex, use available structured
@@ -50,17 +51,23 @@ present explicit choices with target, effect, and blast radius.
 
 ## Commands
 
-- `help`: show all commands or one command's usage.
-- `deploy`: prepare a local or remote host and apply desired state.
-- `bootstrap`: run or plan the explicit fresh-host prelude.
-- `update`: run the normal returning-user maintenance flow, combining lower-level `apply` and `refresh` semantics.
-- `plan`, `apply`, `refresh`, `repair`, `upgrade`: lower-level provisioning commands.
+- `help`: show public commands or one public command's usage.
+- `create`: create public/private home repository skeletons.
+- `init`: register existing public/private repositories on this host.
+- `deploy`: prepare a local or remote host and install desired state.
+- `plan`: show the install plan without applying it.
+- `update`: run the normal returning-user maintenance flow.
+- `repair`: retry failed install phases from recorded state.
+- `upgrade`: run broad package-manager upgrades after explicit confirmation.
 - `status`: show a short read-only deployment and home-router summary.
 - `doctor`: run bounded diagnostics; this is not a whole-home audit.
 - `links`: inspect managed links and copies.
 - `adopt`: inspect the requested app, config, package, or path and propose public `home` or private `home-` placement.
 - `clean`, `organize`, `archive`, `dedupe`: preference-sensitive home commands; read `home-/AGENTS.md` when present and
   otherwise stay conservative.
+
+Internal semantic commands live under `internal.` with `.name` shorthand during Tilde development. Do not show them in
+ordinary help.
 
 ## Discovery
 
@@ -80,5 +87,5 @@ linking are interactive preconditions; guide the user, then rerun preflight. Do 
 target unless the user changes host kind.
 
 For real local deployment or `remote-git`, require a clean worktree and pushed target commit. Generate plans with
-`bin/plan`; it never applies changes. Write deployment state on the target first and copy it back when the target is not
-Dropbox-synced. Run `bin/bootstrap` only as the explicit state-free bootstrap prelude.
+`bin/plan`; it never applies changes. Write deployment state on the target first and optionally mirror it back to the
+controller. Run `bin/bootstrap` only as the explicit state-free bootstrap prelude.

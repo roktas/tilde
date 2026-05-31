@@ -6,13 +6,13 @@ Load this reference when editing this repository, the Tilde skill, helper script
 
 - Repository instructions: `AGENTS.md`
 - Home router template: `assets/AGENTS.md`
-- Shared user-wide instructions module: `agents/AGENTS.md`
+- Public data repo shared user-wide instructions module: `../home/agents/AGENTS.md` when present
 - Durable provisioning spec: `references/spec.md`
 - Spec alias: `.agents/specs/tilde.md`
 - Tilde skill: `SKILL.md`
 - Plan helper: `bin/plan`
 - Bootstrap helper: `bin/bootstrap`
-- Provisioning state: `.agents/state/hosts/HOST/tilde.md`
+- Provisioning state: `~/.local/state/tilde/hosts/HOST/state.md`
 - Agent resume checkpoint: `.agents/state/checkpoints/assistant.md`
 - Shared notes and TODO inbox: `.agents/notes/todo.md`
 - Local task state: `.agents/state/tasks/`
@@ -48,8 +48,9 @@ checkpoint after requested commits or pushes when practical.
   `misc-` exists, it must be `extra`.
 - Prefer short contextual file, directory, and helper names. Avoid encoding implementation details in names unless they
   disambiguate real siblings or are part of an established external interface.
-- `agents` is the shared agent module. `codex` and `opencode` are agent-specific modules. Keep agent-specific modules
-  equivalent in feature set when practical; the intended difference is tone and weight.
+- In the public home data repository, `agents` is the shared agent module. `codex` and `opencode` are agent-specific
+  modules. Keep agent-specific modules equivalent in feature set when practical; the intended difference is tone and
+  weight.
 - Do not add expanded home paths or machine-specific absolute filesystem paths to tracked repository files. Write home
   paths with `~`, for example `~/.config/foo`, and otherwise use repository-relative or module-relative paths.
 - Do not migrate old `install.sh` files by default. Prefer README frontmatter and special sections; keep a script only
@@ -62,8 +63,8 @@ checkpoint after requested commits or pushes when practical.
 Run relevant checks after Tilde skill, helper, or migrated module changes:
 
 ```bash
-bin/plan --allow-dirty --platform linux --host smoke --format markdown
-.agents/tests/provision/smoke.sh
+bin/plan --repo ../home --allow-dirty --platform linux --host smoke --format markdown
+REPO_ROOT=../home .agents/tests/provision/smoke.sh
 RUBOCOP_SERVER=false RUBOCOP_CACHE_ROOT=/tmp/rubocop-cache rubocop --cache false --config .agents/tests/provision/rubocop.yml bin/plan
 mapfile -t shell_files < <(rg --hidden -l '^#!.*(bash|sh)' -g '!**/.git/**' -g '!**/.agents/state/**')
 shellcheck "${shell_files[@]}"

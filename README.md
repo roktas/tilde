@@ -9,3 +9,5 @@ Install this repository as:
 ```
 
 The public and private home data repositories are managed separately.
+
+See `references/spec.md` for the protocol, command inventory, and provisioning semantics.
