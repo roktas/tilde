@@ -372,19 +372,15 @@ Use this public action inventory for help output:
 | Command | Action |
 | --- | --- |
 | `adopt` | Adopt an app, config, package, or path into public `home` or private `home-`. |
-| `archive` | Move selected home content into an archive according to private policy. |
-| `clean` | Propose conservative cleanup for selected home content. |
+| `clean` | Propose conservative cleanup, including duplicate candidates when relevant. |
 | `create` | Create public/private home repository skeletons. |
-| `dedupe` | Find and propose handling for duplicate selected home content. |
 | `deploy` | Prepare a host and install desired state. |
 | `doctor` | Diagnose deployment, repository, host, router, and managed-link health. |
 | `help` | Show public commands or detailed help for one public command. |
 | `init` | Register existing public/private repositories on this host. |
-| `links` | Inspect managed links and copies. |
-| `organize` | Propose organization changes for selected home content. |
-| `plan` | Show the install plan without applying it. |
+| `organize` | Propose organization changes, including archive moves when relevant. |
 | `repair` | Retry failed install phases from recorded state. |
-| `status` | Show a short deployment and home-router summary. |
+| `status` | Show a short deployment, home-router, and managed-surface summary. |
 | `update` | Reconcile desired state, then refresh managed external resources. |
 | `upgrade` | Run broad package-manager upgrades after explicit confirmation. |
 
@@ -393,8 +389,9 @@ After the table, show these short help notes:
 - Detailed command help: `$tilde help <command>`
 - Bare `$tilde` means `update`.
 
-`apply`, `bootstrap`, `install`, and `refresh` are not public prompt commands. Do not show internal commands in ordinary
-help.
+`apply`, `bootstrap`, `install`, `links`, `plan`, `refresh`, `archive`, and `dedupe` are not public prompt commands. Do
+not show internal commands in ordinary help. Treat `plan`, `dry-run`, and `plan-only` as qualifiers on public commands
+when the user asks to see the proposal without applying it.
 
 Public command semantics:
 
@@ -406,28 +403,31 @@ Public command semantics:
 - `deploy`: the main first-run and new-host journey command. It may orchestrate `create`, `init`,
   `internal.bootstrap`/preflight, planning, and `internal.install`, while preserving proposal-first behavior for each
   phase.
-- `plan`: show the install plan without applying it. This is a public view over `internal.plan`.
 - `update`: run the returning-user maintenance flow: `internal.install`, then `internal.refresh`, after confirmation.
 - `repair`: public wrapper over `internal.repair`.
 - `upgrade`: run broad package-manager upgrades only on explicit request after describing scope.
 - `status`: print a short read-only summary of configured public/private repositories, deployment state, and
-  home-router facts. It should not perform broad diagnostics.
+  home-router facts, plus a concise managed-link/copy/package surface summary. It should not perform broad diagnostics.
 - `doctor`: diagnose host/home health, repository discovery, dirty worktrees, broken managed links, missing state, and
   Dropbox/Git consistency. It reports findings and suggestions, but it is not a whole-home audit.
-- `links`: inspect managed links and copies. It is limited to the managed surface and known managed targets.
 - `adopt`: inspect a requested app, config, package identity, or explicit path; propose how to move it into public
   `home` or private `home-`; and wait for confirmation before any write.
+- `clean`: propose conservative cleanup for selected home content. It may include duplicate candidates when relevant.
+- `organize`: propose organization changes for selected home content. It may include archive moves when relevant.
 
 Preference-sensitive commands:
 
 - `clean`
 - `organize`
-- `archive`
-- `dedupe`
 
 These commands depend on personal policy. Before running them, read `home-/AGENTS.md` when available. If no private
 policy exists, produce only conservative proposals or suggest creating private policy; do not infer aggressive cleanup or
 organization rules from the public repository.
+
+If a user asks for `dedupe`, interpret it as a `clean` request focused on duplicate candidates. If a user asks for
+`archive`, interpret it as an `organize` request focused on archive moves. If a user asks for `links`, use `status` for
+a read-only managed-surface summary or `doctor` for broken/stale/conflicting link diagnostics. If a user asks for
+`plan`, use the nearest public command with a `dry-run` or `plan-only` qualifier.
 
 `private` is not a built-in command. Use `home-` as the private companion repository and policy source.
 Natural-language requests such as "adopt this into private" or "check the private repo" are valid qualifiers on other
@@ -458,9 +458,11 @@ the same workflow, unless the user is developing Tilde itself.
 ```text
 deploy = init + internal.bootstrap/preflight + internal.install
 update = internal.install + internal.refresh
-plan   = public view over internal.plan
 repair = public wrapper over internal.repair
 ```
+
+The `dry-run`, `plan`, and `plan-only` qualifiers on public commands use `internal.plan` to produce a proposal and then
+stop before applying changes.
 
 CLI implementations should treat dotted command tokens as command names before path or extension interpretation, or
 otherwise provide an unambiguous way to invoke internal commands during development.
@@ -498,6 +500,70 @@ repository edits.
 
 Home entrypoint behavior covers the home router, bounded discovery from home, adoption, and preference-sensitive
 home-management workflows.
+
+### Data Repository Tilde Sections
+
+Data repositories may provide Tilde-specific customization in existing Markdown bodies. The canonical anchor is a
+second-level `## Tilde` heading. Tilde treats that section as data-layer policy and instructions, not as control-plane
+specification.
+
+Valid locations:
+
+- root `AGENTS.md` in public and private data repositories;
+- host `README.md` files for host-specific policy;
+- module `README.md` files for module-local policy.
+
+Do not put Tilde-specific data-layer policy in the home router. Root `README.md` files remain human-facing overviews
+unless a future spec explicitly says otherwise.
+
+Inside `## Tilde`, use typed third-level headings:
+
+- `### Command: NAME`: instructions for a public command such as `adopt`, `clean`, or `deploy`, or for a custom command
+  such as `custom.sync-host`. Data repositories must not define or override `internal.*` commands.
+- `### Layout: PATH`: home or workspace layout facts for bounded discovery and preference-sensitive commands. `PATH`
+  should be `~` or a `~`-relative path such as `~/Dropbox`.
+
+Free text directly under `## Tilde` applies to all Tilde commands for that file's scope.
+
+Example:
+
+```markdown
+## Tilde
+
+### Command: adopt
+
+Secrets, credentials, license files, host-specific values, private endpoints, account identifiers, and uncertain private
+material belong in `home-` by default.
+
+### Command: custom.sync-host
+
+Synchronize the matching host directory in `home-` with `~/.<host>` on the remote machine. Use the private sync skill.
+Never delete remote files by default.
+
+### Layout: ~
+
+Use runtime XDG user dirs for localized desktop directories. Do not infer aggressive cleanup rules from public data.
+
+### Layout: ~/Dropbox
+
+Source checkouts live under `~/Dropbox/src`.
+```
+
+Tilde section precedence is:
+
+```text
+control-plane spec
+< public data root AGENTS.md
+< private data root AGENTS.md
+< host README.md
+< module README.md
+< explicit user request
+```
+
+More specific `Layout:` sections override or refine broader layout sections for the matching path. Data-layer
+customization may add user policy and custom commands, but it must not weaken control-plane safety rules such as
+proposal-first writes, bounded discovery, explicit destructive confirmation, and hiding internal commands from ordinary
+help.
 
 ### Home Router
 
@@ -629,8 +695,8 @@ Follow-up phrases such as `apply`, `apply proposal`, `do it`, or `adopt it` refe
 reference is unambiguous. If there is any ambiguity, summarize the proposal again before asking for confirmation.
 
 With an active unambiguous proposal, `apply` applies that proposal after confirmation. Without an active proposal,
-suggest `plan`, `deploy`, or `update` as appropriate. Use `internal.apply` only for Tilde development or when the user
-explicitly asks for internal command behavior.
+suggest `deploy dry-run`, `deploy`, or `update` as appropriate. Use `internal.apply` only for Tilde development or when
+the user explicitly asks for internal command behavior.
 
 If an action partially fails, report what changed, what did not change, and what remains. Do not promise automatic
 rollback unless a rollback plan was explicitly prepared.
@@ -656,7 +722,6 @@ $tilde init ssh:<host> --public ~/src/home
 $tilde update ssh:<host>
 $tilde doctor ssh:<host>
 $tilde status ssh:<host>
-$tilde links ssh:<host>
 ```
 
 `ssh:<host>` identifies the target host. Public/private repository arguments identify the controller-side data
@@ -678,7 +743,7 @@ When the Tilde skill is installed but no home repositories exist yet, the primar
 $tilde create ~/Dropbox/src/home
 $tilde adopt zsh
 $tilde adopt git
-$tilde plan
+$tilde deploy dry-run
 $tilde deploy
 ```
 

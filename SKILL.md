@@ -1,6 +1,6 @@
 ---
 name: tilde
-description: Use for Tilde deployment, provisioning, and home-management work. Trigger for `$tilde ...`, messages whose first word is `tilde`, or requests to create, initialize, deploy, update, diagnose, inspect links, adopt app/config files, or work with Tilde home behavior.
+description: Use for Tilde deployment, provisioning, and home-management work. Trigger for `$tilde ...`, messages whose first word is `tilde`, or requests to create, initialize, deploy, update, diagnose managed state, adopt app/config files, or work with Tilde home behavior.
 ---
 
 # Tilde
@@ -18,9 +18,10 @@ Use these links to load the narrowest useful part of the spec:
 
 - Command parsing and confirmation: [Commands](references/spec.md#commands) and
   [User Interaction](references/spec.md#user-interaction).
-- Home entrypoint, discovery, and adoption: [Home Router](references/spec.md#home-router),
-  [Core Managed Links](references/spec.md#core-managed-links), [Bounded Discovery](references/spec.md#bounded-discovery),
-  and [Adoption](references/spec.md#adoption).
+- Home entrypoint, data-layer customization, discovery, and adoption:
+  [Data Repository Tilde Sections](references/spec.md#data-repository-tilde-sections),
+  [Home Router](references/spec.md#home-router), [Core Managed Links](references/spec.md#core-managed-links),
+  [Bounded Discovery](references/spec.md#bounded-discovery), and [Adoption](references/spec.md#adoption).
 - Fresh-host, Dropbox, and remote setup: [Deployment](references/spec.md#deployment),
   [Dropbox Preflight](references/spec.md#dropbox-preflight), [Bootstrap](references/spec.md#bootstrap), and
   [Remote Modes](references/spec.md#remote-modes).
@@ -55,19 +56,17 @@ present explicit choices with target, effect, and blast radius.
 - `create`: create public/private home repository skeletons.
 - `init`: register existing public/private repositories on this host.
 - `deploy`: prepare a local or remote host and install desired state.
-- `plan`: show the install plan without applying it.
 - `update`: run the normal returning-user maintenance flow.
 - `repair`: retry failed install phases from recorded state.
 - `upgrade`: run broad package-manager upgrades after explicit confirmation.
-- `status`: show a short read-only deployment and home-router summary.
+- `status`: show a short read-only deployment, home-router, and managed-surface summary.
 - `doctor`: run bounded diagnostics; this is not a whole-home audit.
-- `links`: inspect managed links and copies.
 - `adopt`: inspect the requested app, config, package, or path and propose public `home` or private `home-` placement.
-- `clean`, `organize`, `archive`, `dedupe`: preference-sensitive home commands; read `home-/AGENTS.md` when present and
-  otherwise stay conservative.
+- `clean`, `organize`: preference-sensitive home commands; read `home-/AGENTS.md` when present and otherwise stay
+  conservative. `clean` may include duplicate candidates; `organize` may include archive moves.
 
 Internal semantic commands live under `internal.` with `.name` shorthand during Tilde development. Do not show them in
-ordinary help.
+ordinary help. Treat `plan` and `dry-run` as qualifiers on public commands, not as public commands.
 
 ## Discovery
 
