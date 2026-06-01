@@ -1,0 +1,172 @@
+# Tilde Commands
+
+## Commands
+
+Tilde commands are a prompt contract, not a strict shell CLI. Treat `$tilde [command] [subject...] [qualifiers...]` as a
+compact way to express intent. The command name is stable; the subject and qualifiers may be natural language. Each
+command defines its own semantics, and explicit arguments refine the target.
+
+Bare `$tilde` means `help`. It is read-only and must behave like `$tilde help`.
+
+### Public Commands
+
+`$tilde help` is the read-only public command reference. Start the output by showing the general format,
+`$tilde <command> [<arguments>...]`. With no subject, it lists public commands with one-line action descriptions in a
+GitHub-flavored Markdown table with `Command` and `Action` columns. With one command subject, it shows detailed help for
+only that command. If the subject is not a public Tilde command, say that no such public Tilde command exists, then
+behave like bare `$tilde help`. Agents should prefer the installed `bin/help --format markdown` helper when available.
+
+Use this public action inventory for help output:
+
+| Command | Action |
+| --- | --- |
+| `adopt` | Adopt an app, config, package, or path into public `home` or private `home-`. |
+| `clean` | Propose conservative cleanup, including duplicate candidates when relevant. |
+| `create` | Create public/private home repository skeletons. |
+| `deploy` | Prepare a host and install desired state. |
+| `doctor` | Diagnose deployment, repository, host, router, and managed-link health. |
+| `help` | Show public commands or detailed help for one public command. |
+| `init` | Register existing public/private repositories on this host. |
+| `organize` | Propose organization changes, including archive moves when relevant. |
+| `repair` | Retry failed install phases from recorded state. |
+| `status` | Show a short deployment, home-router, and managed-surface summary. |
+| `update` | Reconcile desired state, then refresh managed external resources. |
+| `upgrade` | Run broad package-manager upgrades after explicit confirmation. |
+
+After the table, show these short help notes:
+
+- Detailed command help: `$tilde help <command>`
+- Bare `$tilde` means `help`.
+
+`apply`, `bootstrap`, `install`, `links`, `plan`, `refresh`, `archive`, and `dedupe` are not public prompt commands. Do
+not show internal commands in ordinary help. Treat `plan`, `dry-run`, and `plan-only` as qualifiers on public commands
+when the user asks to see the proposal without applying it.
+
+Public command semantics:
+
+- `help`: show the public Tilde command reference. Usage: `$tilde help [command]`.
+- `create`: create or propose public/private home repository skeletons. With no explicit path, use default-location
+  discovery before proposing writes.
+- `init`: bind existing public/private repositories to the current host. It writes local config and the home router only
+  after confirmation. It does not provision by itself.
+- `deploy`: the main first-run and new-host journey command. It may orchestrate `create`, `init`,
+  `internal.bootstrap`/preflight, planning, and `internal.install`, while preserving proposal-first behavior for each
+  phase.
+- `update`: run the returning-user maintenance flow: `internal.install`, then `internal.refresh`, after confirmation.
+- `repair`: public wrapper over `internal.repair`.
+- `upgrade`: run broad package-manager upgrades only on explicit request after describing scope.
+- `status`: print a short read-only summary of configured public/private repositories, deployment state, and
+  home-router facts, plus a concise managed-link/copy/package surface summary when cached state is available. It should
+  prefer the installed `bin/status` helper when available so the agent can produce the summary with one read-only
+  command. It must not perform broad diagnostics or regenerate plans by default. When full deployment state or status
+  caches are missing, print a limited-status warning and suggest explicit next commands such as
+  `$tilde status discover`, `$tilde doctor`, or `$tilde deploy`.
+- `doctor`: diagnose host/home health, repository discovery, dirty worktrees, broken managed links, missing state, and
+  Dropbox/Git consistency. It reports findings and suggestions, but it is not a whole-home audit.
+- `adopt`: inspect a requested app, config, package identity, or explicit path; propose how to move it into public
+  `home` or private `home-`; and wait for confirmation before any write.
+- `clean`: propose conservative cleanup for selected home content. It may include duplicate candidates when relevant.
+- `organize`: propose organization changes for selected home content. It may include archive moves when relevant.
+
+Preference-sensitive commands:
+
+- `clean`
+- `organize`
+
+These commands depend on personal policy. Before running them, read `home-/AGENTS.md` when available. If no private
+policy exists, produce only conservative proposals or suggest creating private policy; do not infer aggressive cleanup or
+organization rules from the public repository.
+
+If a user asks for `dedupe`, interpret it as a `clean` request focused on duplicate candidates. If a user asks for
+`archive`, interpret it as an `organize` request focused on archive moves. If a user asks for `links`, use `status` for
+a read-only managed-surface summary or `doctor` for broken/stale/conflicting link diagnostics. If a user asks for
+`plan`, use the nearest public command with a `dry-run` or `plan-only` qualifier.
+
+`private` is not a built-in command. Use `home-` as the private companion repository and policy source.
+Natural-language requests such as "adopt this into private" or "check the private repo" are valid qualifiers on other
+commands.
+
+### Fast Status
+
+`status` is state-first and latency-sensitive. Its default path reads only cheap bounded sources:
+
+- local Tilde config at `~/.local/state/tilde/config.yml`;
+- host deployment state at `~/.local/state/tilde/hosts/HOST/state.md`;
+- cached `last-plan.json` and `last-apply.json` when present;
+- configured public/private repository summaries;
+- home-router and installed-skill link facts.
+
+Default `status` must not:
+
+- run `bin/plan` to regenerate desired state;
+- read every module `README.md` just to compute managed-surface counts;
+- walk all managed targets to validate live links;
+- query package managers, Dropbox, network remotes, or SSH targets unless the user explicitly requested that target.
+
+If config, host state, or cache files are missing, return a partial summary and say that full deployment state was not
+found. Long read-only fallback discovery is opt-in: use a qualifier such as `$tilde status discover` after telling the
+user that Tilde will inspect module metadata and managed targets and may take noticeably longer. Broken-link, stale-link,
+package, Dropbox, and consistency diagnostics belong to `doctor`, not default `status`.
+
+### Internal Semantic Commands
+
+Commands in the `internal.` namespace are internal semantic commands. They are not shown by ordinary `$tilde help`, are
+not intended as user-facing entrypoints, and may be used by the skill/spec to define higher-level behavior.
+
+For convenience while writing prompt-level specs or during Tilde development, `.name` may be accepted as shorthand for
+`internal.name`. The dotted form signals private/internal semantics and leaves room for future namespaces.
+
+Internal commands:
+
+- `internal.bootstrap` or `.bootstrap`: run or plan the fresh-host bootstrap prelude.
+- `internal.plan` or `.plan`: generate a provisioning plan.
+- `internal.apply` or `.apply`: apply a provisioning plan.
+- `internal.install` or `.install`: install desired state from public/private data repositories.
+- `internal.refresh` or `.refresh`: refresh managed external resources.
+- `internal.repair` or `.repair`: retry failed modules or failed installation phases from recorded state.
+
+If a user explicitly requests an internal command, explain that it is internal and suggest the public command that covers
+the same workflow, unless the user is developing Tilde itself.
+
+### Command Relationships
+
+```text
+deploy = init + internal.bootstrap/preflight + internal.install
+update = internal.install + internal.refresh
+repair = public wrapper over internal.repair
+```
+
+The `dry-run`, `plan`, and `plan-only` qualifiers on public commands use `internal.plan` to produce a proposal and then
+stop before applying changes.
+
+CLI implementations should treat dotted command tokens as command names before path or extension interpretation, or
+otherwise provide an unambiguous way to invoke internal commands during development.
+
+### Proposal-First Rules
+
+Repository creation, repository edits, router writes, state writes, package changes, file links, file copies,
+remote-host actions, and destructive home-management actions must be proposal-first.
+
+Proposals should name:
+
+- target paths or hosts;
+- what will be written, moved, removed, linked, copied, or installed;
+- whether public or private data will be touched;
+- whether runtime state will be updated;
+- the expected blast radius.
+
+### User Interaction
+
+Use the agent runtime's clearest available interaction surface for confirmations, choices, and menus. Prefer native
+structured confirmation or choice UI over raw terminal-style prompts such as `[Y/n]` when the runtime provides one. In
+Codex, use the available structured user-input or AFALA-style tool when it is available and appropriate; in other agents,
+use the equivalent native interaction mechanism when one exists.
+
+If no structured UI is available, ask in plain language with explicit choices. Name the action, target host or path, and
+blast radius. For multi-choice decisions, present a short numbered or bulleted list with one recommended option when
+there is a safe default. For destructive or preference-sensitive actions, make the opt-in explicit; do not rely on a
+single-letter default prompt.
+
+Commands are proposal-first when they may change files, repositories, packages, state, router files, or remote hosts. A
+proposal must describe the intended action and wait for confirmation before writes, moves, removals, package changes, or
+repository edits.

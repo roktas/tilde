@@ -5,38 +5,33 @@ description: Use for Tilde deployment, provisioning, and home-management work. T
 
 # Tilde
 
-This skill is standalone. Treat `references/spec.md` as the canonical behavior spec. In this repository,
+This skill is standalone. Treat `references/specification.md` as the canonical specification entrypoint. It contains the
+always-read contract and routes to narrower files under `references/specification/`. In this repository,
 `.agents/specs/tilde.md` may exist as a relative symlink for discoverability; do not treat that alias as a second source
 of truth.
 
-Read only the relevant spec sections before changing behavior or executing commands. Keep `SKILL.md` short; durable
-semantics belong in `references/spec.md`, and runnable helpers belong in `bin/`.
+Read `references/specification.md` first, then only the relevant routed specification file before changing behavior or
+executing nontrivial commands. Keep `SKILL.md` short; durable semantics belong in `references/specification.md` and
+`references/specification/`, and runnable helpers belong in `bin/`.
 
-## Spec Map
+## Specification Map
 
-Use these links to load the narrowest useful part of the spec:
+Read [Specification](references/specification.md) first, then load the narrowest routed file:
 
-- Command parsing and confirmation: [Commands](references/spec.md#commands) and
-  [User Interaction](references/spec.md#user-interaction).
-- Home entrypoint, data-layer customization, discovery, and adoption:
-  [Data Repository Tilde Sections](references/spec.md#data-repository-tilde-sections),
-  [Home Router](references/spec.md#home-router), [Core Managed Links](references/spec.md#core-managed-links),
-  [Bounded Discovery](references/spec.md#bounded-discovery), and [Adoption](references/spec.md#adoption).
-- Fresh-host, Dropbox, and remote setup: [Deployment](references/spec.md#deployment),
-  [Dropbox Preflight](references/spec.md#dropbox-preflight), [Bootstrap](references/spec.md#bootstrap), and
-  [Remote Modes](references/spec.md#remote-modes).
-- Module semantics and plan/install behavior: [Module README](references/spec.md#module-readme),
-  [Deployment State](references/spec.md#deployment-state), and [Provisioning](references/spec.md#provisioning).
-- Tilde skill lifecycle: [Skill Installation and Updates](references/spec.md#skill-installation-and-updates).
-- Package work: [Package Installation](references/spec.md#package-installation) and
-  [Package Updates](references/spec.md#package-updates).
+- Command parsing and confirmation: [Commands](references/specification/commands.md).
+- Home entrypoint, data-layer customization, discovery, and adoption: [Home](references/specification/home.md).
+- Fresh-host, Dropbox, and remote setup: [Deployment](references/specification/deployment.md).
+- Module semantics: [Modules](references/specification/modules.md).
+- Model, state, paths, and skill lifecycle: [Model](references/specification/model.md).
+- Plan/install behavior: [Provisioning](references/specification/provisioning.md).
+- Package work: [Packages](references/specification/packages.md).
 - Repository development: [Tilde Repository Development](references/development.md).
 
 ## Prompt Contract
 
 Treat `$tilde [command] [subject...] [qualifiers...]`, `tilde`-prefixed, and `~`-prefixed (second word is a known
 public or internal tilde command) messages as compact natural-language commands, not strict shell invocations. `~`
-followed by a path (e.g. `~/.config`) is not a command. Interpret each command by its spec semantics, and do not
+followed by a path (e.g. `~/.config`) is not a command. Interpret each command by its specification semantics, and do not
 introduce a separate command-scope model.
 
 Bare `$tilde` means `help`. It is read-only and must behave like `$tilde help`.

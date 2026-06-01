@@ -7,8 +7,9 @@ Load this reference when editing this repository, the Tilde skill, helper script
 - Repository instructions: `AGENTS.md`
 - Home router template: `assets/AGENTS.md`
 - Public data repo shared user-wide instructions module: `../home/agents/AGENTS.md` when present
-- Durable provisioning spec: `references/spec.md`
-- Spec alias: `.agents/specs/tilde.md`
+- Durable specification entrypoint: `references/specification.md`
+- Routed detailed specifications: `references/specification/`
+- Dotagents spec alias: `.agents/specs/tilde.md`
 - Tilde skill: `SKILL.md`
 - Status helper: `bin/status`
 - Plan helper: `bin/plan`
@@ -18,11 +19,11 @@ Load this reference when editing this repository, the Tilde skill, helper script
 - Shared notes and TODO inbox: `.agents/notes/todo.md`
 - Local task state: `.agents/state/tasks/`
 
-Keep Tilde design drafts and next-spec working notes under `.agents/notes/`. Promote durable decisions into
-`.agents/specs/` or the canonical Tilde spec when they become project truth.
+Keep Tilde design drafts and next-specification working notes under `.agents/notes/`. Promote durable decisions into
+`.agents/specs/` or the canonical Tilde specification when they become project truth.
 
-Read the spec before changing provisioning behavior. Read the relevant language skill before editing helper code or
-fenced code examples.
+Read the specification before changing provisioning behavior. Read the relevant language skill before editing helper
+code or fenced code examples.
 
 ## Session Drift
 
@@ -30,7 +31,7 @@ At session start, compare `.agents/state/checkpoints/assistant.md` with the curr
 when the checkpoint exists. If `HEAD` or dirty state changed since the checkpoint, inspect the drift and summarize it
 before editing.
 
-During this drift check, reread current canonical skill, spec, and instruction files before applying conventions
+During this drift check, reread current canonical skill, specification, and instruction files before applying conventions
 remembered from an earlier session. Treat the repository version as authoritative. At session closeout, refresh the
 checkpoint after requested commits or pushes when practical.
 
@@ -71,16 +72,54 @@ mapfile -t shell_files < <(rg --hidden -l '^#!.*(bash|sh)' -g '!**/.git/**' -g '
 shellcheck "${shell_files[@]}"
 ```
 
-Use Lima with the external `"there"` helper for end-to-end smoke tests. See `testing.md`.
+Use Lima with the external `"there"` helper for end-to-end provisioning tests.
+
+### Lima
+
+The Tilde smoke wrapper expects `"there"` to be available in `PATH`. Install the `there` package, or activate an
+environment that provides a compatible `"there"` command.
+
+This skill intentionally does not encode how `"there"` is installed. See the `there` documentation for command behavior
+and detailed usage.
 
 This repository's `.envrc` may put a neighboring `there` checkout ahead of the packaged `"there"` command. In
 non-interactive tool shells, direnv may not be loaded automatically; use `direnv exec . COMMAND` when validating
 commands that depend on `.envrc`.
 
-Lima:
+Run the normal Tilde smoke script inside the Lima instance:
 
 ```bash
 bin/smoke
+```
+
+Run the bootstrap helper inside the Lima instance:
+
+```bash
 bin/smoke boot
+```
+
+For fast repeated tests, stop the instance instead of destroying it:
+
+```bash
 bin/smoke stop
+```
+
+For a fresh-host test, destroy the instance explicitly:
+
+```bash
+bin/smoke destroy
+```
+
+Clean Lima's image cache only when explicitly requested:
+
+```bash
+bin/smoke prune
+```
+
+### Direct There Commands
+
+Use `"there"` directly when a test needs a custom command:
+
+```bash
+there run bash -lc 'cd /here && .agents/tests/provision/smoke.sh'
 ```

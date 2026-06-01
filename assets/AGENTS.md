@@ -13,11 +13,11 @@ instructions win.
 - Resolve the installed Tilde skill from the resolved symlink target chain of `~/AGENTS.md` when possible. The normal
   target is `~/.agents/skills/tilde/assets/AGENTS.md`.
 - Starting at the target file's parent directory, walk ancestors only until finding a directory that contains both
-  `SKILL.md` and `references/spec.md`. That directory is the installed Tilde skill.
+  `SKILL.md` and `references/specification.md`. That directory is the installed Tilde skill.
 - If symlink resolution is unavailable or the target does not identify the installed Tilde skill, use the current skill
   or data repository when already inside one, then an explicit user-provided path. Do not recursively search `~` to find
   repositories.
-- In the installed skill, read `SKILL.md`; it points to the canonical spec and supporting references.
+- In the installed skill, read `SKILL.md`; it points to the canonical specification and supporting references.
 - Discover configured public/private home repositories from local Tilde state, router metadata, or explicit paths.
 - Discover sibling `home-` from `home` only when repository identity confirms it. Read `home-/AGENTS.md` before
   preference-sensitive home commands.
