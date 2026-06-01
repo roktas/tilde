@@ -700,19 +700,23 @@ For `$tilde adopt SUBJECT`, resolve the subject in this order:
 
 1. Existing public or private module.
 2. Explicit path when the subject is path-like.
-3. Known app or config locations for the target platform.
-4. Cheap package, application, bundle, or desktop metadata.
+3. Known app data, config, and state locations for the target platform.
+4. Cheap package, application, bundle, desktop, or release metadata.
 5. A clarification question.
 
-Adoption proposals should decide public versus private placement conservatively. Secrets, credentials, license files,
-host-specific values, private endpoints, account identifiers, and uncertain private material belong in `home-` or
-require clarification. Public-safe configuration may go in `home`.
+If the module name is not explicit, propose the app name as the default and confirm it before writing. Prefer generic
+public/private repository wording; do not bake user-specific repository names into the control-plane spec.
 
-Adoption must also propose `links` versus `copies`. Use `links` for stable user-owned config. Use `copies` for files or
-directories that target applications are expected to overwrite.
+Discovery must include bounded app configuration/state locations. Present discovered files or directories for approval
+before adoption. Classify secrets, credentials, license files, host-specific values, private endpoints, account
+identifiers, and uncertain private material as private by default.
 
-Before writing an adoption, inspect dirty state in the target repository and in `home-` when it will be touched. Do not
-overwrite uncommitted work without explicit confirmation.
+When adding configuration to a module, drop leading dots from module-relative filenames unless the user explicitly asks
+otherwise. Add matching `links` frontmatter in the same edit. Use `links` for stable user-owned config, and `copies` for
+files or directories that target applications are expected to overwrite.
+
+Before writing an adoption, inspect dirty state in each target repository. Do not overwrite uncommitted work without
+explicit confirmation.
 
 ### Home Workflow State
 
