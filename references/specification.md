@@ -10,18 +10,18 @@ specification, and this file is the stable entrypoint for skills, repository ins
 ## Always-Read Contract
 
 - Tilde is an installed agent skill and control plane. User-specific desired state and policy live in separate public
-  and private home data repositories, conventionally `home` and `home-`.
+  and private home data repositories.
 - Machine runtime state lives outside the skill and data repositories, under `~/.local/state/tilde` by default.
 - Public/private repository identity comes from explicit state, explicit paths, or `AGENTS.md` frontmatter declaring
   `tilde.protocol: tilde/v1` and a repository `role`.
 - `$tilde`, first-word `tilde`, and command-shaped `~` prompts are compact natural-language commands, not strict shell
   invocations. Bare `$tilde` means read-only `help`.
-- Writes, moves, removals, package changes, repository edits, router writes, state writes, and remote-host actions are
-  proposal-first and require explicit confirmation.
+- Writes, moves, removals, package changes, repository edits, home-entrypoint writes, state writes, and remote-host
+  actions are proposal-first and require explicit confirmation.
 - Discovery is bounded. Do not recursively scan `$HOME` unless the user explicitly asks after scope and cost are
   described.
-- The home router is `~/AGENTS.md`; it routes agents to the installed Tilde skill and configured public/private home
-  repositories.
+- The home entrypoint is `~/AGENTS.md`; it contains home-directory agent instructions and may route agents to the
+  installed Tilde skill and configured public/private home repositories.
 - Internal semantic commands live under `internal.` with `.name` shorthand for Tilde development. Ordinary help must
   show only public commands.
 
@@ -34,7 +34,8 @@ Read this file first, then load only the narrowest file needed for the work:
 | Terms, roles, paths, state, and skill lifecycle | `references/specification/model.md` |
 | Module layout, README frontmatter, links, copies, and special sections | `references/specification/modules.md` |
 | Command parsing, help, status, internal commands, and confirmation rules | `references/specification/commands.md` |
-| Home router, data-repository Tilde sections, bounded discovery, and adoption | `references/specification/home.md` |
+| Home entrypoint, data-repository Tilde sections, bounded discovery, and adoption | `references/specification/home.md` |
+| Data-layer instruction evaluation, custom commands, layout policy, and invalid policy | `references/specification/customization.md` |
 | Fresh-host, create/init/deploy, Dropbox, bootstrap, and SSH/remote modes | `references/specification/deployment.md` |
 | Planning, traversal, ordering, install, link, and update behavior | `references/specification/provisioning.md` |
 | Package install and managed update semantics | `references/specification/packages.md` |
@@ -50,16 +51,16 @@ installed helper `bin/help --format markdown` emits the canonical public table.
 
 | Command | Action |
 | --- | --- |
-| `adopt` | Adopt an app, config, package, or path into public `home` or private `home-`. |
+| `adopt` | Adopt an app, config, package, or path into the public or private data repository. |
 | `clean` | Propose conservative cleanup, including duplicate candidates when relevant. |
 | `create` | Create public/private home repository skeletons. |
 | `deploy` | Prepare a host and install desired state. |
-| `doctor` | Diagnose deployment, repository, host, router, and managed-link health. |
+| `doctor` | Diagnose deployment, repository, host, home-entrypoint, and managed-link health. |
 | `help` | Show public commands or detailed help for one public command. |
 | `init` | Register existing public/private repositories on this host. |
 | `organize` | Propose organization changes, including archive moves when relevant. |
 | `repair` | Retry failed install phases from recorded state. |
-| `status` | Show a short deployment, home-router, and managed-surface summary. |
+| `status` | Show a short deployment, home-entrypoint, and managed-surface summary. |
 | `update` | Reconcile desired state, then refresh managed external resources. |
 | `upgrade` | Run broad package-manager upgrades after explicit confirmation. |
 

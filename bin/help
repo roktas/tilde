@@ -6,16 +6,16 @@ set -Eeuo pipefail
 unset CDPATH
 
 readonly -a COMMANDS=(
-	'adopt|Adopt an app, config, package, or path into public `home` or private `home-`.'
+	'adopt|Adopt an app, config, package, or path into the public or private data repository.'
 	'clean|Propose conservative cleanup, including duplicate candidates when relevant.'
 	'create|Create public/private home repository skeletons.'
 	'deploy|Prepare a host and install desired state.'
-	'doctor|Diagnose deployment, repository, host, router, and managed-link health.'
+	'doctor|Diagnose deployment, repository, host, home-entrypoint, and managed-link health.'
 	'help|Show public commands or detailed help for one public command.'
 	'init|Register existing public/private repositories on this host.'
 	'organize|Propose organization changes, including archive moves when relevant.'
 	'repair|Retry failed install phases from recorded state.'
-	'status|Show a short deployment, home-router, and managed-surface summary.'
+	'status|Show a short deployment, home-entrypoint, and managed-surface summary.'
 	'update|Reconcile desired state, then refresh managed external resources.'
 	'upgrade|Run broad package-manager upgrades after explicit confirmation.'
 )

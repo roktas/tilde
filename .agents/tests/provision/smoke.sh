@@ -106,8 +106,16 @@ EOF
 		abort "wrong mode" unless plan.fetch("mode") == "apply"
 		abort "wrong level" unless plan.fetch("level") == "normal"
 		abort "wrong platform" unless plan.fetch("platform") == "linux"
-		core_links = plan.fetch("core").fetch("links_to_create")
-		abort "missing core home router link" unless core_links.any? { |link| link.fetch("source") == "assets/AGENTS.md" && link.fetch("target") == "~/AGENTS.md" }
+		core_entrypoints = plan.fetch("core").fetch("home_entrypoints_to_write")
+		home_entrypoint_linked = plan.fetch("modules").any? { |mod| mod.fetch("links_to_create").any? { |link| link.fetch("target") == "~/AGENTS.md" } }
+		abort "core should not create home entrypoint symlink actions" unless plan.fetch("core").fetch("links_to_create").empty?
+		if home_entrypoint_linked
+			abort "module-owned home entrypoint should suppress fallback" unless core_entrypoints.empty?
+		elsif core_entrypoints.empty?
+			# Companion-owned home entrypoints are checked by a focused fixture below.
+		else
+			abort "missing fallback home entrypoint" unless core_entrypoints.any? { |entrypoint| entrypoint.fetch("source") == "assets/AGENTS.md" && entrypoint.fetch("target") == "~/AGENTS.md" && entrypoint.fetch("strategy") == "write-fallback-file" }
+		end
 		linux = plan.fetch("modules").find { |mod| mod.fetch("name") == "linux" }
 		abort "missing linux platform module" unless linux
 		abort "linux platform module should be first" unless plan.fetch("modules").first.fetch("name") == "linux"
@@ -126,7 +134,7 @@ EOF
 		abort "agents should default to normal level" unless agents.fetch("level") == "normal"
 		abort "agents should be a virtual shared-asset module" unless agents.fetch("virtual") == true
 		abort "agents should not install agent-specific packages" unless agents.fetch("packages_to_install").empty?
-		abort "agents should not own the home router link" if agents.fetch("links_to_create").any? { |link| link.fetch("target") == "~/AGENTS.md" }
+		abort "agents should not own the home entrypoint" if agents.fetch("links_to_create").any? { |link| link.fetch("target") == "~/AGENTS.md" }
 		abort "agents should link shared instructions under ~/.agents" unless agents.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.agents/AGENTS.md" }
 		abort "agents should keep common skills under ~/.agents" unless agents.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.agents/skills/colon" }
 		abort "agents should not expose codex-only commits globally" if agents.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.agents/skills/commits" }
@@ -164,11 +172,12 @@ EOF
 
 	rm -rf "$target_module"
 	mkdir -p "$target_module/bin"
-	touch "$target_module/config" "$target_module/bin/tool"
+	touch "$target_module/AGENTS.md" "$target_module/config" "$target_module/bin/tool"
 	cat >"$target_module/README.md" <<'EOF'
 ---
 all:
   links:
+    AGENTS.md: ~/AGENTS.md
     config:
       - ~/.config/target-list/a
       - ~/.config/target-list/b
@@ -186,11 +195,52 @@ EOF
 		plan = JSON.parse(File.read(ENV.fetch("TARGET_PLAN_JSON")))
 		smoke = plan.fetch("modules").find { |mod| mod.fetch("name") == "zz-target-smoke" }
 		abort "missing target module" unless smoke
+		abort "home entrypoint module link should suppress fallback" unless plan.fetch("core").fetch("home_entrypoints_to_write").empty?
 		links = smoke.fetch("links_to_create")
+		abort "missing home entrypoint link" unless links.any? { |link| link.fetch("source") == "AGENTS.md" && link.fetch("target") == "~/AGENTS.md" }
 		abort "missing first scalar source target" unless links.any? { |link| link.fetch("source") == "config" && link.fetch("target") == "~/.config/target-list/a" }
 		abort "missing second scalar source target" unless links.any? { |link| link.fetch("source") == "config" && link.fetch("target") == "~/.config/target-list/b" }
 		abort "missing first fan-in list target" unless links.any? { |link| link.fetch("source") == "bin/tool" && link.fetch("target") == "~/.local/bin/tool" && link.fetch("fan_in") == true }
 		abort "missing second fan-in list target" unless links.any? { |link| link.fetch("source") == "bin/tool" && link.fetch("target") == "~/.local/sbin/tool" && link.fetch("fan_in") == true }
+	'
+
+	local companion_plan_json=$tmpdir/companion-plan.json
+	local companion_private=$tmpdir/private
+	local companion_public=$tmpdir/public
+
+	mkdir -p "$companion_private/home" "$companion_public"
+	cat >"$companion_public/AGENTS.md" <<'EOF'
+---
+tilde:
+  protocol: tilde/v1
+  role: public
+  private: ../private
+---
+
+# Public Smoke
+EOF
+	cat >"$companion_private/home/README.md" <<'EOF'
+---
+all:
+  links:
+    AGENTS.md: ~/AGENTS.md
+---
+
+# Home
+EOF
+	touch "$companion_private/home/AGENTS.md"
+
+	git -C "$companion_public" init -q
+	git -C "$companion_public" config user.email smoke@example.invalid
+	git -C "$companion_public" config user.name Smoke
+	git -C "$companion_public" add AGENTS.md
+	git -C "$companion_public" commit -q -m init
+
+	"$plan" --repo "$companion_public" --platform linux --host smoke >"$companion_plan_json"
+
+	COMPANION_PLAN_JSON=$companion_plan_json ruby -rjson -e '
+		plan = JSON.parse(File.read(ENV.fetch("COMPANION_PLAN_JSON")))
+		abort "companion-owned home entrypoint should suppress fallback" unless plan.fetch("core").fetch("home_entrypoints_to_write").empty?
 	'
 
 	rm -rf "$extra_module"
@@ -310,6 +360,7 @@ EOF
 		plan = JSON.parse(File.read(ENV.fetch("REFRESH_PLAN_JSON")))
 		abort "wrong refresh mode" unless plan.fetch("mode") == "refresh"
 		abort "refresh should not create core links" unless plan.fetch("core").fetch("links_to_create").empty?
+		abort "refresh should not write fallback home entrypoints" unless plan.fetch("core").fetch("home_entrypoints_to_write").empty?
 		neovim = plan.fetch("modules").find { |mod| mod.fetch("name") == "neovim" }
 		abort "missing neovim module" unless neovim
 		abort "refresh should not create links" unless neovim.fetch("links_to_create").empty?

@@ -10,18 +10,19 @@
 - **Platform variant**: `linux-`, `macos-`, or `windows-`. The active variant runs immediately after the active platform
   module. The trailing dash has no global meaning; the module README defines the local semantics.
 - **Control plane**: the installed `tilde` skill, normally at `~/.agents/skills/tilde`. It owns prompt semantics,
-  protocol references, helper commands, router templates, diagnostics, and validation.
-- **Public data repository**: the user's public home repository, conventionally named `home`. It contains public-safe
-  modules, shared agent assets, and desired state declarations.
-- **Private data repository**: the optional private companion repository, conventionally named `home-`. It contains
-  private modules, private policy, and preference-sensitive home behavior.
+  protocol references, helper commands, fallback home-entrypoint templates, diagnostics, and validation.
+- **Public data repository**: the user's public data repository. It contains public-safe modules, shared agent assets,
+  and desired state declarations.
+- **Private data repository**: the optional private companion repository. It contains private modules, private policy,
+  and preference-sensitive home behavior.
 - **Host**: the short name derived from `hostname -f` by removing the trailing domain. For example, `kant.local` becomes
   `kant`.
 - **Home**: the target user's home directory on the machine being managed. After deployment, Tilde's main user-facing
   surface is the home directory, not the repository checkout.
-- **Home router**: the short Tilde-specific entrypoint installed at `~/AGENTS.md`. It routes agents to the installed
-  Tilde skill and the configured public/private data repositories. Its template lives at `assets/AGENTS.md` in the
-  installed skill.
+- **Home entrypoint**: the `~/AGENTS.md` file whose scope is the user's home directory. In steady state it is normally
+  linked from the private data repository's `home/AGENTS.md`, or from the public data repository's `home/AGENTS.md`
+  when no private data repository is configured. The installed skill provides `assets/AGENTS.md` only as a first-run
+  fallback template.
 - **Deployment**: applying Tilde's desired state to a local or remote host. Deployment is the user-facing operation that
   may include initialization, bootstrap/preflight, repository preparation, planning, installing links/copies/packages,
   and state update.
@@ -46,7 +47,7 @@
   tilde:
     protocol: tilde/v1
     role: public
-    private: ../home-
+    private: ../PRIVATE_REPO
   ---
   ```
 
@@ -55,12 +56,12 @@
   tilde:
     protocol: tilde/v1
     role: private
-    public: ../home
+    public: ../PUBLIC_REPO
   ---
   ```
 
-- Repository names such as `home` and `home-` are conventions only. Correctness comes from explicit repository
-  identity and bounded discovery.
+- Repository directory names are conventions only. Correctness comes from explicit repository identity and bounded
+  discovery.
 - Each module describes how to install or configure one application or virtual provisioning unit.
 - Module names usually match the common application name and default package name. Exceptions belong in the module
   `README.md`.
@@ -117,8 +118,8 @@ Suggested structure:
 ```yaml
 protocol: tilde/v1
 skill: ~/.agents/skills/tilde
-public: ~/Dropbox/src/home
-private: ~/Dropbox/src/home-
+public: ~/src/PUBLIC_REPO
+private: ~/src/PRIVATE_REPO
 ```
 
 `private` may be omitted when the user has no private companion repository.

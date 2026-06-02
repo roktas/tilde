@@ -5,7 +5,7 @@ Load this reference when editing this repository, the Tilde skill, helper script
 ## Canonical Files
 
 - Repository instructions: `AGENTS.md`
-- Home router template: `assets/AGENTS.md`
+- Fallback home entrypoint template: `assets/AGENTS.md`
 - Public data repo shared user-wide instructions module: `../home/agents/AGENTS.md` when present
 - Durable specification entrypoint: `references/specification.md`
 - Routed detailed specifications: `references/specification/`
@@ -37,8 +37,8 @@ checkpoint after requested commits or pushes when practical.
 
 ## Conventions
 
-- Keep `AGENTS.md` as short repository-local instructions. Keep `assets/AGENTS.md` as the
-  canonical home router template. The plan helper owns the `~/AGENTS.md` core managed link; do not put that link in the
+- Keep `AGENTS.md` as short repository-local instructions. Keep `assets/AGENTS.md` as the first-run fallback home
+  entrypoint template. The `home` data module owns the steady-state `~/AGENTS.md` link; do not put that link in the
   `agents` module. Move durable behavior into the spec, reusable workflow into the skill, and development policy into
   this reference.
 - When changing Tilde prompt commands, help behavior, or command semantics in `SKILL.md` or the spec, update the
@@ -67,7 +67,7 @@ Run relevant checks after Tilde skill, helper, or migrated module changes:
 ```bash
 bin/plan --repo ../home --allow-dirty --platform linux --host smoke --format markdown
 REPO_ROOT=../home .agents/tests/provision/smoke.sh
-RUBOCOP_SERVER=false RUBOCOP_CACHE_ROOT=/tmp/rubocop-cache rubocop --cache false --config .agents/tests/provision/rubocop.yml bin/plan
+RUBOCOP_SERVER=false RUBOCOP_CACHE_ROOT=.agents/state/rubocop-cache rubocop --cache false --config .agents/tests/provision/rubocop.yml bin/plan
 mapfile -t shell_files < <(rg --hidden -l '^#!.*(bash|sh)' -g '!**/.git/**' -g '!**/.agents/state/**')
 shellcheck "${shell_files[@]}"
 ```
@@ -121,5 +121,5 @@ bin/smoke prune
 Use `"there"` directly when a test needs a custom command:
 
 ```bash
-there run bash -lc 'cd /here && .agents/tests/provision/smoke.sh'
+there run .agents/tests/provision/smoke.sh
 ```

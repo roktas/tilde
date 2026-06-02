@@ -15,6 +15,9 @@ may contain private policy and modules.
     README.md
   macos/
     README.md
+  home/
+    README.md
+    AGENTS.md
   git/
     README.md
     config

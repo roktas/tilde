@@ -2,7 +2,7 @@
 
 ## Home Entrypoint
 
-Home entrypoint behavior covers the home router, bounded discovery from home, adoption, and preference-sensitive
+Home entrypoint behavior covers `~/AGENTS.md`, bounded discovery from home, adoption, and preference-sensitive
 home-management workflows.
 
 ### Data Repository Tilde Sections
@@ -11,14 +11,16 @@ Data repositories may provide Tilde-specific customization in existing Markdown 
 second-level `## Tilde` heading. Tilde treats that section as data-layer policy and instructions, not as control-plane
 specification.
 
-Valid locations:
+Valid locations for home-scope customization:
 
-- root `AGENTS.md` in public and private data repositories;
-- host `README.md` files for host-specific policy;
+- `home/AGENTS.md` in the private data repository;
+- `home/AGENTS.md` in the public data repository, when no private data repository is configured;
+- host `hosts/HOST/README.md` files in public and private data repositories for host-specific policy;
 - module `README.md` files for module-local policy.
 
-Do not put Tilde-specific data-layer policy in the home router. Root `README.md` files remain human-facing overviews
-unless a future spec explicitly says otherwise.
+Root `AGENTS.md` files in public and private data repositories are repository-scope instructions and repository identity
+files. Keep target-home layout and preference policy in the home entrypoint source above, not in data-repository root
+`AGENTS.md` files. Root `README.md` files remain human-facing overviews unless a future spec explicitly says otherwise.
 
 Inside `## Tilde`, use typed third-level headings:
 
@@ -37,12 +39,12 @@ Example:
 ### Command: adopt
 
 Secrets, credentials, license files, host-specific values, private endpoints, account identifiers, and uncertain private
-material belong in `home-` by default.
+material belong in the private data repository by default.
 
 ### Command: custom.sync-host
 
-Synchronize the matching host directory in `home-` with `~/.<host>` on the remote machine. Use the private sync skill.
-Never delete remote files by default.
+Synchronize the matching host directory in the private data repository with `~/.<host>` on the remote machine. Use the
+private sync skill. Never delete remote files by default.
 
 ### Layout: ~
 
@@ -57,9 +59,9 @@ Tilde section precedence is:
 
 ```text
 control-plane spec
-< public data root AGENTS.md
-< private data root AGENTS.md
-< host README.md
+< public home entrypoint source home/AGENTS.md
+< private home entrypoint source home/AGENTS.md
+< host hosts/HOST/README.md
 < module README.md
 < explicit user request
 ```
@@ -69,41 +71,56 @@ customization may add user policy and custom commands, but it must not weaken co
 proposal-first writes, bounded discovery, explicit destructive confirmation, and hiding internal commands from ordinary
 help.
 
-### Home Router
+Detailed evaluation, custom command, layout, and invalid-policy behavior lives in
+`references/specification/customization.md`.
 
-`assets/AGENTS.md` in the installed skill is the canonical home router template. Tilde deployment exposes it as
-`~/AGENTS.md` through a core managed link or generated short router, outside module frontmatter. Keep the router short.
-It routes agents; it does not carry detailed private preferences or full repository development policy.
+### Home Entrypoint
 
-The router should tell agents to:
+`~/AGENTS.md` is the user's home-directory agent instructions. Its primary scope is the home directory, independent of
+Tilde. It is the natural place for home layout facts, cleanup and organization preferences, and Tilde `## Tilde`
+customization.
 
-- Treat the current directory as the user's home workspace when loaded from `~`.
-- Resolve the installed Tilde skill from the resolved symlink target chain of `~/AGENTS.md` when possible. The normal
-  target is `~/.agents/skills/tilde/assets/AGENTS.md`.
-- Starting at the target file's parent directory, walk ancestors only until finding a directory that contains both
-  `SKILL.md` and `references/specification.md`. That directory is the installed Tilde skill.
-- Discover configured public/private home repositories from local Tilde state, router metadata, the current repository,
-  or explicit paths.
-- Discover sibling `home-` from `home` only when repository identity confirms it.
-- Avoid recursive home scans by default.
-- Read `home-/AGENTS.md` before preference-sensitive home commands when that file exists.
-- Require explicit confirmation for destructive actions and for repository writes.
+In steady state, Tilde should manage `~/AGENTS.md` as an ordinary module link from a data repository:
 
-Do not put personal home layout policy in the public router. Layout policy such as localized directory names, cleanup
-preferences, archive rules, and organization rules belongs in `home-/AGENTS.md` when private policy exists. Public
-behavior may use cheap runtime detection, such as XDG user dirs, but must not assume a personal layout.
+1. Prefer the private data repository's `home/AGENTS.md` when a private data repository is configured.
+2. Fall back to the public data repository's `home/AGENTS.md` when no private data repository is configured.
 
-### Core Managed Links
+The owning module is conventionally named `home` because it represents the target home directory. It should contain a
+short `README.md` with normal module frontmatter, such as:
 
-Tilde deployment has core managed links that are not owned by any root module. They are planned before modules and use
-the same confirmation and application semantics as normal link actions.
+```yaml
+---
+all:
+  links:
+    AGENTS.md: ~/AGENTS.md
+---
+```
 
-Core links:
+The linked `AGENTS.md` should start with a short scope sentence in neutral agent-instruction language, for example
+"Scope: this file applies to agent work in the user's home directory." It may include `## Tilde` sections for
+Tilde-specific customization.
 
-- installed skill `assets/AGENTS.md` -> `~/AGENTS.md`
+The old routing requirement is a discovery requirement, not a separate file kind. An agent that starts from `~` must be
+able to find user-wide instructions, the installed Tilde skill, and the configured public/private data repositories
+without recursively scanning the home directory. `~/AGENTS.md` satisfies that requirement as ordinary home-directory
+agent instructions: fallback copies may use `tilde.source` to identify the installed skill, while steady-state
+data-repository entrypoints can rely on local Tilde state, repository frontmatter, and the bounded discovery order
+below.
 
-Do not place the home router link in the `agents` module. The `agents` module owns shared `~/.agents` assets; the home
-router is a Tilde deployment invariant.
+`assets/AGENTS.md` in the installed skill is only the canonical fallback home entrypoint template. Tilde may generate it
+at `~/AGENTS.md` during first-run or when no data-repository home entrypoint source exists yet. The fallback must be
+minimal: frontmatter, a scope sentence, enough routing guidance to find the installed skill and data repositories, and a
+pointer to the selected data repository's `home/AGENTS.md` for version-tracked home instructions.
+
+Do not place `~/AGENTS.md` in the `agents` module. The `agents` module owns shared `~/.agents` assets; the `home` module
+owns the home-directory entrypoint.
+
+If `~/AGENTS.md` is missing, Tilde may propose creating a fallback or linking the available data-repository home
+entrypoint. If it is a fallback generated from `assets/AGENTS.md`, Tilde should propose replacing it with the
+data-repository `home/AGENTS.md` link once that source exists. If it is a legacy symlink to the installed fallback
+template, Tilde should propose replacing it with the data-repository link so edits do not dirty the installed skill
+repository. If the file is user-owned and not a managed/generated fallback, never overwrite it without explicit
+confirmation.
 
 ### Bounded Discovery
 
@@ -115,7 +132,7 @@ Repository resolution order:
 1. Explicit command arguments or options.
 2. The current repository's `AGENTS.md` frontmatter, when it declares a Tilde role.
 3. The local Tilde state config at `~/.local/state/tilde/config.yml`.
-4. The home router at `~/AGENTS.md`.
+4. The home entrypoint at `~/AGENTS.md`.
 5. Sibling discovery from an identified public or private repository, confirmed by `AGENTS.md` frontmatter.
 6. Default location discovery for `create`, `init`, and first-run `deploy` only.
 7. A clarification question.
@@ -141,14 +158,14 @@ With no explicit public path, `create` and `init` may use default-location disco
 creating or binding anything.
 
 With one positional repository argument, the argument is the public data repository. The private data repository may be
-discovered from frontmatter or a confirmed sibling path such as `home-`.
+discovered from frontmatter or a confirmed sibling path.
 
 With two positional repository arguments, the first is public and the second is private.
 
 Default repository locations are convenience only:
 
-1. `~/Dropbox/src/home` and `~/Dropbox/src/home-` when `~/Dropbox/src` exists.
-2. `~/.local/src/home` and `~/.local/src/home-` otherwise.
+1. Public/private repository paths under `~/Dropbox/src` when that directory exists.
+2. Public/private repository paths under `~/.local/src` otherwise.
 
 If a default path already exists, Tilde should inspect it for Tilde repository identity before using it. If it does not
 exist, `create` or `deploy` may offer to create it after confirmation.

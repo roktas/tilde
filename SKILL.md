@@ -19,7 +19,8 @@ executing nontrivial commands. Keep `SKILL.md` short; durable semantics belong i
 Read [Specification](references/specification.md) first, then load the narrowest routed file:
 
 - Command parsing and confirmation: [Commands](references/specification/commands.md).
-- Home entrypoint, data-layer customization, discovery, and adoption: [Home](references/specification/home.md).
+- Home entrypoint, data-repository Tilde sections, discovery, and adoption: [Home](references/specification/home.md).
+- Data-layer instruction evaluation, custom commands, and layout policy: [Customization](references/specification/customization.md).
 - Fresh-host, Dropbox, and remote setup: [Deployment](references/specification/deployment.md).
 - Module semantics: [Modules](references/specification/modules.md).
 - Model, state, paths, and skill lifecycle: [Model](references/specification/model.md).
@@ -55,24 +56,25 @@ present explicit choices with target, effect, and blast radius.
 - `update`: run the normal returning-user maintenance flow.
 - `repair`: retry failed install phases from recorded state.
 - `upgrade`: run broad package-manager upgrades after explicit confirmation.
-- `status`: show a short read-only deployment, home-router, and managed-surface summary. Keep it fast and state-first:
+- `status`: show a short read-only deployment, home-entrypoint, and managed-surface summary. Keep it fast and state-first:
   prefer `bin/status --format markdown` when available; do not regenerate plans, validate live links, query package
   managers, or call Dropbox by default. If full deployment state or caches are missing, warn that status is partial and
   suggest explicit `$tilde status discover`, `$tilde doctor`, or `$tilde deploy`.
 - `doctor`: run bounded diagnostics; this is not a whole-home audit.
-- `adopt`: inspect the requested app, config, package, or path and propose public `home` or private `home-` placement.
-- `clean`, `organize`: preference-sensitive home commands; read `home-/AGENTS.md` when present and otherwise stay
-  conservative. `clean` may include duplicate candidates; `organize` may include archive moves.
+- `adopt`: inspect the requested app, config, package, or path and propose public or private data-repository placement.
+- `clean`, `organize`: preference-sensitive home commands; read `~/AGENTS.md` and private policy when present and
+  otherwise stay conservative. `clean` may include duplicate candidates; `organize` may include archive moves.
 
 Internal semantic commands live under `internal.` with `.name` shorthand during Tilde development. Do not show them in
 ordinary help. Treat `plan` and `dry-run` as qualifiers on public commands, not as public commands.
 
 ## Discovery
 
-After deployment, home commands may start from `~`. Resolve the installed Tilde skill through the `~/AGENTS.md` symlink
-target chain when possible, normally `~/.agents/skills/tilde/assets/AGENTS.md`; walk upward from that target until
-finding this skill and its spec. Resolve public/private home repositories from local Tilde state, router metadata, the
-current repository, or explicit user-provided paths. Never search all of home just to find the repo.
+After deployment, home commands may start from `~`. Treat `~/AGENTS.md` as the user's home-directory instructions,
+normally linked from the private data repository's `home/AGENTS.md`, or from the public data repository's
+`home/AGENTS.md` when no private data repository is configured. Resolve the installed Tilde skill from local Tilde
+state, fallback entrypoint frontmatter, the current repository, or explicit user-provided paths. Never search all of
+home just to find the repo.
 
 Do not recursively scan `$HOME` by default. No `find $HOME`, `fd $HOME`, or equivalent broad search unless the user
 explicitly requests it after scope and cost are described. Use bounded discovery from modules, explicit paths, managed

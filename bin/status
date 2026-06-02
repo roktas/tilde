@@ -34,11 +34,11 @@ class Status
   end
 
   def cache_surface(path)
-    return { present: false, path: display_path(path) } unless path.file?
+    return {present: false, path: display_path(path)} unless path.file?
 
     cached_plan_summary(path, JSON.parse(path.read))
   rescue JSON::ParserError => e
-    { present: true, path: display_path(path), error: e.message }
+    {present: true, path: display_path(path), error: e.message}
   end
 
   def cached_plan_summary(path, data)
@@ -51,6 +51,7 @@ class Status
       head: data["head"],
       module_count: modules.length,
       links: Array(data.dig("core", "links_to_create")).length + action_count(modules, "links_to_create"),
+      home_entrypoints: Array(data.dig("core", "home_entrypoints_to_write")).length,
       copies: action_count(modules, "copies_to_create"),
       install_packages: action_count(modules, "packages_to_install"),
       refresh_packages: action_count(modules, "packages_to_refresh"),
@@ -72,7 +73,7 @@ class Status
       host_state: host_state_summary(host_state_path, state_frontmatter, state_body),
       caches: cache_summary,
       repositories: repository_summary(config),
-      router: router_summary
+      home_entrypoint: home_entrypoint_status
     }
     status[:warnings] = warnings(status)
     status
@@ -87,8 +88,8 @@ class Status
   end
 
   def config_summary(path, config)
-    return { present: false, path: display_path(path) } unless path.file?
-    return { present: true, path: display_path(path), error: config.fetch("_error") } if config_error?(config)
+    return {present: false, path: display_path(path)} unless path.file?
+    return {present: true, path: display_path(path), error: config.fetch("_error")} if config_error?(config)
 
     {
       present: true,
@@ -132,8 +133,8 @@ class Status
   end
 
   def host_state_summary(path, frontmatter, body)
-    return { present: false, path: display_path(path) } unless path.file?
-    return { present: true, path: display_path(path), error: frontmatter.fetch("_error") } if frontmatter.key?("_error")
+    return {present: false, path: display_path(path)} unless path.file?
+    return {present: true, path: display_path(path), error: frontmatter.fetch("_error")} if frontmatter.key?("_error")
 
     done = frontmatter.fetch("done", {}) || {}
     {
@@ -155,26 +156,31 @@ class Status
 
     text = link[:type] || "present"
     text += " -> `#{link[:target]}`" if link[:target]
+    text += ", #{link[:entrypoint]}" if link[:entrypoint]
+    text += ", legacy skill-template symlink" if link[:legacy_skill_symlink]
     text
   end
 
   def link_summary(path)
     path = expand_home(path)
     exists = path.exist? || path.symlink?
-    summary = { path: display_path(path), exists: }
+    summary = {path: display_path(path), exists:}
     return summary unless exists
 
     stat = path.lstat
     summary[:type] = link_type(stat)
     if stat.symlink?
-      summary[:target] = File.readlink(path)
-      summary[:resolved] = realpath_or_nil(path)
+      target = File.readlink(path)
+      resolved = realpath_or_nil(path)
+      summary[:target] = target.start_with?("/") ? display_path(target) : target
+      summary[:resolved] = display_path(resolved) if resolved
     end
+
     summary
   rescue Errno::ENOENT
-    { path: display_path(path), exists: false }
+    {path: display_path(path), exists: false}
   rescue SystemCallError => e
-    { path: display_path(path), exists:, error: e.message }
+    {path: display_path(path), exists:, error: e.message}
   end
 
   def link_type(stat)
@@ -202,7 +208,7 @@ class Status
     puts("## Deployment")
     puts("- Config: #{presence_line(status.dig(:config, :present), status.dig(:config, :path))}")
     puts("- Host state: #{presence_line(host_state[:present], host_state[:path])}")
-    puts("- Last apply date: `#{host_state[:date] || 'unknown'}`") if host_state[:present]
+    puts("- Last apply date: `#{host_state[:date] || "unknown"}`") if host_state[:present]
     puts("- Recorded modules: `#{host_state[:done_count]}`") if host_state[:present]
     puts("- Last plan cache: #{plan_cache}")
     puts("- Last apply cache: #{apply_cache}")
@@ -223,12 +229,14 @@ class Status
     puts("## Managed Surface")
     if last_plan[:present] && !last_plan[:error]
       puts("- Cached modules: `#{last_plan[:module_count]}`")
+      puts("- Cached home entrypoints: `#{last_plan[:home_entrypoints] || 0}`")
       puts("- Cached links: `#{last_plan[:links]}`")
       puts("- Cached copies: `#{last_plan[:copies]}`")
       puts("- Cached install packages: `#{last_plan[:install_packages]}`")
     else
       puts("- Cached surface unavailable. Fast status did not inspect module README files or live link targets.")
     end
+
     puts
   end
 
@@ -236,7 +244,7 @@ class Status
     puts_header(status)
     puts_deployment(status)
     puts_repositories(status)
-    puts_router(status)
+    puts_home(status)
     puts_managed_surface(status)
     puts_warnings(status)
   end
@@ -246,14 +254,16 @@ class Status
     status.fetch(:repositories).each_value do |repo|
       puts("- #{repo.fetch(:label)}: #{repo_line(repo)}")
     end
+
     puts
   end
 
-  def puts_router(status)
-    puts("## Router")
-    status.fetch(:router).each do |name, link|
+  def puts_home(status)
+    puts("## Home Entrypoint")
+    status.fetch(:home_entrypoint).each do |name, link|
       puts("- `#{name}`: #{link_line(link)}")
     end
+
     puts
   end
 
@@ -273,7 +283,7 @@ class Status
     _, yaml_text, body = text.split(/^---\s*$\n?/, 3)
     [YAML.safe_load(yaml_text, aliases: true, permitted_classes: [Date, Time]) || {}, body]
   rescue Psych::SyntaxError => e
-    [{ "_error" => e.message }, nil]
+    [{"_error" => e.message}, nil]
   end
 
   def read_yaml(path)
@@ -281,7 +291,7 @@ class Status
 
     YAML.safe_load(path.read, aliases: true, permitted_classes: [Date, Time]) || {}
   rescue Psych::SyntaxError => e
-    { "_error" => e.message }
+    {"_error" => e.message}
   end
 
   def realpath_or_nil(path)
@@ -296,7 +306,7 @@ class Status
 
     branch = repo[:branch] || "unknown branch"
     dirty = repo[:dirty] ? "dirty" : "clean"
-    "`#{repo[:path]}` `#{branch}` `#{repo[:head] || 'unknown'}`, #{dirty}"
+    "`#{repo[:path]}` `#{branch}` `#{repo[:head] || "unknown"}`, #{dirty}"
   end
 
   def repo_problem(repo)
@@ -309,7 +319,7 @@ class Status
   end
 
   def repo_summary(label, path)
-    return { label:, path: nil, exists: false, git: false } unless path
+    return {label:, path: nil, exists: false, git: false} unless path
 
     summary = {
       label:,
@@ -336,9 +346,9 @@ class Status
     }
   end
 
-  def router_summary
+  def home_entrypoint_status
     {
-      "~/AGENTS.md" => link_summary("~/AGENTS.md"),
+      "~/AGENTS.md" => home_entrypoint_summary("~/AGENTS.md"),
       "~/.agents" => link_summary("~/.agents"),
       "~/.agents/skills/tilde" => link_summary("~/.agents/skills/tilde"),
       "skill root" => {
@@ -349,20 +359,52 @@ class Status
     }
   end
 
+  def home_entrypoint_summary(path)
+    path = expand_home(path)
+    summary = link_summary(path.to_s)
+    return summary unless summary[:exists]
+
+    frontmatter, = read_frontmatter(path)
+    tilde = frontmatter["tilde"] if frontmatter.is_a?(Hash)
+    if tilde.is_a?(Hash) && tilde["source"] == "~/.agents/skills/tilde/assets/AGENTS.md"
+      summary[:entrypoint] = "fallback home-entrypoint"
+      summary[:source] = tilde["source"]
+    elsif tilde.is_a?(Hash) && tilde["protocol"] == "tilde/v1"
+      summary[:entrypoint] = "data-repository home-entrypoint"
+    end
+
+    summary[:legacy_skill_symlink] = legacy_skill_symlink?(path)
+    summary
+  end
+
+  def legacy_skill_symlink?(path)
+    path.symlink? && realpath_or_nil(path) == SKILL_ROOT.join("assets/AGENTS.md").to_s
+  end
+
   def warnings(status)
     warnings = []
     unless status.dig(:config, :present)
       warnings << "No local Tilde config was found; repository bindings are limited to explicit options."
     end
+
     warnings << "No host deployment state was found for `#{@host}`." unless status.dig(:host_state, :present)
     unless status.dig(:caches, :last_plan, :present)
-      warnings << "No cached plan was found; managed-surface counts require explicit " \
-                  "`$tilde status discover` or `$tilde doctor`."
+      warnings <<
+        "No cached plan was found; managed-surface counts require explicit " \
+          "`$tilde status discover` or `$tilde doctor`."
     end
+
     if partial?(status)
-      warnings << "Fast status is partial and did not regenerate plans, validate live links, " \
-                  "query packages, call Dropbox, or scan home."
+      warnings <<
+        "Fast status is partial and did not regenerate plans, validate live links, " \
+          "query packages, call Dropbox, or scan home."
     end
+
+    if status.dig(:home_entrypoint, "~/AGENTS.md", :legacy_skill_symlink)
+      warnings <<
+        "`~/AGENTS.md` points at the fallback skill template; deploy should replace it with a data-repository home entrypoint link."
+    end
+
     warnings
   end
 end
@@ -372,14 +414,16 @@ def main(argv)
     format: "markdown"
   }
 
-  OptionParser.new do |parser|
-    parser.banner = "Usage: status [options]"
-    parser.on("--format FORMAT", "Output format: json or markdown") { |value| options[:format] = value }
-    parser.on("--host HOST", "Host short name") { |value| options[:host] = value }
-    parser.on("--private PATH", "Private home repository path") { |value| options[:private] = value }
-    parser.on("--public PATH", "Public home repository path") { |value| options[:public] = value }
-    parser.on("--state-dir PATH", "Tilde state directory") { |value| options[:state_dir] = value }
-  end.parse!(argv)
+  OptionParser
+    .new do |parser|
+      parser.banner = "Usage: status [options]"
+      parser.on("--format FORMAT", "Output format: json or markdown") { |value| options[:format] = value }
+      parser.on("--host HOST", "Host short name") { |value| options[:host] = value }
+      parser.on("--private PATH", "Private home repository path") { |value| options[:private] = value }
+      parser.on("--public PATH", "Public home repository path") { |value| options[:public] = value }
+      parser.on("--state-dir PATH", "Tilde state directory") { |value| options[:state_dir] = value }
+    end
+    .parse!(argv)
 
   unless %w[json markdown].include?(options[:format])
     warn("Unsupported format: #{options[:format]}")

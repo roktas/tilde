@@ -1,5 +1,7 @@
 # Agent Development Guide
 
+Scope: this file applies to agent work in this repository.
+
 This repository contains the Tilde skill and control-plane helpers. It is intended to be installed as
 `~/.agents/skills/tilde` and to operate on separate public/private home data repositories.
 

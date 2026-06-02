@@ -2,6 +2,7 @@
 # frozen_string_literal: true
 
 require "date"
+require "digest"
 require "json"
 require "open3"
 require "optparse"
@@ -12,8 +13,8 @@ require "yaml"
 
 class Plan
   SKILL_ROOT = Pathname.new(__dir__).parent.expand_path.freeze
-  CORE_LINK_SOURCE = "assets/AGENTS.md"
-  CORE_LINK_TARGET = "~/AGENTS.md"
+  FALLBACK_ENTRYPOINT_SOURCE = "assets/AGENTS.md"
+  HOME_ENTRYPOINT_TARGET = "~/AGENTS.md"
   DEFAULT_PACKAGE_TYPE = {
     "linux" => "brew",
     "macos" => "brew",
@@ -41,12 +42,12 @@ class Plan
 
   def initialize(options)
     @allow_dirty = options.fetch(:allow_dirty)
-    @format      = options.fetch(:format)
-    @host        = options[:host] || short_hostname
-    @level       = options.fetch(:level)
-    @mode        = options.fetch(:mode)
-    @platform    = options[:platform] || detect_platform
-    @repo        = Pathname.new(options.fetch(:repo)).expand_path
+    @format = options.fetch(:format)
+    @host = options[:host] || short_hostname
+    @level = options.fetch(:level)
+    @mode = options.fetch(:mode)
+    @platform = options[:platform] || detect_platform
+    @repo = Pathname.new(options.fetch(:repo)).expand_path
   end
 
   def run
@@ -58,6 +59,8 @@ class Plan
 
     @head = git("rev-parse", "HEAD")
     @previous_state = previous_state
+
+    modules = planned_modules
 
     plan = {
       generated_at: Time.now.iso8601,
@@ -71,8 +74,8 @@ class Plan
       platform: @platform,
       state_path: state_path.to_s,
       previous_state: @previous_state,
-      core: core_plan,
-      modules: planned_modules
+      core: core_plan(modules),
+      modules:
     }
 
     @format == "markdown" ? puts_markdown(plan) : puts(JSON.pretty_generate(plan))
@@ -80,506 +83,567 @@ class Plan
 
   private
 
-    def active_config(frontmatter)
-      all      = normalize_map(frontmatter["all"])
-      platform = normalize_map(frontmatter[@platform])
+  def active_config(frontmatter)
+    all = normalize_map(frontmatter["all"])
+    platform = normalize_map(frontmatter[@platform])
 
-      merge_config(all, platform)
-    end
+    merge_config(all, platform)
+  end
 
-    def apply_like? = apply? || repair?
+  def apply_like? = apply? || repair?
 
-    def actions_skipped?(skipped) = skipped || !apply_like?
+  def actions_skipped?(skipped) = skipped || !apply_like?
 
-    def bash_blocks(body)
-      body.scan(/```(?:bash|sh)\s*\n(.*?)```/m).flatten.map(&:strip).reject(&:empty?)
-    end
+  def bash_blocks(body)
+    body.scan(/```(?:bash|sh)\s*\n(.*?)```/m).flatten.map(&:strip).reject(&:empty?)
+  end
 
-    def current_branch
-      git("branch", "--show-current")
-    rescue StandardError
-      nil
-    end
+  def current_branch
+    git("branch", "--show-current")
+  rescue StandardError
+    nil
+  end
 
-    def core_plan
+  def core_plan(modules)
+    {
+      links_to_create: [],
+      home_entrypoints_to_write: fallback_entrypoint_needed?(modules) ? fallback_entrypoints : []
+    }
+  end
+
+  def fallback_entrypoint_needed?(modules)
+    apply_like? && !home_entrypoint_linked_by_module?(modules) && !home_entrypoint_linked_by_companion?
+  end
+
+  def fallback_entrypoints
+    source_path = SKILL_ROOT.join(FALLBACK_ENTRYPOINT_SOURCE)
+    [
       {
-        links_to_create: apply_like? ? core_links : []
+        source: FALLBACK_ENTRYPOINT_SOURCE,
+        source_path: source_path.to_s,
+        target: HOME_ENTRYPOINT_TARGET,
+        source_sha256: Digest::SHA256.file(source_path).hexdigest,
+        strategy: "write-fallback-file"
       }
+    ]
+  end
+
+  def home_entrypoint_linked_by_module?(modules)
+    modules.any? do |mod|
+      mod[:home_entrypoint] || Array(mod[:links_to_create]).any? { |link| link[:target] == HOME_ENTRYPOINT_TARGET }
+    end
+  end
+
+  def home_entrypoint_linked_by_companion?
+    repo = companion_repo
+    return false unless repo
+
+    readme = repo.join("home", "README.md")
+    return false unless readme.file?
+
+    frontmatter, = frontmatter_and_body(readme)
+    home_entrypoint_declared?(active_config(frontmatter))
+  rescue StandardError
+    false
+  end
+
+  def detect_platform
+    host_os = RbConfig::CONFIG.fetch("host_os")
+
+    case host_os
+    when /darwin/i
+      "macos"
+    when /linux/i
+      "linux"
+    when /mswin|mingw|cygwin/i
+      "windows"
+    else
+      raise "Unsupported platform: #{host_os}"
+    end
+  end
+
+  def dirty?
+    !git("status", "--porcelain").empty?
+  end
+
+  def companion_repo
+    agents = @repo.join("AGENTS.md")
+    return nil unless agents.file?
+
+    frontmatter, = frontmatter_and_body(agents)
+    tilde = frontmatter["tilde"] if frontmatter.is_a?(Hash)
+    return nil unless tilde.is_a?(Hash)
+
+    key = case tilde["role"]
+    when "public"
+      "private"
+    when "private"
+      "public"
     end
 
-    def core_links
-      [
-        {
-          source: CORE_LINK_SOURCE,
-          source_path: SKILL_ROOT.join(CORE_LINK_SOURCE).to_s,
-          target: CORE_LINK_TARGET,
-          fan_in: false,
-          fan_in_source: nil,
-          fan_in_target: nil
-        }
-      ]
+    return nil unless key && tilde[key]
+
+    path = Pathname.new(tilde[key].to_s)
+    path = @repo.join(path).cleanpath unless path.absolute?
+    path.directory? ? path : nil
+  end
+
+  def frontmatter_and_body(path)
+    text = path.read
+    return [{}, text] unless text.start_with?("---\n")
+
+    _, yaml_text, body = text.split(/^---\s*$\n?/, 3)
+    [YAML.safe_load(yaml_text, aliases: true, permitted_classes: [Date, Time]) || {}, body || ""]
+  end
+
+  def git(*)
+    stdout, stderr, status = Open3.capture3("git", "-C", @repo.to_s, *)
+    raise stderr.strip unless status.success?
+
+    stdout.strip
+  end
+
+  def host_allowed?(config)
+    hosts = Array(config["hosts"]).map(&:to_s)
+    hosts.empty? || hosts.include?(@host)
+  end
+
+  def level_allowed?(level)
+    LEVELS.fetch(level) <= LEVELS.fetch(@level)
+  end
+
+  def merge_config(all, platform)
+    all.merge(platform) do |_key, old_value, new_value|
+      old_value.is_a?(Hash) && new_value.is_a?(Hash) ? old_value.merge(new_value) : new_value
     end
+  end
 
-    def detect_platform
-      host_os = RbConfig::CONFIG.fetch("host_os")
+  def module_applicable?(frontmatter, body)
+    return true if frontmatter.empty? || frontmatter.key?("all") || frontmatter.key?(@platform)
+    return true if body_platform_applicable?(body)
 
-      case host_os
-      when /darwin/i
-        "macos"
-      when /linux/i
-        "linux"
-      when /mswin|mingw|cygwin/i
-        "windows"
-      else
-        raise "Unsupported platform: #{host_os}"
-      end
+    platform_keys = DEFAULT_PACKAGE_TYPE.keys
+    !frontmatter.keys.intersect?(platform_keys)
+  end
+
+  def body_platform_applicable?(body)
+    platform_scopes(body).any? do |scope|
+      ["all", @platform].include?(scope.fetch(:platform))
     end
+  end
 
-    def dirty?
-      !git("status", "--porcelain").empty?
-    end
+  def module_level(config)
+    level = (config["level"] || "normal").to_s
+    raise "Unsupported level: #{level}" unless LEVELS.key?(level)
 
-    def frontmatter_and_body(path)
-      text = path.read
-      return [{}, text] unless text.start_with?("---\n")
+    level
+  end
 
-      _, yaml_text, body = text.split(/^---\s*$\n?/, 3)
-      [YAML.safe_load(yaml_text, aliases: true, permitted_classes: [Date, Time]) || {}, body || ""]
-    end
+  def validate_module_level(module_name, level)
+    raise "misc- must use level: extra" if module_name == "misc-" && level != "extra"
+  end
 
-    def git(*)
-      stdout, stderr, status = Open3.capture3("git", "-C", @repo.to_s, *)
-      raise stderr.strip unless status.success?
+  def module_dirs
+    @repo
+      .children
+      .select(&:directory?)
+      .reject { |path| ignored_root_dir?(path) }
+      .select { |path| path.join("README.md").file? }
+      .sort_by { |path| path.basename.to_s }
+  end
 
-      stdout.strip
-    end
+  def ignored_root_dir?(path)
+    name = path.basename.to_s
+    name.start_with?(".") || DEFAULT_PACKAGE_TYPE.key?(name) || platform_variant?(name)
+  end
 
-    def host_allowed?(config)
-      hosts = Array(config["hosts"]).map(&:to_s)
-      hosts.empty? || hosts.include?(@host)
-    end
+  def platform_variant?(name)
+    DEFAULT_PACKAGE_TYPE.keys.any? { |platform| name == "#{platform}-" }
+  end
 
-    def level_allowed?(level)
-      LEVELS.fetch(level) <= LEVELS.fetch(@level)
-    end
-
-    def merge_config(all, platform)
-      all.merge(platform) do |_key, old_value, new_value|
-        old_value.is_a?(Hash) && new_value.is_a?(Hash) ? old_value.merge(new_value) : new_value
-      end
-    end
-
-    def module_applicable?(frontmatter, body)
-      return true if frontmatter.empty? || frontmatter.key?("all") || frontmatter.key?(@platform)
-      return true if body_platform_applicable?(body)
-
-      platform_keys = DEFAULT_PACKAGE_TYPE.keys
-      !frontmatter.keys.intersect?(platform_keys)
-    end
-
-    def body_platform_applicable?(body)
-      platform_scopes(body).any? do |scope|
-        ["all", @platform].include?(scope.fetch(:platform))
-      end
-    end
-
-    def module_level(config)
-      level = (config["level"] || "normal").to_s
-      raise "Unsupported level: #{level}" unless LEVELS.key?(level)
-
-      level
-    end
-
-    def validate_module_level(module_name, level)
-      raise "misc- must use level: extra" if module_name == "misc-" && level != "extra"
-    end
-
-    def module_dirs
-      @repo.children
-        .select(&:directory?)
-        .reject { |path| ignored_root_dir?(path) }
-        .select { |path| path.join("README.md").file? }
-        .sort_by { |path| path.basename.to_s }
-    end
-
-    def ignored_root_dir?(path)
-      name = path.basename.to_s
-      name.start_with?(".") || DEFAULT_PACKAGE_TYPE.key?(name) || platform_variant?(name)
-    end
-
-    def platform_variant?(name)
-      DEFAULT_PACKAGE_TYPE.keys.any? { |platform| name == "#{platform}-" }
-    end
-
-    def normalize_copies(config, dir)
-      normalize_map(config["copies"]).map do |source, target|
-        {
-          source:,
-          source_path: source_path(dir, source),
-          target:
-        }
-      end
-    end
-
-    def normalize_links(config, dir)
-      normalize_map(config["links"]).flat_map do |source, targets|
-        normalize_link_targets(targets, source).flat_map do |target|
-          link_actions(dir, source, target)
-        end
-      end
-    end
-
-    def normalize_link_targets(value, source)
-      targets = value.is_a?(Array) ? value : [value]
-      raise "links target list must not be empty for #{source}" if targets.empty?
-
-      targets.map do |target|
-        raise "links target must be a string for #{source}" unless target.is_a?(String)
-
-        target
-      end
-    end
-
-    def link_actions(dir, source, target)
-      return [link_action(dir, source, target)] unless source.end_with?("/")
-
-      source_dir = Pathname.new(source_path(dir, source))
-      raise "Link fan-in source is not a directory: #{source}" unless source_dir.directory?
-
-      source_dir.children.sort_by { |child| child.basename.to_s }.map do |child|
-        child_source = File.join(source, child.basename.to_s)
-        child_target = File.join(target, child.basename.to_s)
-        link_action(dir, child_source, child_target, fan_in_metadata(source, target))
-      end
-    end
-
-    def link_action(dir, source, target, metadata = {})
+  def normalize_copies(config, dir)
+    normalize_map(config["copies"]).map do |source, target|
       {
         source:,
         source_path: source_path(dir, source),
-        target:,
-        fan_in: false,
-        fan_in_source: nil,
-        fan_in_target: nil
-      }.merge(metadata)
-    end
-
-    def fan_in_metadata(source, target)
-      {
-        fan_in: true,
-        fan_in_source: source,
-        fan_in_target: target
+        target:
       }
     end
+  end
 
-    def normalize_map(value)
-      value.is_a?(Hash) ? value : {}
-    end
-
-    def normalize_package(package)
-      value      = package.to_s
-      type, name = value.include?(":") ? value.split(":", 2) : [DEFAULT_PACKAGE_TYPE.fetch(@platform), value]
-      raise "Package type must not be empty: #{value}" if type.empty?
-      raise "Unsupported package type: #{type}" unless PACKAGE_TYPES.include?(type)
-      raise "Package name must not be empty: #{value}" if name.empty?
-
-      {
-        type:,
-        name:,
-        value: "#{type}:#{name}"
-      }
-    end
-
-    def normalize_packages(config)
-      return [] unless config.key?("packages")
-
-      normalize_sequence(config["packages"], "packages").map { |package| normalize_package(package) }
-    end
-
-    def normalize_sequence(value, key)
-      raise "#{key} must be a list" unless value.is_a?(Array)
-
-      value
-    end
-
-    def package_actions(packages, mode, skipped)
-      return [] if skipped
-      return [] unless package_mode?(mode)
-
-      packages
-    end
-
-    def package_mode?(mode)
-      mode == "apply" ? apply_like? : @mode == mode
-    end
-
-    def planned_module(dir)
-      readme = dir.join("README.md")
-      frontmatter, body = frontmatter_and_body(readme)
-      return nil unless module_applicable?(frontmatter, body)
-
-      config = active_config(frontmatter)
-      level = module_level(config)
-      module_name = dir.relative_path_from(@repo).to_s
-
-      validate_module_level(module_name, level)
-      return nil unless level_allowed?(level)
-      return nil unless host_allowed?(config)
-
-      skipped, skip_reason = skip_status(module_name)
-      actions_skipped = actions_skipped?(skipped)
-      packages = normalize_packages(config)
-
-      {
-        name: module_name,
-        readme: readme.to_s,
-        level:,
-        packages_to_install: package_actions(packages, "apply", skipped),
-        packages_to_refresh: package_actions(packages, "refresh", skipped),
-        packages_to_upgrade: package_actions(packages, "upgrade", skipped),
-        links_to_create: actions_skipped ? [] : normalize_links(config, dir),
-        copies_to_create: actions_skipped ? [] : normalize_copies(config, dir),
-        special_sections: section_actions(body, skipped),
-        skipped:,
-        skip_reason:,
-        virtual: !config.key?("packages")
-      }
-    end
-
-    def planned_modules
-      platform_dir = @repo.join(@platform)
-      platform_variant_dir = @repo.join("#{@platform}-")
-      dirs = []
-      dirs << platform_dir if platform_dir.join("README.md").file?
-      dirs << platform_variant_dir if platform_variant_dir.join("README.md").file?
-      dirs.concat(module_dirs.reject { |dir| [platform_dir, platform_variant_dir].include?(dir) })
-
-      dirs.filter_map { |dir| planned_module(dir) }
-    end
-
-    def puts_markdown(plan)
-      puts "# Provision Plan"
-      puts
-      puts "- repo: `#{plan[:repo]}`"
-      puts "- head: `#{plan[:head]}`"
-      puts "- branch: `#{plan[:branch]}`"
-      puts "- host: `#{plan[:host]}`"
-      puts "- level: `#{plan[:level]}`"
-      puts "- mode: `#{plan[:mode]}`"
-      puts "- platform: `#{plan[:platform]}`"
-      puts "- state: `#{plan[:state_path]}`"
-      puts
-      puts "## Core"
-      puts
-      puts_action_list("Links", plan.fetch(:core).fetch(:links_to_create)) do |link|
-        "`#{link[:source]}` -> `#{link[:target]}`"
+  def normalize_links(config, dir)
+    normalize_map(config["links"]).flat_map do |source, targets|
+      normalize_link_targets(targets, source).flat_map do |target|
+        link_actions(dir, source, target)
       end
+    end
+  end
 
-      plan[:modules].each do |mod|
-        puts "## #{mod[:name]}"
+  def normalize_link_targets(value, source)
+    targets = value.is_a?(Array) ? value : [value]
+    raise "links target list must not be empty for #{source}" if targets.empty?
+
+    targets.map do |target|
+      raise "links target must be a string for #{source}" unless target.is_a?(String)
+
+      target
+    end
+  end
+
+  def link_actions(dir, source, target)
+    return [link_action(dir, source, target)] unless source.end_with?("/")
+
+    source_dir = Pathname.new(source_path(dir, source))
+    raise "Link fan-in source is not a directory: #{source}" unless source_dir.directory?
+
+    source_dir.children.sort_by { |child| child.basename.to_s }.map do |child|
+      child_source = File.join(source, child.basename.to_s)
+      child_target = File.join(target, child.basename.to_s)
+      link_action(dir, child_source, child_target, fan_in_metadata(source, target))
+    end
+  end
+
+  def link_action(dir, source, target, metadata = {})
+    {
+      source:,
+      source_path: source_path(dir, source),
+      target:,
+      fan_in: false,
+      fan_in_source: nil,
+      fan_in_target: nil
+    }.merge(metadata)
+  end
+
+  def fan_in_metadata(source, target)
+    {
+      fan_in: true,
+      fan_in_source: source,
+      fan_in_target: target
+    }
+  end
+
+  def normalize_map(value)
+    value.is_a?(Hash) ? value : {}
+  end
+
+  def normalize_package(package)
+    value = package.to_s
+    type, name = value.include?(":") ? value.split(":", 2) : [DEFAULT_PACKAGE_TYPE.fetch(@platform), value]
+    raise "Package type must not be empty: #{value}" if type.empty?
+    raise "Unsupported package type: #{type}" unless PACKAGE_TYPES.include?(type)
+    raise "Package name must not be empty: #{value}" if name.empty?
+
+    {
+      type:,
+      name:,
+      value: "#{type}:#{name}"
+    }
+  end
+
+  def normalize_packages(config)
+    return [] unless config.key?("packages")
+
+    normalize_sequence(config["packages"], "packages").map { |package| normalize_package(package) }
+  end
+
+  def normalize_sequence(value, key)
+    raise "#{key} must be a list" unless value.is_a?(Array)
+
+    value
+  end
+
+  def package_actions(packages, mode, skipped)
+    return [] if skipped
+    return [] unless package_mode?(mode)
+
+    packages
+  end
+
+  def package_mode?(mode)
+    mode == "apply" ? apply_like? : @mode == mode
+  end
+
+  def planned_module(dir)
+    readme = dir.join("README.md")
+    frontmatter, body = frontmatter_and_body(readme)
+    return nil unless module_applicable?(frontmatter, body)
+
+    config = active_config(frontmatter)
+    level = module_level(config)
+    module_name = dir.relative_path_from(@repo).to_s
+
+    validate_module_level(module_name, level)
+    return nil unless level_allowed?(level)
+    return nil unless host_allowed?(config)
+
+    skipped, skip_reason = skip_status(module_name)
+    actions_skipped = actions_skipped?(skipped)
+    home_entrypoint = home_entrypoint_declared?(config)
+    links = actions_skipped ? [] : normalize_links(config, dir)
+    packages = normalize_packages(config)
+
+    {
+      name: module_name,
+      readme: readme.to_s,
+      level:,
+      home_entrypoint:,
+      packages_to_install: package_actions(packages, "apply", skipped),
+      packages_to_refresh: package_actions(packages, "refresh", skipped),
+      packages_to_upgrade: package_actions(packages, "upgrade", skipped),
+      links_to_create: links,
+      copies_to_create: actions_skipped ? [] : normalize_copies(config, dir),
+      special_sections: section_actions(body, skipped),
+      skipped:,
+      skip_reason:,
+      virtual: !config.key?("packages")
+    }
+  end
+
+  def planned_modules
+    platform_dir = @repo.join(@platform)
+    platform_variant_dir = @repo.join("#{@platform}-")
+    dirs = []
+    dirs << platform_dir if platform_dir.join("README.md").file?
+    dirs << platform_variant_dir if platform_variant_dir.join("README.md").file?
+    dirs.concat(module_dirs.reject { |dir| [platform_dir, platform_variant_dir].include?(dir) })
+
+    dirs.filter_map { |dir| planned_module(dir) }
+  end
+
+  def home_entrypoint_declared?(config)
+    normalize_map(config["links"]).any? do |_source, targets|
+      (targets.is_a?(Array) ? targets : [targets]).any? { |target| target.to_s == HOME_ENTRYPOINT_TARGET }
+    end
+  end
+
+  def puts_markdown(plan)
+    puts("# Provision Plan")
+    puts
+    puts("- repo: `#{plan[:repo]}`")
+    puts("- head: `#{plan[:head]}`")
+    puts("- branch: `#{plan[:branch]}`")
+    puts("- host: `#{plan[:host]}`")
+    puts("- level: `#{plan[:level]}`")
+    puts("- mode: `#{plan[:mode]}`")
+    puts("- platform: `#{plan[:platform]}`")
+    puts("- state: `#{plan[:state_path]}`")
+    puts
+    puts("## Core")
+    puts
+    puts_action_list("Home Entrypoints", plan.fetch(:core).fetch(:home_entrypoints_to_write)) do |entrypoint|
+      "`#{entrypoint[:source]}` => `#{entrypoint[:target]}` (#{entrypoint[:strategy]})"
+    end
+
+    puts_action_list("Links", plan.fetch(:core).fetch(:links_to_create)) do |link|
+      "`#{link[:source]}` -> `#{link[:target]}`"
+    end
+
+    plan[:modules].each do |mod|
+      puts("## #{mod[:name]}")
+      puts
+      if mod[:skipped]
+        puts("Skipped: #{mod[:skip_reason]}")
         puts
-        if mod[:skipped]
-          puts "Skipped: #{mod[:skip_reason]}"
-          puts
-          next
-        end
-
-        puts "Level: #{mod[:level]}"
-        puts "Virtual: #{mod[:virtual] ? 'yes' : 'no'}"
-        puts
-        puts_action_list("Links", mod[:links_to_create]) { |link| "`#{link[:source]}` -> `#{link[:target]}`" }
-        puts_action_list("Copies", mod[:copies_to_create]) { |copy| "`#{copy[:source]}` -> `#{copy[:target]}`" }
-        puts_action_list("Install Packages", mod[:packages_to_install]) { |pkg| "`#{pkg[:value]}`" }
-        puts_action_list("Refresh Packages", mod[:packages_to_refresh]) { |pkg| "`#{pkg[:value]}`" }
-        puts_action_list("Upgrade Packages", mod[:packages_to_upgrade]) { |pkg| "`#{pkg[:value]}`" }
+        next
       end
-    end
 
-    def puts_action_list(title, items)
-      puts "#{title}:"
-      items.each { |item| puts "- #{yield(item)}" }
-      puts "- none" if items.empty?
+      puts("Level: #{mod[:level]}")
+      puts("Virtual: #{mod[:virtual] ? "yes" : "no"}")
       puts
+      puts_action_list("Links", mod[:links_to_create]) { |link| "`#{link[:source]}` -> `#{link[:target]}`" }
+      puts_action_list("Copies", mod[:copies_to_create]) { |copy| "`#{copy[:source]}` -> `#{copy[:target]}`" }
+      puts_action_list("Install Packages", mod[:packages_to_install]) { |pkg| "`#{pkg[:value]}`" }
+      puts_action_list("Refresh Packages", mod[:packages_to_refresh]) { |pkg| "`#{pkg[:value]}`" }
+      puts_action_list("Upgrade Packages", mod[:packages_to_upgrade]) { |pkg| "`#{pkg[:value]}`" }
+    end
+  end
+
+  def puts_action_list(title, items)
+    puts("#{title}:")
+    items.each { |item| puts("- #{yield(item)}") }
+    puts("- none") if items.empty?
+    puts
+  end
+
+  def source_path(dir, source)
+    path = (dir + source).cleanpath
+    repo = @repo.to_s
+
+    raise "Source escapes repository: #{source}" unless path.to_s == repo || path.to_s.start_with?("#{repo}/")
+
+    path.to_s
+  end
+
+  def previous_state
+    return nil unless state_path.file?
+
+    frontmatter, body = frontmatter_and_body(state_path)
+    frontmatter.merge("body" => body.strip)
+  end
+
+  def apply?
+    @mode == "apply"
+  end
+
+  def refresh?
+    @mode == "refresh"
+  end
+
+  def repair?
+    @mode == "repair"
+  end
+
+  def upgrade?
+    @mode == "upgrade"
+  end
+
+  def short_hostname
+    hostname = `hostname -f 2>/dev/null`.strip
+    hostname = `hostname`.strip if hostname.empty?
+    hostname.sub(/\..*\z/, "")
+  end
+
+  def repair_skip_status(module_name)
+    return [true, "no previous state to repair"] unless @previous_state
+    return [true, "state head differs from current head"] unless @previous_state["head"] == @head
+
+    status = normalize_map(@previous_state["done"])[module_name]
+    return [false, nil] if status == "notok"
+
+    [true, "not marked notok at current head"]
+  end
+
+  def section_actions(body, skipped)
+    skipped ? {} : selected_special_sections(body)
+  end
+
+  def skip_status(module_name)
+    return [false, nil] if refresh? || upgrade?
+    return repair_skip_status(module_name) if repair?
+    return [false, nil] unless @previous_state
+    return [false, nil] unless @previous_state["head"] == @head
+
+    status = normalize_map(@previous_state["done"])[module_name]
+    return [true, "already #{status} at current head"] if %w[ok ignored].include?(status)
+
+    [false, nil]
+  end
+
+  def selected_special_sections(body)
+    sections = special_sections(body)
+    return sections.select { |name, _section| name == "Update" } if refresh? || upgrade?
+
+    sections.except("Update")
+  end
+
+  def special_sections(body)
+    sections = {}
+    collected_special_sections(body).each do |section|
+      existing = sections[section.fetch(:name)]
+      sections[section.fetch(:name)] = merge_section(existing, section.fetch(:content))
     end
 
-    def source_path(dir, source)
-      path = (dir + source).cleanpath
-      repo = @repo.to_s
+    sections
+  end
 
-      raise "Source escapes repository: #{source}" unless path.to_s == repo || path.to_s.start_with?("#{repo}/")
+  def collected_special_sections(body)
+    markdown_sections(body, 2).flat_map do |section|
+      name = special_heading(section.fetch(:title))
+      next [{name:, content: section.fetch(:content)}] if name
 
-      path.to_s
-    end
+      platform = platform_heading(section.fetch(:title))
+      next [] unless ["all", @platform].include?(platform)
 
-    def previous_state
-      return nil unless state_path.file?
+      markdown_sections(section.fetch(:content), 3).filter_map do |subsection|
+        subsection_name = special_heading(subsection.fetch(:title))
+        next unless subsection_name
 
-      frontmatter, body = frontmatter_and_body(state_path)
-      frontmatter.merge("body" => body.strip)
-    end
-
-    def apply?
-      @mode == "apply"
-    end
-
-    def refresh?
-      @mode == "refresh"
-    end
-
-    def repair?
-      @mode == "repair"
-    end
-
-    def upgrade?
-      @mode == "upgrade"
-    end
-
-    def short_hostname
-      hostname = `hostname -f 2>/dev/null`.strip
-      hostname = `hostname`.strip if hostname.empty?
-      hostname.sub(/\..*\z/, "")
-    end
-
-    def repair_skip_status(module_name)
-      return [true, "no previous state to repair"] unless @previous_state
-      return [true, "state head differs from current head"] unless @previous_state["head"] == @head
-
-      status = normalize_map(@previous_state["done"])[module_name]
-      return [false, nil] if status == "notok"
-
-      [true, "not marked notok at current head"]
-    end
-
-    def section_actions(body, skipped)
-      skipped ? {} : selected_special_sections(body)
-    end
-
-    def skip_status(module_name)
-      return [false, nil] if refresh? || upgrade?
-      return repair_skip_status(module_name) if repair?
-      return [false, nil] unless @previous_state
-      return [false, nil] unless @previous_state["head"] == @head
-
-      status = normalize_map(@previous_state["done"])[module_name]
-      return [true, "already #{status} at current head"] if %w[ok ignored].include?(status)
-
-      [false, nil]
-    end
-
-    def selected_special_sections(body)
-      sections = special_sections(body)
-      return sections.select { |name, _section| name == "Update" } if refresh? || upgrade?
-
-      sections.except("Update")
-    end
-
-    def special_sections(body)
-      sections = {}
-      collected_special_sections(body).each do |section|
-        existing = sections[section.fetch(:name)]
-        sections[section.fetch(:name)] = merge_section(existing, section.fetch(:content))
-      end
-      sections
-    end
-
-    def collected_special_sections(body)
-      markdown_sections(body, 2).flat_map do |section|
-        name = special_heading(section.fetch(:title))
-        next [{ name:, content: section.fetch(:content) }] if name
-
-        platform = platform_heading(section.fetch(:title))
-        next [] unless ["all", @platform].include?(platform)
-
-        markdown_sections(section.fetch(:content), 3).filter_map do |subsection|
-          subsection_name = special_heading(subsection.fetch(:title))
-          next unless subsection_name
-
-          { name: subsection_name, content: subsection.fetch(:content) }
-        end
-      end
-    end
-
-    def markdown_sections(body, level)
-      heading = "#" * level
-      body.scan(/^#{heading}\s+(.+?)\s*$\n(.*?)(?=^#{heading}\s+|\z)/m).map do |title, content|
-        { title: title.strip, content: content.strip }
-      end
-    end
-
-    def merge_section(existing, content)
-      body = [existing&.fetch(:body), content].compact.reject(&:empty?).join("\n\n")
-      blocks = bash_blocks(body)
-
-      {
-        body:,
-        bash_blocks: blocks,
-        bash_only: body.gsub(/```(?:bash|sh)\s*\n.*?```/m, "").strip.empty? && !blocks.empty?
-      }
-    end
-
-    def platform_scopes(body)
-      markdown_sections(body, 2).filter_map do |section|
-        platform = platform_heading(section.fetch(:title))
-        next unless platform
-
-        { platform:, content: section.fetch(:content) }
+        {name: subsection_name, content: subsection.fetch(:content)}
       end
     end
+  end
 
-    def platform_heading(title)
-      case title.strip.downcase
-      when "all", "all platforms"
-        "all"
-      when "linux"
-        "linux"
-      when "macos", "darwin"
-        "macos"
-      when "windows"
-        "windows"
-      end
+  def markdown_sections(body, level)
+    heading = "#" * level
+    body.scan(/^#{heading}\s+(.+?)\s*$\n(.*?)(?=^#{heading}\s+|\z)/m).map do |title, content|
+      {title: title.strip, content: content.strip}
     end
+  end
 
-    def special_heading(title)
-      SPECIAL_SECTIONS.find { |name| name == title }
+  def merge_section(existing, content)
+    body = [existing&.fetch(:body), content].compact.reject(&:empty?).join("\n\n")
+    blocks = bash_blocks(body)
+
+    {
+      body:,
+      bash_blocks: blocks,
+      bash_only: body.gsub(/```(?:bash|sh)\s*\n.*?```/m, "").strip.empty? && !blocks.empty?
+    }
+  end
+
+  def platform_scopes(body)
+    markdown_sections(body, 2).filter_map do |section|
+      platform = platform_heading(section.fetch(:title))
+      next unless platform
+
+      {platform:, content: section.fetch(:content)}
     end
+  end
 
-    def state_root
-      root = ENV.fetch("XDG_STATE_HOME", File.join(Dir.home, ".local", "state"))
-      Pathname.new(root).expand_path.join("tilde")
+  def platform_heading(title)
+    case title.strip.downcase
+    when "all", "all platforms"
+      "all"
+    when "linux"
+      "linux"
+    when "macos", "darwin"
+      "macos"
+    when "windows"
+      "windows"
     end
+  end
 
-    def state_path
-      state_root.join("hosts", @host, "state.md")
-    end
+  def special_heading(title)
+    SPECIAL_SECTIONS.find { |name| name == title }
+  end
 
-    def validate_platform!
-      return if DEFAULT_PACKAGE_TYPE.key?(@platform)
+  def state_root
+    root = ENV.fetch("XDG_STATE_HOME", File.join(Dir.home, ".local", "state"))
+    Pathname.new(root).expand_path.join("tilde")
+  end
 
-      raise "Unsupported platform: #{@platform}"
-    end
+  def state_path
+    state_root.join("hosts", @host, "state.md")
+  end
 
-    def validate_level!
-      return if LEVELS.key?(@level)
+  def validate_platform!
+    return if DEFAULT_PACKAGE_TYPE.key?(@platform)
 
-      raise "Unsupported level: #{@level}"
-    end
+    raise "Unsupported platform: #{@platform}"
+  end
 
-    def validate_mode!
-      return if MODES.include?(@mode)
+  def validate_level!
+    return if LEVELS.key?(@level)
 
-      raise "Unsupported mode: #{@mode}"
-    end
+    raise "Unsupported level: #{@level}"
+  end
 
-    def validate_repo!
-      raise "Not a directory: #{@repo}" unless @repo.directory?
-    end
+  def validate_mode!
+    return if MODES.include?(@mode)
 
-    def validate_worktree!
-      return if refresh? || upgrade?
-      return if @allow_dirty || !dirty?
+    raise "Unsupported mode: #{@mode}"
+  end
 
-      raise "Dirty worktree. Commit changes before provisioning, or use --allow-dirty for development only."
-    end
+  def validate_repo!
+    raise "Not a directory: #{@repo}" unless @repo.directory?
+  end
+
+  def validate_worktree!
+    return if refresh? || upgrade?
+    return if @allow_dirty || !dirty?
+
+    raise "Dirty worktree. Commit changes before provisioning, or use --allow-dirty for development only."
+  end
 end
 
 def main(argv)
@@ -591,27 +655,29 @@ def main(argv)
     repo: Dir.pwd
   }
 
-  OptionParser.new do |parser|
-    parser.banner = "Usage: plan [options]"
-    parser.on("--allow-dirty", "Allow planning with a dirty worktree") { options[:allow_dirty] = true }
-    parser.on("--format FORMAT", "Output format: json or markdown") { |value| options[:format] = value }
-    parser.on("--host HOST", "Host short name") { |value| options[:host] = value }
-    parser.on("--level LEVEL", "Level: minimal, normal, extra") { |value| options[:level] = value }
-    parser.on("--mode MODE", "Mode: apply, refresh, repair, upgrade") { |value| options[:mode] = value }
-    parser.on("--platform PLATFORM", "Platform: linux, macos, windows") { |value| options[:platform] = value }
-    parser.on("--repo PATH", "Repository root") { |value| options[:repo] = value }
-  end.parse!(argv)
+  OptionParser
+    .new do |parser|
+      parser.banner = "Usage: plan [options]"
+      parser.on("--allow-dirty", "Allow planning with a dirty worktree") { options[:allow_dirty] = true }
+      parser.on("--format FORMAT", "Output format: json or markdown") { |value| options[:format] = value }
+      parser.on("--host HOST", "Host short name") { |value| options[:host] = value }
+      parser.on("--level LEVEL", "Level: minimal, normal, extra") { |value| options[:level] = value }
+      parser.on("--mode MODE", "Mode: apply, refresh, repair, upgrade") { |value| options[:mode] = value }
+      parser.on("--platform PLATFORM", "Platform: linux, macos, windows") { |value| options[:platform] = value }
+      parser.on("--repo PATH", "Repository root") { |value| options[:repo] = value }
+    end
+    .parse!(argv)
 
   unless %w[json markdown].include?(options[:format])
-    warn "Unsupported format: #{options[:format]}"
+    warn("Unsupported format: #{options[:format]}")
     return 2
   end
 
   Plan.new(options).run
   0
 rescue StandardError => e
-  warn "error: #{e.message}"
+  warn("error: #{e.message}")
   1
 end
 
-exit main(ARGV) if $PROGRAM_NAME == __FILE__
+exit(main(ARGV)) if $PROGRAM_NAME == __FILE__

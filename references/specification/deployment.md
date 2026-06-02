@@ -12,9 +12,9 @@ inspect, diagnose, or update a remote host may accept a Git-like target syntax:
 
 ```text
 $tilde deploy ssh:<host>
-$tilde deploy ssh:<host> ~/Dropbox/src/home
-$tilde deploy ssh:<host> --public ~/src/home --private ~/src/home-
-$tilde init ssh:<host> --public ~/src/home
+$tilde deploy ssh:<host> PUBLIC_REPO
+$tilde deploy ssh:<host> --public PUBLIC_REPO --private PRIVATE_REPO
+$tilde init ssh:<host> --public PUBLIC_REPO
 $tilde update ssh:<host>
 $tilde doctor ssh:<host>
 $tilde status ssh:<host>
@@ -24,8 +24,8 @@ $tilde status ssh:<host>
 repositories by default. A future qualified syntax may distinguish controller-side sources from remote-side repository
 paths if needed.
 
-If no public/private arguments are given, Tilde resolves them from local state, router metadata, or the remote target's
-configured state according to the command's semantics.
+If no public/private arguments are given, Tilde resolves them from local state, home-entrypoint metadata, or the remote
+target's configured state according to the command's semantics.
 
 If the target machine already has a Dropbox-backed public data repository copy, use that copy. If the public repository
 is cloned to a target machine, the default location is `~/.local/src/<repo-name>`. The directory name is the
@@ -36,7 +36,7 @@ repository's own name; do not force it to `home`.
 When the Tilde skill is installed but no home repositories exist yet, the primary low-friction path is:
 
 ```text
-$tilde create ~/Dropbox/src/home
+$tilde create PUBLIC_REPO
 $tilde adopt zsh
 $tilde adopt git
 $tilde deploy dry-run
@@ -46,7 +46,7 @@ $tilde deploy
 `deploy` may also guide this scenario in one journey:
 
 ```text
-$tilde deploy ~/Dropbox/src/home
+$tilde deploy PUBLIC_REPO
 ```
 
 If the public path does not exist, `deploy` may propose a `create` phase. A newly created empty repository should not
@@ -56,19 +56,19 @@ adoption, or applying an empty/minimal desired state.
 When public/private home repositories already exist, the typical local flow is:
 
 ```text
-$tilde deploy ~/Dropbox/src/home
+$tilde deploy PUBLIC_REPO
 ```
 
 The equivalent explicit flow is:
 
 ```text
-$tilde init ~/Dropbox/src/home
+$tilde init PUBLIC_REPO
 $tilde deploy
 ```
 
 This flow identifies public/private repositories, validates repository roles, writes local Tilde state after
-confirmation, writes or updates the home router after confirmation, runs bootstrap/preflight when needed, generates a
-provisioning plan, and applies only after explicit confirmation.
+confirmation, writes or updates the home entrypoint after confirmation, runs bootstrap/preflight when needed, generates
+a provisioning plan, and applies only after explicit confirmation.
 
 ### Host Kinds
 
@@ -79,7 +79,7 @@ special provisioning semantics by itself; it only changes the likelihood that Dr
 | --- | --- | --- | --- | --- | --- |
 | `dropbox` | Target has a synced Dropbox copy of the public data repository. This is typical for personal physical machines when Dropbox quota and device limits allow it. | Run the installed skill bootstrap or the bootstrap helper available in the target context. | Use the target's Dropbox-backed public/private checkouts. | Target state under `~/.local/state/tilde` is authoritative; Dropbox may sync repository files, not runtime state. | local install or `remote-dropbox` |
 | `git` | Target does not use Dropbox for the public data repository. This covers VPS hosts and personal machines where Dropbox is unavailable or undesired. | Deliver bootstrap before cloning, usually over SSH or the public bootstrap URL when available. | Clone or fetch into `~/.local/src/<repo-name>`. | Write state on the target, then optionally mirror it under the controller's `~/.local/state/tilde/remotes/HOST/`. | `remote-git` or local git-backed install |
-| `self` | A user clones the public data repository or a fork and applies it on the same machine. | Prefer the public bootstrap URL when available; otherwise use the installed skill bootstrap after cloning. | User-chosen checkout, usually `~/.local/src/<repo-name>`. | Local deployment state stays under `~/.local/state/tilde`. Private `home-` behavior is optional. | local install |
+| `self` | A user clones the public data repository or a fork and applies it on the same machine. | Prefer the public bootstrap URL when available; otherwise use the installed skill bootstrap after cloning. | User-chosen checkout, usually `~/.local/src/<repo-name>`. | Local deployment state stays under `~/.local/state/tilde`. Private data repository behavior is optional. | local install |
 | `any` | The target has an existing repository path whose branch, `HEAD`, or dirty state is intentionally accepted. | Use the installed skill bootstrap unless the target lacks the skill, then deliver bootstrap first. | Use the provided path as-is. | Write state on the target and mirror it only when requested or useful for orchestration. | `remote-any` |
 
 Dropbox mode is valid only when the target machine's repository copy syncs through Dropbox. If a personal physical

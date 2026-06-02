@@ -29,14 +29,15 @@ state and existing managed external resources can both be brought current.
 
 ### Traverse
 
-- Plan core managed links first.
+- Plan the fallback home entrypoint first, but only when no active or companion data-repository module links
+  `~/AGENTS.md`.
 - Process the active platform module first.
 - Process the active platform variant second, when present.
 - Process active other root modules alphabetically.
 - Enter each module directory, read `README.md`, load frontmatter, and merge `all` with the active platform scope.
 - Interpret `HEAD`/deployment-state differences to produce the active provisioning set. Added packages, added links,
   removed links, and added copies matter. Removed packages and removed copies are not automatic removal actions.
-- In `apply`, run install and link phases.
+- In `apply`, run install and file/link phases.
 - In `refresh`, refresh packages and selected `Update` sections in managed scope only.
 - In `repair`, retry `notok` modules at the same `HEAD`.
 - In `upgrade`, run broad package-manager updates only after explicit confirmation.
@@ -57,9 +58,11 @@ state and existing managed external resources can both be brought current.
   frontmatter.
 - Run `Install` and `Postinstall` instructions when present.
 
-### Link
+### File And Link
 
 - Run `Prelink` or `Presetup` instructions when present.
+- Create or refresh the fallback home entrypoint when approved and no active or companion data-repository module links
+  `~/AGENTS.md`.
 - Create added symlinks.
 - Create added copies.
 - Remove a dropped link only if the target is a symlink into the active data repository or a dangling symlink. Do not
