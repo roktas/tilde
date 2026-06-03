@@ -34,7 +34,7 @@ Read this file first, then load only the narrowest file needed for the work:
 | Terms, roles, paths, state, and skill lifecycle | `references/specification/model.md` |
 | Module layout, README frontmatter, links, copies, and special sections | `references/specification/modules.md` |
 | Command parsing, help, status, internal commands, and confirmation rules | `references/specification/commands.md` |
-| Home entrypoint, data-repository Tilde sections, bounded discovery, and adoption | `references/specification/home.md` |
+| Home entrypoint, data-repository policy sections, bounded discovery, and adoption | `references/specification/home.md` |
 | Data-layer instruction evaluation, custom commands, layout policy, and invalid policy | `references/specification/customization.md` |
 | Fresh-host, create/init/deploy, Dropbox, bootstrap, and SSH/remote modes | `references/specification/deployment.md` |
 | Planning, traversal, ordering, install, link, and update behavior | `references/specification/provisioning.md` |

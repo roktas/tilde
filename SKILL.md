@@ -19,7 +19,7 @@ executing nontrivial commands. Keep `SKILL.md` short; durable semantics belong i
 Read [Specification](references/specification.md) first, then load the narrowest routed file:
 
 - Command parsing and confirmation: [Commands](references/specification/commands.md).
-- Home entrypoint, data-repository Tilde sections, discovery, and adoption: [Home](references/specification/home.md).
+- Home entrypoint, data-repository policy sections, discovery, and adoption: [Home](references/specification/home.md).
 - Data-layer instruction evaluation, custom commands, and layout policy: [Customization](references/specification/customization.md).
 - Fresh-host, Dropbox, and remote setup: [Deployment](references/specification/deployment.md).
 - Module semantics: [Modules](references/specification/modules.md).

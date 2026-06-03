@@ -5,11 +5,10 @@
 Home entrypoint behavior covers `~/AGENTS.md`, bounded discovery from home, adoption, and preference-sensitive
 home-management workflows.
 
-### Data Repository Tilde Sections
+### Home Policy Sections
 
-Data repositories may provide Tilde-specific customization in existing Markdown bodies. The canonical anchor is a
-second-level `## Tilde` heading. Tilde treats that section as data-layer policy and instructions, not as control-plane
-specification.
+Data repositories may provide home policy and command customization in existing Markdown bodies. Tilde treats these
+sections as data-layer policy and instructions, not as control-plane specification.
 
 Valid locations for home-scope customization:
 
@@ -22,40 +21,43 @@ Root `AGENTS.md` files in public and private data repositories are repository-sc
 files. Keep target-home layout and preference policy in the home entrypoint source above, not in data-repository root
 `AGENTS.md` files. Root `README.md` files remain human-facing overviews unless a future spec explicitly says otherwise.
 
-Inside `## Tilde`, use typed third-level headings:
+Use these second-level sections:
 
-- `### Command: NAME`: instructions for a public command such as `adopt`, `clean`, or `deploy`, or for a custom command
-  such as `custom.sync-host`. Data repositories must not define or override `internal.*` commands.
-- `### Layout: PATH`: home or workspace layout facts for bounded discovery and preference-sensitive commands. `PATH`
-  should be `~` or a `~`-relative path such as `~/Dropbox`.
+- `## Operations`: command-specific policy. Third-level headings are public command names such as `### adopt`,
+  `### clean`, and `### deploy`, or custom command names such as `### custom.sync-host`. Data repositories must not
+  define or override `internal.*` commands.
+- `## Layout`: home or workspace layout facts for bounded discovery and preference-sensitive commands. Use third-level
+  headings for specific paths when useful, such as ``### `~/Dropbox` ``. Free text and lists directly under `## Layout`
+  apply to that file's scope.
 
-Free text directly under `## Tilde` applies to all Tilde commands for that file's scope.
+Free text outside these sections remains ordinary agent instruction text. It may still apply to Tilde work through the
+normal instruction stack, but it is not command-specific data-layer customization.
 
 Example:
 
 ```markdown
-## Tilde
+## Layout
 
-### Command: adopt
+Use runtime XDG user dirs for localized desktop directories. Do not infer aggressive cleanup rules from public data.
+
+### `~/Dropbox`
+
+Source checkouts live under `~/Dropbox/src`.
+
+## Operations
+
+### adopt
 
 Secrets, credentials, license files, host-specific values, private endpoints, account identifiers, and uncertain private
 material belong in the private data repository by default.
 
-### Command: custom.sync-host
+### custom.sync-host
 
 Synchronize the matching host directory in the private data repository with `~/.<host>` on the remote machine. Use the
 private sync skill. Never delete remote files by default.
-
-### Layout: ~
-
-Use runtime XDG user dirs for localized desktop directories. Do not infer aggressive cleanup rules from public data.
-
-### Layout: ~/Dropbox
-
-Source checkouts live under `~/Dropbox/src`.
 ```
 
-Tilde section precedence is:
+Home policy precedence is:
 
 ```text
 control-plane spec
@@ -66,7 +68,7 @@ control-plane spec
 < explicit user request
 ```
 
-More specific `Layout:` sections override or refine broader layout sections for the matching path. Data-layer
+More specific layout sections override or refine broader layout instructions for the matching path. Data-layer
 customization may add user policy and custom commands, but it must not weaken control-plane safety rules such as
 proposal-first writes, bounded discovery, explicit destructive confirmation, and hiding internal commands from ordinary
 help.
@@ -77,7 +79,7 @@ Detailed evaluation, custom command, layout, and invalid-policy behavior lives i
 ### Home Entrypoint
 
 `~/AGENTS.md` is the user's home-directory agent instructions. Its primary scope is the home directory, independent of
-Tilde. It is the natural place for home layout facts, cleanup and organization preferences, and Tilde `## Tilde`
+Tilde. It is the natural place for home layout facts, cleanup and organization preferences, and `## Operations`
 customization.
 
 In steady state, Tilde should manage `~/AGENTS.md` as an ordinary module link from a data repository:
@@ -97,8 +99,8 @@ all:
 ```
 
 The linked `AGENTS.md` should start with a short scope sentence in neutral agent-instruction language, for example
-"Scope: this file applies to agent work in the user's home directory." It may include `## Tilde` sections for
-Tilde-specific customization.
+"Scope: this file applies to agent work in the user's home directory." It may include `## Layout` and `## Operations`
+sections for home policy and command customization.
 
 The old routing requirement is a discovery requirement, not a separate file kind. An agent that starts from `~` must be
 able to find user-wide instructions, the installed Tilde skill, and the configured public/private data repositories
