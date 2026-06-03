@@ -31,23 +31,81 @@ all:
 
 ## Quick Start
 
+### New Data Repositories
+
 For a new user who has the Tilde skill installed but no home data repositories yet:
 
 ```text
-$tilde create PUBLIC_REPO
+$tilde create
 $tilde adopt zsh
 $tilde adopt git
 $tilde deploy dry-run
 $tilde deploy
 ```
 
+With no path, Tilde proposes the conventional public/private pair under `~/Dropbox/src` when available, otherwise under
+`~/.local/src`.
+
+### Existing Data Repositories
+
 For an existing public/private home repository pair:
 
 ```text
-$tilde init PUBLIC_REPO
+$tilde init
 $tilde deploy
 $tilde update
 ```
+
+Use explicit paths when the repositories do not follow the default convention:
+
+```text
+$tilde init PUBLIC_REPO PRIVATE_REPO
+```
+
+### Update An Existing Deployment
+
+After a host has already been deployed, reconcile changed desired state and refresh managed external resources:
+
+```text
+$tilde update
+```
+
+For a remote host:
+
+```text
+$tilde update ssh:<host>
+```
+
+Use `dry-run` or `plan-only` first when you want the proposal without applying it:
+
+```text
+$tilde update dry-run
+$tilde update ssh:<host> dry-run
+```
+
+### Adopt New State After Deployment
+
+When you start using a new app or want Tilde to manage an existing config or path, adopt it into the data repositories,
+then update the deployed host:
+
+```text
+$tilde adopt APP_OR_PATH
+$tilde update dry-run
+$tilde update
+```
+
+To apply the same accepted desired-state change to an already deployed remote host:
+
+```text
+$tilde adopt APP_OR_PATH
+$tilde update ssh:<host> dry-run
+$tilde update ssh:<host>
+```
+
+`adopt` inspects the requested subject and proposes public/private data-repository placement before writing. The update
+step applies the accepted desired-state change to the target host.
+
+### Remote Host
 
 For a remote host:
 
@@ -56,6 +114,43 @@ $tilde deploy ssh:<host>
 $tilde status ssh:<host>
 $tilde doctor ssh:<host>
 ```
+
+### Remote Git VPS
+
+For a minimal VPS or other remote host without Dropbox, deploy over Git with only the public data repository:
+
+```text
+$tilde deploy ssh:<host> --public PUBLIC_REPO
+```
+
+Add the private data repository when private modules or policy should be installed on that host:
+
+```text
+$tilde deploy ssh:<host> --public PUBLIC_REPO --private PRIVATE_REPO
+```
+
+Tilde clones or fetches the selected repositories on the target, normally under `~/.local/src/<repo-name>`, then writes
+runtime state on the target under `~/.local/state/tilde`.
+
+### Remote Dropbox Host
+
+For a new Dropbox-backed machine reachable over SSH, first install and link Dropbox on the target and wait until the
+public/private data repositories are synced there. If local or target Tilde state already identifies the repositories,
+or they follow the default convention, run:
+
+```text
+$tilde deploy ssh:<host>
+```
+
+Use explicit controller-side repository paths when discovery is ambiguous:
+
+```text
+$tilde deploy ssh:<host> --public PUBLIC_REPO --private PRIVATE_REPO
+```
+
+During `remote-dropbox`, Tilde must use the target machine's Dropbox-synced public/private checkouts for planning and
+installation, not clone a second checkout and not treat controller-side paths as remote paths. If no private data
+repository is configured, omit `--private PRIVATE_REPO`.
 
 Bare `$tilde` means `help`.
 
@@ -95,7 +190,7 @@ that file from a version-tracked data repository source:
 The public/private repository root `AGENTS.md` files are for repository identity and repository-scope agent
 instructions, not target-home layout policy.
 
-Data-layer customization uses a `## Tilde` section in existing Markdown files. Tilde treats this section as user policy
+Data-layer customization uses ordinary Markdown sections in existing files. Tilde treats these sections as user policy
 and instructions, not as control-plane specification.
 
 Valid locations are:
@@ -104,11 +199,11 @@ Valid locations are:
 - host `hosts/HOST/README.md` files for host-specific policy;
 - module `README.md` files for module-local policy.
 
-Inside `## Tilde`, use typed third-level headings:
+Use `## Layout` for home or workspace layout facts used by bounded discovery and preference-sensitive commands. Use
+free text under the section, plus optional third-level headings for specific `~`-relative paths.
 
-- `### Command: NAME` for public commands such as `adopt`, `clean`, or `deploy`, or for custom commands such as
-  `custom.sync-host`;
-- `### Layout: PATH` for home or workspace layout facts used by bounded discovery and preference-sensitive commands.
+Use `## Operations` for command-specific policy. Third-level headings are public command names such as `### adopt`,
+`### clean`, or `### deploy`, or custom command names such as `### custom.sync-host`.
 
 Data repositories must not define or override `internal.*` commands. Customization also cannot weaken safety rules such
 as proposal-first writes, bounded discovery, explicit destructive confirmation, or hiding internal commands from
@@ -119,24 +214,24 @@ Custom commands such as `custom.sync-host` are invoked by exact command name, fo
 resolved data-repository instructions when that custom command exists.
 
 ```markdown
-## Tilde
-
-### Command: adopt
-
-Private material goes to the private data repository by default.
-
-### Command: custom.sync-host
-
-Synchronize the matching host directory in the private data repository with `~/.<host>` on the remote machine. Never
-delete remote files by default.
-
-### Layout: ~
+## Layout
 
 Use runtime XDG user dirs for localized desktop directories.
 
-### Layout: ~/Dropbox
+### `~/Dropbox`
 
 Source checkouts live under `~/Dropbox/src`.
+
+## Operations
+
+### adopt
+
+Private material goes to the private data repository by default.
+
+### custom.sync-host
+
+Synchronize the matching host directory in the private data repository with `~/.<host>` on the remote machine. Never
+delete remote files by default.
 ```
 
 Tilde applies data-layer instructions from broad to narrow:
@@ -217,6 +312,16 @@ applying it.
 | `status` | Show a short deployment, home-entrypoint, and managed-surface summary. |
 | `update` | Reconcile desired state, then refresh managed external resources. |
 | `upgrade` | Run broad package-manager upgrades after explicit confirmation. |
+
+Example prompts shown by help:
+
+```text
+$tilde deploy
+$tilde deploy ssh:<host>
+$tilde deploy ssh:<host> --public PUBLIC_REPO
+$tilde adopt APP_OR_PATH
+$tilde update dry-run
+```
 
 `status` is intentionally fast and state-first. It reads local Tilde state, cached plan/apply summaries, configured
 repository summaries, and home-entrypoint facts. If deployment state or caches are missing, it returns a partial summary and

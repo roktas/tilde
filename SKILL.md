@@ -1,6 +1,6 @@
 ---
 name: tilde
-description: Use for Tilde deployment, provisioning, and home-management work. Trigger for `$tilde ...`, `~ ...`, messages whose first word is `tilde`, or requests to create, initialize, deploy, update, diagnose managed state, adopt app/config files, or work with Tilde home behavior.
+description: Use for Tilde deployment, provisioning, and home-management work. Trigger for `$tilde ...`, `~ ...`, messages whose first word is `tilde`, or requests to create, initialize, deploy, update, diagnose managed state, adopt app/config files, customize data-layer policy, or work with Tilde home behavior.
 ---
 
 # Tilde
@@ -38,14 +38,15 @@ introduce a separate command-scope model.
 Bare `$tilde` means `help`. It is read-only and must behave like `$tilde help`.
 
 `$tilde help` prints the public command inventory as a GitHub-flavored Markdown table with `Command` and `Action`
-columns, then shows the general prompt format, detailed-help form, and bare-command default. `$tilde help COMMAND`
-shows only that public command. If `COMMAND` is unknown or internal, say so and then show the public command table.
-Prefer `bin/help --format markdown` when available for bare `$tilde` and `$tilde help`. Present the output as rendered Markdown (GFM table, etc.), not as raw code-block text.
+columns, then shows the general prompt format, detailed-help form, bare-command default, and a short example prompt
+section. `$tilde help COMMAND` shows only that public command. If `COMMAND` is unknown or internal, say so and then show
+the public command table. Prefer `bin/help --format markdown` when available for bare `$tilde` and `$tilde help`.
+Present the output as rendered Markdown (GFM table, etc.), not as raw code-block text.
 
-Use proposal-first behavior for writes, moves, removals, repository edits, package changes, and remote-host actions.
-Prefer structured confirmation and choice UI over raw prompts such as `[Y/n]`. In Codex, use available structured
-user-input or AFALA-style interaction; in other agents, use the closest native equivalent. If only text is available,
-present explicit choices with target, effect, and blast radius.
+Use proposal-first behavior for writes, moves, removals, repository edits, package changes, home-entrypoint writes, state
+writes, and remote-host actions. Prefer structured confirmation and choice UI over raw prompts such as `[Y/n]`. In
+Codex, use available structured user-input or AFALA-style interaction; in other agents, use the closest native
+equivalent. If only text is available, present explicit choices with target, effect, and blast radius.
 
 ## Commands
 
@@ -68,6 +69,19 @@ present explicit choices with target, effect, and blast radius.
 Internal semantic commands live under `internal.` with `.name` shorthand during Tilde development. Do not show them in
 ordinary help. Treat `plan` and `dry-run` as qualifiers on public commands, not as public commands.
 
+## Common Prompt Shapes
+
+- `$tilde adopt APP_OR_PATH`: propose public/private data-repository placement for a new app, config, package, or
+  explicit path.
+- `$tilde deploy`: local/default discovery.
+- `$tilde deploy ssh:<host>`: remote discovery; use Dropbox-backed target checkouts when present.
+- `$tilde deploy ssh:<host> --public PUBLIC_REPO`: minimal `remote-git` VPS deployment.
+- `$tilde deploy ssh:<host> --public PUBLIC_REPO --private PRIVATE_REPO`: remote deployment with private modules and
+  policy.
+- `$tilde update`: update an already deployed local host.
+- `$tilde update ssh:<host>`: update an already deployed remote host.
+- Add `dry-run` or `plan-only` when the user wants the proposal without applying it.
+
 ## Discovery
 
 After deployment, home commands may start from `~`. Treat `~/AGENTS.md` as the user's home-directory instructions,
@@ -79,6 +93,13 @@ home just to find the repo.
 Do not recursively scan `$HOME` by default. No `find $HOME`, `fd $HOME`, or equivalent broad search unless the user
 explicitly requests it after scope and cost are described. Use bounded discovery from modules, explicit paths, managed
 targets, cheap XDG/home metadata, relevant app/config locations, and cheap package/app metadata.
+
+## Data-Layer Policy
+
+For custom commands or preference-sensitive home policy, read the Home and Customization specs. `home/AGENTS.md` owns
+target-home policy; public/private root `AGENTS.md` files are repository-scope only. Data-layer policy uses `## Layout`
+and `## Operations` sections. Ordinary text remains normal agent instructions, but data-layer policy cannot weaken
+control-plane safety rules.
 
 ## Deployment
 

@@ -20,6 +20,14 @@ readonly -a COMMANDS=(
 	'upgrade|Run broad package-manager upgrades after explicit confirmation.'
 )
 
+readonly -a EXAMPLES=(
+	'$tilde deploy|Discover local repositories and deploy this host.'
+	'$tilde deploy ssh:<host>|Deploy a remote host using target discovery.'
+	'$tilde deploy ssh:<host> --public PUBLIC_REPO|Deploy a Git-backed VPS with the public data repository.'
+	'$tilde adopt APP_OR_PATH|Propose adopting a new app, config, package, or path.'
+	'$tilde update dry-run|Preview the returning-user update flow.'
+)
+
 abort() {
 	warn "E: $*"
 	exit 2
@@ -61,7 +69,7 @@ usage_suffix_for() {
 		printf '%s\n' ' [public-repo] [private-repo]'
 		;;
 	deploy)
-		printf '%s\n' ' [ssh:<host>] [dry-run|plan-only]'
+		printf '%s\n' ' [ssh:<host>] [--public PUBLIC_REPO] [--private PRIVATE_REPO] [dry-run|plan-only]'
 		;;
 	doctor | status)
 		printf '%s\n' ' [ssh:<host>]'
@@ -72,7 +80,10 @@ usage_suffix_for() {
 	init)
 		printf '%s\n' ' [public-repo] [private-repo]'
 		;;
-	repair | update)
+	update)
+		printf '%s\n' ' [ssh:<host>] [dry-run|plan-only]'
+		;;
+	repair)
 		printf '%s\n' ' [dry-run|plan-only]'
 		;;
 	upgrade)
@@ -105,6 +116,7 @@ print_command_help() {
 }
 
 print_help() {
+	local example
 	local item
 	local name
 
@@ -120,6 +132,14 @@ print_help() {
 	printf '\n'
 	printf 'Detailed command help: `$tilde help <command>`\n'
 	printf 'Bare `$tilde` means `help`.\n'
+	printf '\n'
+	printf 'Example prompts:\n\n'
+	printf '| Prompt | Intent |\n'
+	printf '| --- | --- |\n'
+
+	for example in "${EXAMPLES[@]}"; do
+		printf '| `%s` | %s |\n' "${example%%|*}" "${example#*|}"
+	done
 }
 
 usage() {

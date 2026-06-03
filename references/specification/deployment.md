@@ -24,6 +24,13 @@ $tilde status ssh:<host>
 repositories by default. A future qualified syntax may distinguish controller-side sources from remote-side repository
 paths if needed.
 
+For `remote-dropbox`, controller-side public/private arguments are identity and discovery inputs, not target paths. The
+agent must inspect the remote target and use the target's Dropbox-synced public/private repository checkouts for
+planning and installation. Do not interpret a controller-side `--private` value as a remote filesystem path. Instead,
+match the target private checkout through repository identity frontmatter, target-local Tilde state, the public
+checkout's private pointer interpreted relative to the target checkout, the target home entrypoint, or confirmed sibling
+discovery.
+
 If no public/private arguments are given, Tilde resolves them from local state, home-entrypoint metadata, or the remote
 target's configured state according to the command's semantics.
 
@@ -31,12 +38,22 @@ If the target machine already has a Dropbox-backed public data repository copy, 
 is cloned to a target machine, the default location is `~/.local/src/<repo-name>`. The directory name is the
 repository's own name; do not force it to `home`.
 
+For `remote-git`, a public data repository is required. The private data repository is optional: include it when it is
+configured by controller state, public repository frontmatter, or an explicit `--private PRIVATE_REPO`; otherwise run a
+public-only deployment. When private is included, clone or fetch it on the target alongside the public repository,
+normally under `~/.local/src/<private-repo-name>`.
+
+If a private data repository is configured but the target private checkout is missing, unreadable, not synced, or does
+not confirm its private role, stop before normal install and guide the user to sync or initialize the private checkout.
+Continue without a private checkout only when the user has no private data repository configured or explicitly confirms
+a public-only deployment.
+
 ### User Scenarios
 
 When the Tilde skill is installed but no home repositories exist yet, the primary low-friction path is:
 
 ```text
-$tilde create PUBLIC_REPO
+$tilde create
 $tilde adopt zsh
 $tilde adopt git
 $tilde deploy dry-run
@@ -46,29 +63,80 @@ $tilde deploy
 `deploy` may also guide this scenario in one journey:
 
 ```text
-$tilde deploy PUBLIC_REPO
+$tilde deploy
 ```
 
-If the public path does not exist, `deploy` may propose a `create` phase. A newly created empty repository should not
-force immediate provisioning. Offer clear choices such as finishing initialization, running bootstrap checks, starting
-adoption, or applying an empty/minimal desired state.
+With no explicit repository path, `create` and first-run `deploy` use default-location discovery: prefer the
+conventional `home`/`home-` public/private pair under `~/Dropbox/src`, then under `~/.local/src`. If the public path
+does not exist, `deploy` may propose a `create` phase. A newly created empty repository should not force immediate
+provisioning. Offer clear choices such as finishing initialization, running bootstrap checks, starting adoption, or
+applying an empty/minimal desired state.
 
 When public/private home repositories already exist, the typical local flow is:
 
 ```text
-$tilde deploy PUBLIC_REPO
+$tilde deploy
 ```
 
 The equivalent explicit flow is:
 
 ```text
-$tilde init PUBLIC_REPO
+$tilde init
 $tilde deploy
 ```
 
 This flow identifies public/private repositories, validates repository roles, writes local Tilde state after
 confirmation, writes or updates the home entrypoint after confirmation, runs bootstrap/preflight when needed, generates
 a provisioning plan, and applies only after explicit confirmation.
+
+After a host has already been deployed, the normal returning-user flow is:
+
+```text
+$tilde update
+```
+
+For a remote host:
+
+```text
+$tilde update ssh:<host>
+```
+
+Use `update dry-run` or `update plan-only` when the user wants the returning-user proposal without applying it.
+
+`update` reconciles desired state, then refreshes managed external resources. It is equivalent to the public
+returning-user flow of `internal.install` followed by `internal.refresh`, after confirmation. It is not a broad
+package-manager upgrade; use `upgrade` only when the user explicitly requests global or package-manager-wide upgrades.
+
+After accepting an adoption proposal for a new app, config, package, or explicit path, apply the changed desired state
+through the returning-user update flow:
+
+```text
+$tilde adopt APP_OR_PATH
+$tilde update dry-run
+$tilde update
+```
+
+To apply the same accepted desired-state change to a remote host that has already been deployed:
+
+```text
+$tilde adopt APP_OR_PATH
+$tilde update ssh:<host> dry-run
+$tilde update ssh:<host>
+```
+
+`adopt` is a data-repository operation; `update` applies the accepted desired-state change to the selected target host.
+
+For a minimal VPS or other remote host without Dropbox, use `remote-git`:
+
+```text
+$tilde deploy ssh:<host> --public PUBLIC_REPO
+```
+
+Add the private data repository only when private modules or policy should be installed on that host:
+
+```text
+$tilde deploy ssh:<host> --public PUBLIC_REPO --private PRIVATE_REPO
+```
 
 ### Host Kinds
 
@@ -77,7 +145,7 @@ special provisioning semantics by itself; it only changes the likelihood that Dr
 
 | Kind | When | Bootstrap | Repository copy | Deployment state handling | Default flow |
 | --- | --- | --- | --- | --- | --- |
-| `dropbox` | Target has a synced Dropbox copy of the public data repository. This is typical for personal physical machines when Dropbox quota and device limits allow it. | Run the installed skill bootstrap or the bootstrap helper available in the target context. | Use the target's Dropbox-backed public/private checkouts. | Target state under `~/.local/state/tilde` is authoritative; Dropbox may sync repository files, not runtime state. | local install or `remote-dropbox` |
+| `dropbox` | Target has a synced Dropbox copy of the public data repository. This is typical for personal physical machines when Dropbox quota and device limits allow it. | Run the installed skill bootstrap or the bootstrap helper available in the target context. | Use the target's Dropbox-backed public checkout and configured private checkout. | Target state under `~/.local/state/tilde` is authoritative; Dropbox may sync repository files, not runtime state. | local install or `remote-dropbox` |
 | `git` | Target does not use Dropbox for the public data repository. This covers VPS hosts and personal machines where Dropbox is unavailable or undesired. | Deliver bootstrap before cloning, usually over SSH or the public bootstrap URL when available. | Clone or fetch into `~/.local/src/<repo-name>`. | Write state on the target, then optionally mirror it under the controller's `~/.local/state/tilde/remotes/HOST/`. | `remote-git` or local git-backed install |
 | `self` | A user clones the public data repository or a fork and applies it on the same machine. | Prefer the public bootstrap URL when available; otherwise use the installed skill bootstrap after cloning. | User-chosen checkout, usually `~/.local/src/<repo-name>`. | Local deployment state stays under `~/.local/state/tilde`. Private data repository behavior is optional. | local install |
 | `any` | The target has an existing repository path whose branch, `HEAD`, or dirty state is intentionally accepted. | Use the installed skill bootstrap unless the target lacks the skill, then deliver bootstrap first. | Use the provided path as-is. | Write state on the target and mirror it only when requested or useful for orchestration. | `remote-any` |
@@ -90,10 +158,10 @@ machine cannot or should not use Dropbox, treat it as `git`.
 Dropbox installation and account linking are interactive preconditions. Tilde must not treat Dropbox installation as an
 unattended provisioning action.
 
-When the chosen host kind is `dropbox`, the agent first checks the target context for a Dropbox-backed checkout of the
-public data repository. For remote SSH orchestration, inspect the target machine, not the local machine. If the checkout
-is missing, unreadable, or clearly not synced, stop before normal install and guide the user through the
-platform-appropriate manual Dropbox setup:
+When the chosen host kind is `dropbox`, the agent first checks the target context for Dropbox-backed checkouts of the
+public data repository and any configured private data repository. For remote SSH orchestration, inspect the target
+machine, not the local machine. If a required checkout is missing, unreadable, or clearly not synced, stop before normal
+install and guide the user through the platform-appropriate manual Dropbox setup:
 
 - macOS: install the Dropbox app, sign in, select or sync the repository, and wait until the checkout is present.
 - Linux desktop: install the Dropbox package or daemon, sign in through the interactive flow, select or sync the
@@ -107,6 +175,10 @@ needed and continue to plan/install.
 
 Do not create a separate Git clone on a target that was selected as `dropbox` unless the user explicitly changes the
 host kind to `git`. This avoids two competing public data checkouts on personal machines.
+
+After the target checkouts are confirmed, resolve private policy and modules from the target private checkout. For
+example, the steady-state `~/AGENTS.md` link should come from the target private data repository's `home/AGENTS.md`
+when a private data repository is configured.
 
 ### Bootstrap
 
@@ -156,10 +228,11 @@ platform installer finishes.
 
 - `remote-git`: deterministic default for SSH provisioning when the target does not have a Dropbox-backed public data
   checkout. Prepare the target public repository by cloning or fetching it, usually under `~/.local/src/<repo-name>`.
-  Use `main` and the latest pushed commit unless instructed otherwise. Require a clean local worktree and a pushed
-  commit.
-- `remote-dropbox`: use the target public repository that already exists under Dropbox. Local and target Git `HEAD` do
-  not need to match. Runtime state stays under `~/.local/state/tilde` on the target.
+  Prepare the private repository the same way only when it is configured or explicitly requested. Use `main` and the
+  latest pushed commit unless instructed otherwise. Require a clean local worktree and a pushed commit.
+- `remote-dropbox`: use the target public/private repositories that already exist under Dropbox. Local and target Git
+  `HEAD` do not need to match, but repository identity and public/private roles must match. Runtime state stays under
+  `~/.local/state/tilde` on the target.
 - `remote-any`: use the provided target repository path as-is. This is intentionally less deterministic; call out
   branch, `HEAD`, and dirty-state uncertainty and continue only with explicit confirmation.
 

@@ -164,13 +164,19 @@ discovered from frontmatter or a confirmed sibling path.
 
 With two positional repository arguments, the first is public and the second is private.
 
-Default repository locations are convenience only:
+Default repository locations are convenience only. Default-location discovery uses the conventional public/private
+directory-name pair `home` and `home-`; these names are discovery hints, not repository identity. Prefer:
 
-1. Public/private repository paths under `~/Dropbox/src` when that directory exists.
-2. Public/private repository paths under `~/.local/src` otherwise.
+1. `~/Dropbox/src/home` and `~/Dropbox/src/home-` when `~/Dropbox/src` exists.
+2. `~/.local/src/home` and `~/.local/src/home-` otherwise.
 
 If a default path already exists, Tilde should inspect it for Tilde repository identity before using it. If it does not
 exist, `create` or `deploy` may offer to create it after confirmation.
+
+When only the default public path is explicit or found, inspect its frontmatter first. If that does not identify the
+private data repository, prefer the default `home-` sibling when it exists and confirms a private role. If the public
+repository declares a private companion that is missing, stop for a proposal: create or sync the private repository,
+choose an explicit private path, or continue public-only after confirmation.
 
 Use bounded discovery from:
 

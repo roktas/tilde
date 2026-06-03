@@ -39,12 +39,16 @@ After the table, show these short help notes:
 - Detailed command help: `$tilde help <command>`
 - Bare `$tilde` means `help`.
 
+Then show a short example prompt section with no more than five canonical prompts. Keep examples stable, generic, and
+representative of common local deployment, remote deployment, Git-backed VPS deployment, adoption, and dry-run/update
+flows.
+
 `apply`, `bootstrap`, `install`, `links`, `plan`, `refresh`, `archive`, and `dedupe` are not public prompt commands. Do
 not show internal commands in ordinary help. Treat `plan`, `dry-run`, and `plan-only` as qualifiers on public commands
 when the user asks to see the proposal without applying it.
 
 Custom data-layer commands such as `custom.sync-host` are also excluded from ordinary `$tilde help`. If a user asks for
-`$tilde help custom.NAME`, resolve that custom command from configured data-repository `## Tilde` sections. If it
+`$tilde help custom.NAME`, resolve that custom command from configured data-repository `## Operations` sections. If it
 exists, show the resolved custom-command instructions and remind the user that writes remain proposal-first. If it does
 not exist, say that no such custom Tilde command is configured, then behave like bare `$tilde help`.
 
