@@ -637,6 +637,12 @@ class Plan
       puts_action_list("Refresh Packages", mod[:packages_to_refresh]) { |pkg| "`#{pkg[:value]}`" }
       puts_action_list("Upgrade Packages", mod[:packages_to_upgrade]) { |pkg| "`#{pkg[:value]}`" }
     end
+
+    puts("## Manual Actions")
+    puts
+    puts_action_list("Actions", manual_actions(plan)) do |action|
+      "`#{action[:module_id]}` #{action[:name]} (#{action[:reason]})"
+    end
   end
 
   def puts_action_list(title, items)
@@ -644,6 +650,10 @@ class Plan
     items.each { |item| puts("- #{yield(item)}") }
     puts("- none") if items.empty?
     puts
+  end
+
+  def manual_actions(plan)
+    plan.fetch(:actions).select { |action| action.fetch(:kind) == "manual" }
   end
 
   def repository_identity

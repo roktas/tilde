@@ -1,6 +1,6 @@
 # TODO
 
-- [ ] Kurulumunun tamamlanması için kullanıcı etkileşimi gereken modüllerde bunu belirtmeli ve tüm provizyonlama sonunda bunu listelemeliyiz.
+- [x] Kurulumunun tamamlanması için kullanıcı etkileşimi gereken modüllerde bunu belirtmeli ve tüm provizyonlama sonunda bunu listelemeliyiz.
 - [x] debian'da şu paketlerin kurulu olması gerekiyor: qemu-utils qemu-system-x86 ovmf
 - [x] `home/javascript` içindeki geçersiz `brew:oven-sh/bun/bun` bildirimini `brew:bun` olarak düzeltmeliyiz.
 - [x] Neovim için gereken komut satırı aracını `brew:tree-sitter-cli` olarak bildirmeliyiz; `brew:tree-sitter` yeterli değil.
