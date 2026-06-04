@@ -113,6 +113,18 @@ EOF
 
 	PLAN_JSON=$plan_json ruby -rjson -e '
 		plan = JSON.parse(File.read(ENV.fetch("PLAN_JSON")))
+		abort "wrong schema" unless plan.fetch("schema") == "tilde.plan/v1"
+		abort "missing plan id" unless plan.fetch("plan_id").start_with?("sha256:")
+		abort "wrong repository role" unless plan.fetch("repository").fetch("role") == "public"
+		abort "wrong target host" unless plan.fetch("target").fetch("host") == "smoke"
+		abort "wrong target platform" unless plan.fetch("target").fetch("platform") == "linux"
+		actions = plan.fetch("actions")
+		abort "missing actions stream" if actions.empty?
+		ids = actions.map { |action| action.fetch("id") }
+		abort "action ids should be unique" unless ids.uniq == ids
+		abort "actions should use role-qualified module ids" unless actions.all? { |action| action.fetch("module_id") == "core" || action.fetch("module_id").include?("/") }
+		abort "missing manual linux install action" unless actions.any? { |action| action.fetch("kind") == "manual" && action.fetch("module_id") == "public/linux" && action.fetch("name") == "Install" }
+		abort "missing agents link action" unless actions.any? { |action| action.fetch("kind") == "link" && action.fetch("module_id") == "public/agents" && action.fetch("target") == "~/.agents/AGENTS.md" && action.fetch("link_value").end_with?("/agents/AGENTS.md") }
 		abort "wrong mode" unless plan.fetch("mode") == "apply"
 		abort "wrong level" unless plan.fetch("level") == "normal"
 		abort "wrong platform" unless plan.fetch("platform") == "linux"
@@ -128,6 +140,7 @@ EOF
 		end
 		linux = plan.fetch("modules").find { |mod| mod.fetch("name") == "linux" }
 		abort "missing linux platform module" unless linux
+		abort "wrong linux module id" unless linux.fetch("id") == "public/linux"
 		abort "linux platform module should be first" unless plan.fetch("modules").first.fetch("name") == "linux"
 		abort "missing linux install section" unless linux.fetch("special_sections").key?("Install")
 		misc = plan.fetch("modules").find { |mod| mod.fetch("name") == "misc" }

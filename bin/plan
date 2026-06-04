@@ -15,6 +15,7 @@ class Plan
   SKILL_ROOT = Pathname.new(__dir__).parent.expand_path.freeze
   FALLBACK_ENTRYPOINT_SOURCE = "assets/AGENTS.md"
   HOME_ENTRYPOINT_TARGET = "~/AGENTS.md"
+  SCHEMA = "tilde.plan/v1"
   DEFAULT_PACKAGE_TYPE = {
     "linux" => "brew",
     "macos" => "brew",
@@ -61,8 +62,10 @@ class Plan
     @previous_state = previous_state
 
     modules = planned_modules
+    core = core_plan(modules)
 
     plan = {
+      schema: SCHEMA,
       generated_at: Time.now.iso8601,
       repo: @repo.to_s,
       head: @head,
@@ -73,15 +76,32 @@ class Plan
       mode: @mode,
       platform: @platform,
       state_path: state_path.to_s,
+      repository: repository_identity,
+      target: target_identity,
       previous_state: @previous_state,
-      core: core_plan(modules),
+      core:,
       modules:
     }
+    plan[:actions] = ordered_actions(plan)
+    plan[:plan_id] = plan_id(plan)
 
     @format == "markdown" ? puts_markdown(plan) : puts(JSON.pretty_generate(plan))
   end
 
   private
+
+  def action_id(base, used)
+    id = base
+    suffix = 2
+
+    while used.key?(id)
+      id = "#{base}:#{suffix}"
+      suffix += 1
+    end
+
+    used[id] = true
+    id
+  end
 
   def active_config(frontmatter)
     all = normalize_map(frontmatter["all"])
@@ -98,6 +118,25 @@ class Plan
     body.scan(/```(?:bash|sh)\s*\n(.*?)```/m).flatten.map(&:strip).reject(&:empty?)
   end
 
+  def canonicalize(value)
+    case value
+    when Array
+      value.map { |item| canonicalize(item) }
+    when Hash
+      value.keys.map(&:to_s).sort.to_h do |key|
+        original = value.key?(key.to_sym) ? key.to_sym : key
+        [key, canonicalize(value[original])]
+      end
+    else
+      value
+    end
+  end
+
+  def content_hash(plan)
+    content = canonicalize(plan.except(:generated_at, :plan_id))
+    Digest::SHA256.hexdigest(JSON.generate(content))
+  end
+
   def current_branch
     git("branch", "--show-current")
   rescue StandardError
@@ -108,6 +147,22 @@ class Plan
     {
       links_to_create: [],
       home_entrypoints_to_write: fallback_entrypoint_needed?(modules) ? fallback_entrypoints : []
+    }
+  end
+
+  def copy_action(mod, copy)
+    {
+      id: "#{mod.fetch(:id)}:copy:#{copy.fetch(:source)}->#{copy.fetch(:target)}",
+      kind: "copy",
+      module_id: mod.fetch(:id),
+      module_name: mod.fetch(:name),
+      repo_role: mod.fetch(:repo_role),
+      source: copy.fetch(:source),
+      source_path: copy.fetch(:source_path),
+      target: copy.fetch(:target),
+      conflict: {
+        strategy: "backup"
+      }
     }
   end
 
@@ -211,6 +266,23 @@ class Plan
   def host_allowed?(config)
     hosts = Array(config["hosts"]).map(&:to_s)
     hosts.empty? || hosts.include?(@host)
+  end
+
+  def home_entrypoint_action(entrypoint)
+    {
+      id: "core:home-entrypoint:#{entrypoint.fetch(:target)}",
+      kind: "home-entrypoint",
+      module_id: "core",
+      module_name: "core",
+      repo_role:,
+      source: entrypoint.fetch(:source),
+      source_path: entrypoint.fetch(:source_path),
+      target: entrypoint.fetch(:target),
+      source_sha256: entrypoint.fetch(:source_sha256),
+      conflict: {
+        strategy: entrypoint.fetch(:strategy)
+      }
+    }
   end
 
   def level_allowed?(level)
@@ -319,6 +391,30 @@ class Plan
     }.merge(metadata)
   end
 
+  def link_plan_action(mod, link)
+    {
+      id: "#{mod.fetch(:id)}:link:#{link.fetch(:source)}->#{link.fetch(:target)}",
+      kind: "link",
+      module_id: mod.fetch(:id),
+      module_name: mod.fetch(:name),
+      repo_role: mod.fetch(:repo_role),
+      source: link.fetch(:source),
+      source_path: link.fetch(:source_path),
+      target: link.fetch(:target),
+      link_value: link.fetch(:source_path),
+      fan_in: link.fetch(:fan_in),
+      fan_in_source: link.fetch(:fan_in_source),
+      fan_in_target: link.fetch(:fan_in_target),
+      conflict: {
+        strategy: "backup"
+      }
+    }
+  end
+
+  def module_id(module_name)
+    "#{repo_role}/#{module_name}"
+  end
+
   def fan_in_metadata(source, target)
     {
       fan_in: true,
@@ -388,7 +484,9 @@ class Plan
     packages = normalize_packages(config)
 
     {
+      id: module_id(module_name),
       name: module_name,
+      repo_role:,
       readme: readme.to_s,
       level:,
       home_entrypoint:,
@@ -421,10 +519,65 @@ class Plan
     end
   end
 
+  def module_actions(mod)
+    return [] if mod.fetch(:skipped)
+
+    actions = []
+    actions.concat(section_plan_actions(mod, %w[Preinstall]))
+    actions.concat(package_plan_actions(mod, "install", mod.fetch(:packages_to_install)))
+    actions.concat(package_plan_actions(mod, "refresh", mod.fetch(:packages_to_refresh)))
+    actions.concat(package_plan_actions(mod, "upgrade", mod.fetch(:packages_to_upgrade)))
+    actions.concat(section_plan_actions(mod, %w[Install Postinstall Prelink Presetup]))
+    actions.concat(mod.fetch(:links_to_create).map { |link| link_plan_action(mod, link) })
+    actions.concat(mod.fetch(:copies_to_create).map { |copy| copy_action(mod, copy) })
+    actions.concat(section_plan_actions(mod, %w[Link Postlink Setup Update]))
+    actions
+  end
+
+  def ordered_actions(plan)
+    actions = []
+    used = {}
+
+    plan.fetch(:core).fetch(:home_entrypoints_to_write).each do |entrypoint|
+      actions << home_entrypoint_action(entrypoint)
+    end
+
+    plan.fetch(:modules).flat_map { |mod| module_actions(mod) }.each do |action|
+      action[:id] = action_id(action.fetch(:id), used)
+      actions << action
+    end
+
+    actions
+  end
+
+  def package_plan_actions(mod, operation, packages)
+    packages.map do |package|
+      {
+        id: "#{mod.fetch(:id)}:package:#{operation}:#{package.fetch(:value)}",
+        kind: "package",
+        module_id: mod.fetch(:id),
+        module_name: mod.fetch(:name),
+        repo_role: mod.fetch(:repo_role),
+        operation:,
+        package:,
+        conflict: {
+          strategy: "none"
+        }
+      }
+    end
+  end
+
+  def plan_id(plan)
+    "sha256:#{content_hash(plan)}"
+  end
+
   def puts_markdown(plan)
     puts("# Provision Plan")
     puts
+    puts("- schema: `#{plan[:schema]}`")
+    puts("- plan: `#{plan[:plan_id]}`")
     puts("- repo: `#{plan[:repo]}`")
+    puts("- role: `#{plan[:repository][:role] || 'unknown'}`")
     puts("- head: `#{plan[:head]}`")
     puts("- branch: `#{plan[:branch]}`")
     puts("- host: `#{plan[:host]}`")
@@ -432,6 +585,7 @@ class Plan
     puts("- mode: `#{plan[:mode]}`")
     puts("- platform: `#{plan[:platform]}`")
     puts("- state: `#{plan[:state_path]}`")
+    puts("- actions: `#{plan[:actions].length}`")
     puts
     puts("## Core")
     puts
@@ -468,6 +622,22 @@ class Plan
     items.each { |item| puts("- #{yield(item)}") }
     puts("- none") if items.empty?
     puts
+  end
+
+  def repository_identity
+    tilde = tilde_frontmatter(@repo.join("AGENTS.md"))
+    {
+      protocol: tilde["protocol"],
+      role: tilde["role"],
+      path: @repo.to_s,
+      branch: current_branch,
+      commit: @head,
+      dirty: dirty?
+    }
+  end
+
+  def repo_role
+    @repo_role ||= tilde_frontmatter(@repo.join("AGENTS.md"))["role"] || "unknown"
   end
 
   def source_path(dir, source)
@@ -520,6 +690,34 @@ class Plan
 
   def section_actions(body, skipped)
     skipped ? {} : selected_special_sections(body)
+  end
+
+  def section_plan_action(mod, name, section)
+    bash_only = section.fetch(:bash_only)
+    kind = bash_only ? "section" : "manual"
+
+    {
+      id: "#{mod.fetch(:id)}:#{kind}:#{name}",
+      kind:,
+      module_id: mod.fetch(:id),
+      module_name: mod.fetch(:name),
+      repo_role: mod.fetch(:repo_role),
+      name:,
+      bash_only:,
+      bash_blocks: section.fetch(:bash_blocks),
+      body: section.fetch(:body),
+      reason: bash_only ? nil : "mixed-prose",
+      conflict: {
+        strategy: "none"
+      }
+    }
+  end
+
+  def section_plan_actions(mod, names)
+    names.filter_map do |name|
+      section = mod.fetch(:special_sections)[name]
+      section_plan_action(mod, name, section) if section
+    end
   end
 
   def skip_status(module_name)
@@ -625,6 +823,18 @@ class Plan
 
   def state_path
     state_root.join("hosts", @host, "state.md")
+  end
+
+  def target_identity
+    {
+      host: @host,
+      platform: @platform,
+      mode: @mode,
+      level: @level,
+      home: Dir.home,
+      state_root: state_root.to_s,
+      state_path: state_path.to_s
+    }
   end
 
   def validate_platform!
