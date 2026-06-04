@@ -1,0 +1,676 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "digest"
+require "fileutils"
+require "json"
+require "open3"
+require "optparse"
+require "pathname"
+require "rbconfig"
+require "socket"
+require "tempfile"
+require "time"
+require "yaml"
+
+class Apply
+  SCHEMA = "tilde.plan/v1"
+  APPLY_SCHEMA = "tilde.apply/v1"
+  PLAN_SET_SCHEMA = "tilde.plan-set/v1"
+  RESULT_OK = %w[ok unchanged ignored].freeze
+  ROLES = %w[public private].freeze
+  ROLE_ORDER = {
+    "public" => 0,
+    "private" => 1
+  }.freeze
+  SUPPORTED_ACTIONS = %w[home-entrypoint package section link copy manual].freeze
+  SUPPORTED_CONFLICTS = %w[backup none write-fallback-file].freeze
+  SUPPORTED_PACKAGE_TYPES = %w[brew cask deb egg flatpak gem npm scoop].freeze
+  ACTION_HANDLERS = {
+    "copy" => :execute_copy,
+    "home-entrypoint" => :execute_home_entrypoint,
+    "link" => :execute_link,
+    "manual" => :execute_manual,
+    "package" => :execute_package,
+    "section" => :execute_section
+  }.freeze
+  PACKAGE_COMMANDS = {
+    %w[install brew] => ->(name) { ["brew", "install", name] },
+    %w[install cask] => ->(name) { ["brew", "install", "--cask", name] },
+    %w[install deb] => ->(name) { ["sudo", "apt-get", "install", "-y", name] },
+    %w[install egg] => ->(name) { ["uv", "tool", "install", name] },
+    %w[install flatpak] => ->(name) { ["flatpak", "install", "-y", "--user", "flathub", name] },
+    %w[install gem] => ->(name) { ["gem", "install", "--user-install", "--no-document", name] },
+    %w[install npm] => ->(name) { ["bun", "install", "-g", name] },
+    %w[install scoop] => ->(name) { ["scoop", "install", name] },
+    %w[refresh brew] => ->(name) { ["brew", "upgrade", name] },
+    %w[refresh cask] => ->(name) { ["brew", "upgrade", "--cask", name] },
+    %w[refresh deb] => ->(name) { ["sudo", "apt-get", "install", "--only-upgrade", "-y", name] },
+    %w[refresh egg] => ->(name) { ["uv", "tool", "upgrade", name] },
+    %w[refresh flatpak] => ->(name) { ["flatpak", "update", "-y", "--user", name] },
+    %w[refresh gem] => ->(name) { ["gem", "update", "--user-install", "--no-document", name] },
+    %w[refresh npm] => ->(name) { ["bun", "update", "-g", name] },
+    %w[refresh scoop] => ->(name) { ["scoop", "update", name] },
+    %w[upgrade brew] => ->(name) { ["brew", "upgrade", name] },
+    %w[upgrade cask] => ->(name) { ["brew", "upgrade", "--cask", name] },
+    %w[upgrade deb] => ->(name) { ["sudo", "apt-get", "install", "--only-upgrade", "-y", name] },
+    %w[upgrade egg] => ->(name) { ["uv", "tool", "upgrade", name] },
+    %w[upgrade flatpak] => ->(name) { ["flatpak", "update", "-y", "--user", name] },
+    %w[upgrade gem] => ->(name) { ["gem", "update", "--user-install", "--no-document", name] },
+    %w[upgrade npm] => ->(name) { ["bun", "update", "-g", name] },
+    %w[upgrade scoop] => ->(name) { ["scoop", "update", name] }
+  }.freeze
+
+  def initialize(options)
+    @home = Pathname.new(ENV.fetch("HOME", Dir.home)).expand_path
+    @plan_paths = options.fetch(:plans).map { |path| Pathname.new(path).expand_path }
+    @plans = []
+    @started_at = Time.now.iso8601
+  end
+
+  def run
+    load_plans
+    validate!
+    prepare_state
+    write_last_plan
+    apply_actions
+    write_state
+    puts(JSON.pretty_generate(@apply))
+  end
+
+  private
+
+  def action_failure?(result)
+    !RESULT_OK.include?(result.fetch(:status)) && result.fetch(:status) != "deferred"
+  end
+
+  def action_result(action, status, diagnostics = {}, backups = [])
+    {
+      action_id: action.fetch("id"),
+      kind: action.fetch("kind"),
+      module_id: action.fetch("module_id"),
+      status:,
+      diagnostics: diagnostics.compact,
+      backups:,
+      finished_at: Time.now.iso8601
+    }
+  end
+
+  def actions
+    @actions ||= @plans.flat_map { |plan| plan.fetch("actions") }
+  end
+
+  def apply_actions
+    failed_modules = {}
+
+    actions.each do |action|
+      break unless process_action(action, failed_modules)
+    end
+
+    @apply[:completed] = !stop_after_reached? && @apply[:results].length == actions.length
+    write_last_apply
+  end
+
+  def backup_path(target)
+    relative = target.relative_path_from(@home).to_s
+    ensure_backup_dir.join(relative)
+  end
+
+  def backup_target(target)
+    backup = backup_path(target)
+    FileUtils.mkdir_p(backup.dirname)
+    FileUtils.mv(target.to_s, backup.to_s)
+    backup.to_s
+  end
+
+  def canonicalize(value)
+    case value
+    when Array
+      value.map { |item| canonicalize(item) }
+    when Hash
+      value.keys.map(&:to_s).sort.to_h do |key|
+        [key, canonicalize(value[key])]
+      end
+    else
+      value
+    end
+  end
+
+  def command_for(action)
+    package = action.fetch("package")
+    name = package.fetch("name")
+    command = PACKAGE_COMMANDS[[action.fetch("operation"), package.fetch("type")]]
+
+    command&.call(name)
+  end
+
+  def copy_equal?(source, target)
+    return false unless target.exist?
+
+    if source.file? && target.file?
+      FileUtils.compare_file(source.to_s, target.to_s)
+    elsif source.directory? && target.directory?
+      _stdout, _stderr, status = Open3.capture3("diff", "-qr", source.to_s, target.to_s)
+      status.success?
+    else
+      false
+    end
+  end
+
+  def copy_source(source, target)
+    if source.directory?
+      FileUtils.mkdir_p(target)
+      source.children.each { |child| FileUtils.cp_r(child.to_s, target.join(child.basename).to_s) }
+    else
+      FileUtils.cp(source.to_s, target.to_s)
+    end
+  end
+
+  def current_plan_hash(plan)
+    content = canonicalize(plan.except("generated_at", "plan_id"))
+    "sha256:#{Digest::SHA256.hexdigest(JSON.generate(content))}"
+  end
+
+  def detect_platform
+    host_os = RbConfig::CONFIG.fetch("host_os")
+
+    case host_os
+    when /darwin/i
+      "macos"
+    when /linux/i
+      "linux"
+    when /mswin|mingw|cygwin/i
+      "windows"
+    else
+      "unknown"
+    end
+  end
+
+  def dirty?(repo)
+    !git(repo, "status", "--porcelain").empty?
+  end
+
+  def ensure_backup_dir
+    return @backup_dir if @backup_dir
+
+    @backup_dir = @host_dir.join("backups", Time.now.utc.strftime("%Y%m%dT%H%M%SZ"))
+    @backup_dir
+  end
+
+  def execute(action)
+    send(ACTION_HANDLERS.fetch(action.fetch("kind")), action)
+  rescue StandardError => e
+    action_result(action, "notok", { "error" => e.message })
+  end
+
+  def execute_copy(action)
+    source = Pathname.new(action.fetch("source_path"))
+    target = expand_target(action.fetch("target"))
+    return action_result(action, "unchanged") if copy_equal?(source, target)
+
+    backups = []
+    backups << backup_target(target) if target.exist? || target.symlink?
+    FileUtils.mkdir_p(target.dirname)
+
+    temp = Pathname.new("#{target}.tilde-tmp-#{$PROCESS_ID}")
+    FileUtils.rm_rf(temp)
+    copy_source(source, temp)
+    FileUtils.mv(temp.to_s, target.to_s)
+    action_result(action, "ok", {}, backups)
+  ensure
+    FileUtils.rm_rf(temp) if temp
+  end
+
+  def execute_home_entrypoint(action)
+    source = Pathname.new(action.fetch("source_path"))
+    target = expand_target(action.fetch("target"))
+    return action_result(action, "unchanged") if target.file? && target.read == source.read
+
+    backups = []
+    backups << backup_target(target) if target.exist? || target.symlink?
+    FileUtils.mkdir_p(target.dirname)
+    target.write(source.read)
+    action_result(action, "ok", {}, backups)
+  end
+
+  def execute_link(action)
+    target = expand_target(action.fetch("target"))
+    value = action.fetch("link_value")
+    return action_result(action, "unchanged") if target.symlink? && File.readlink(target.to_s) == value
+
+    backups = []
+    backups << backup_target(target) if target.exist? || target.symlink?
+    FileUtils.mkdir_p(target.dirname)
+    File.symlink(value, target.to_s)
+    action_result(action, "ok", {}, backups)
+  end
+
+  def execute_manual(action)
+    action_result(
+      action,
+      "deferred",
+      {
+        "reason" => action["reason"],
+        "body" => action["body"]
+      }
+    )
+  end
+
+  def execute_package(action)
+    package = action.fetch("package")
+    type = package.fetch("type")
+    unless SUPPORTED_PACKAGE_TYPES.include?(type)
+      return action_result(action, "deferred", { "reason" => "unsupported package handler: #{type}" })
+    end
+
+    command = command_for(action)
+    return action_result(action, "deferred", { "reason" => "unsupported package operation" }) unless command
+
+    stdout, stderr, status = Open3.capture3(*command)
+    result = status.success? ? "ok" : "notok"
+    action_result(action, result,
+                  { "command" => command, "stdout" => stdout, "stderr" => stderr, "exit" => status.exitstatus })
+  end
+
+  def execute_section(action)
+    unless action.fetch("bash_only")
+      return action_result(action, "deferred", { "reason" => "section is not bash-only" })
+    end
+
+    blocks = []
+    action.fetch("bash_blocks").each_with_index do |block, index|
+      stdout, stderr, status = run_block(block)
+      blocks << { "index" => index + 1, "stdout" => stdout, "stderr" => stderr, "exit" => status.exitstatus }
+      return action_result(action, "notok", { "blocks" => blocks }) unless status.success?
+    end
+
+    action_result(action, "ok", { "blocks" => blocks })
+  end
+
+  def expand_target(path)
+    text = path.to_s
+    return @home if text == "~"
+    return @home.join(text.delete_prefix("~/")).expand_path if text.start_with?("~/")
+
+    Pathname.new(text).expand_path
+  end
+
+  def git(repo, *args)
+    stdout, stderr, status = Open3.capture3("git", "-C", repo.to_s, *args)
+    raise stderr.strip unless status.success?
+
+    stdout.strip
+  end
+
+  def host
+    Socket.gethostname.split(".").first
+  end
+
+  def init_apply
+    {
+      schema: APPLY_SCHEMA,
+      started_at: @started_at,
+      completed: false,
+      plan_set_id:,
+      plans: @plans.map { |plan| plan_metadata(plan) },
+      results: []
+    }
+  end
+
+  def load_plans
+    raise "at least one --plan is required" if @plan_paths.empty?
+
+    @plans = @plan_paths.map { |path| JSON.parse(path.read) }
+    @plans.sort_by! { |plan| ROLE_ORDER.fetch(plan.fetch("repository").fetch("role"), 99) }
+  rescue JSON::ParserError => e
+    raise "invalid plan JSON: #{e.message}"
+  end
+
+  def module_results
+    module_statuses.transform_values do |values|
+      values.all? { |value| RESULT_OK.include?(value) } ? "ok" : "notok"
+    end
+  end
+
+  def module_statuses
+    statuses = actions.to_h { |action| [action.fetch("module_id"), []] }
+    @apply.fetch(:results).each do |result|
+      statuses[result.fetch(:module_id)] ||= []
+      statuses[result.fetch(:module_id)] << result.fetch(:status)
+    end
+
+    statuses
+  end
+
+  def path_inside?(path, root)
+    path = path.expand_path
+    root = root.expand_path
+    path.to_s == root.to_s || path.to_s.start_with?("#{root}/")
+  end
+
+  def plan_metadata(plan)
+    repository = plan.fetch("repository")
+    {
+      plan_id: plan.fetch("plan_id"),
+      role: repository.fetch("role"),
+      path: repository.fetch("path"),
+      commit: repository.fetch("commit"),
+      dirty: repository.fetch("dirty")
+    }
+  end
+
+  def plan_set_id
+    @plan_set_id ||= begin
+      ids = @plans.map { |plan| plan.fetch("plan_id") }
+      "sha256:#{Digest::SHA256.hexdigest(JSON.generate(ids))}"
+    end
+  end
+
+  def prepare_state
+    target = @plans.first.fetch("target")
+    @state_root = Pathname.new(target.fetch("state_root")).expand_path
+    @host_dir = @state_root.join("hosts", target.fetch("host"))
+    @last_apply_path = @host_dir.join("last-apply.json")
+    @last_plan_path = @host_dir.join("last-plan.json")
+    @state_path = @host_dir.join("state.md")
+    @resume = read_resume
+    @apply = init_apply
+  end
+
+  def process_action(action, failed_modules)
+    result = result_for(action, failed_modules)
+    record(result)
+    failed_modules[action.fetch("module_id")] = true if module_failure?(action, result)
+    !core_failure?(action, result) && !stop_after_reached?
+  end
+
+  def read_resume
+    return nil unless @last_apply_path&.file?
+
+    data = JSON.parse(@last_apply_path.read)
+    return nil if data["completed"]
+    return nil unless data["plan_set_id"] == plan_set_id
+
+    data
+  rescue JSON::ParserError
+    nil
+  end
+
+  def record(result)
+    @apply.fetch(:results) << result
+    write_last_apply
+  end
+
+  def resume_result(action)
+    return nil unless @resume
+
+    result = @resume.fetch("results", []).find { |item| item.fetch("action_id") == action.fetch("id") }
+    return nil unless result && RESULT_OK.include?(result.fetch("status"))
+
+    {
+      action_id: result.fetch("action_id"),
+      kind: result.fetch("kind"),
+      module_id: result.fetch("module_id"),
+      status: result.fetch("status"),
+      diagnostics: result.fetch("diagnostics", {}).merge("resumed" => true),
+      backups: result.fetch("backups", []),
+      finished_at: Time.now.iso8601
+    }
+  end
+
+  def core_failure?(action, result)
+    action.fetch("module_id") == "core" && action_failure?(result)
+  end
+
+  def module_failure?(action, result)
+    action.fetch("module_id") != "core" && action_failure?(result)
+  end
+
+  def result_for(action, failed_modules)
+    if failed_modules.key?(action.fetch("module_id"))
+      action_result(action, "ignored", { "reason" => "previous module action failed" })
+    else
+      resume_result(action) || execute(action)
+    end
+  end
+
+  def run_block(block)
+    file = Tempfile.new(["tilde-section", ".sh"])
+    file.write(block)
+    file.close
+    Open3.capture3("bash", file.path)
+  ensure
+    file&.close!
+  end
+
+  def stop_after_reached?
+    stop = ENV.fetch("TILDE_APPLY_STOP_AFTER", nil)
+    stop && @apply.fetch(:results).length >= stop.to_i
+  end
+
+  def target
+    @target ||= @plans.first.fetch("target")
+  end
+
+  def validate!
+    validate_plan_set!
+    validate_repositories!
+    validate_actions!
+  end
+
+  def validate_action!(action, seen)
+    validate_action_id!(action, seen)
+    validate_action_kind!(action)
+    validate_conflict!(action)
+    validate_target!(action["target"]) if action.key?("target")
+    validate_source!(action) if action.key?("source_path")
+    validate_package!(action) if action.fetch("kind") == "package"
+    validate_section!(action) if action.fetch("kind") == "section"
+  end
+
+  def validate_action_id!(action, seen)
+    id = action.fetch("id")
+    raise "duplicate action id: #{id}" if seen.key?(id)
+
+    seen[id] = true
+  end
+
+  def validate_action_kind!(action)
+    kind = action.fetch("kind")
+    raise "unsupported action kind: #{kind}" unless SUPPORTED_ACTIONS.include?(kind)
+  end
+
+  def validate_actions!
+    seen = {}
+    actions.each { |action| validate_action!(action, seen) }
+  end
+
+  def validate_conflict!(action)
+    strategy = action.fetch("conflict", {}).fetch("strategy", "none")
+    raise "unsupported conflict strategy: #{strategy}" unless SUPPORTED_CONFLICTS.include?(strategy)
+  end
+
+  def validate_package!(action)
+    package = action.fetch("package")
+    type = package.fetch("type")
+    raise "unsupported package type: #{type}" unless (SUPPORTED_PACKAGE_TYPES + %w[github skill]).include?(type)
+    raise "missing package name" if package.fetch("name").to_s.empty?
+  end
+
+  def validate_plan!(plan)
+    raise "unsupported plan schema: #{plan['schema']}" unless plan["schema"] == SCHEMA
+    raise "missing plan id" unless plan["plan_id"].to_s.start_with?("sha256:")
+    raise "plan id mismatch" unless plan.fetch("plan_id") == current_plan_hash(plan)
+    raise "target home mismatch" unless Pathname.new(plan.fetch("target").fetch("home")).expand_path == @home
+    raise "target host mismatch" unless plan.fetch("target").fetch("host") == host
+    raise "target platform mismatch" unless plan.fetch("target").fetch("platform") == detect_platform
+  end
+
+  def validate_plan_set!
+    roles = {}
+    first_target = @plans.first&.fetch("target")
+    raise "at least one plan is required" unless first_target
+
+    @plans.each do |plan|
+      validate_plan!(plan)
+      validate_role!(plan, roles)
+      validate_target_match!(plan, first_target)
+    end
+
+    validate_host_dir!(first_target)
+  end
+
+  def validate_host_dir!(first_target)
+    host_dir = Pathname.new(first_target.fetch("state_root")).expand_path.join("hosts", first_target.fetch("host"))
+    raise "state host directory must exist: #{host_dir}" unless host_dir.directory?
+    raise "state host directory is not writable: #{host_dir}" unless host_dir.writable?
+  end
+
+  def validate_repositories!
+    @plans.each do |plan|
+      repo = Pathname.new(plan.fetch("repository").fetch("path")).expand_path
+      raise "repository is not a directory: #{repo}" unless repo.directory?
+      raise "repository commit mismatch: #{repo}" unless repository_commit_matches?(repo, plan)
+      raise "repository dirty state mismatch: #{repo}" unless dirty?(repo) == plan.fetch("repository").fetch("dirty")
+    end
+  end
+
+  def repository_commit_matches?(repo, plan)
+    git(repo, "rev-parse", "HEAD") == plan.fetch("repository").fetch("commit")
+  end
+
+  def validate_role!(plan, roles)
+    role = plan.fetch("repository").fetch("role")
+    raise "unsupported repository role: #{role}" unless ROLES.include?(role)
+    raise "duplicate repository role: #{role}" if roles.key?(role)
+
+    roles[role] = true
+  end
+
+  def validate_section!(action)
+    raise "section action must be bash-only" unless action.fetch("bash_only")
+    raise "section action must include bash blocks" if action.fetch("bash_blocks").empty?
+  end
+
+  def validate_source!(action)
+    source = Pathname.new(action.fetch("source_path")).expand_path
+    raise "source is not readable: #{source}" unless source.readable?
+    return if action.fetch("module_id") == "core"
+
+    repo = repository_for(action.fetch("repo_role"))
+    raise "source escapes repository: #{source}" unless path_inside?(source, repo)
+  end
+
+  def validate_target!(target)
+    path = expand_target(target)
+    raise "target escapes home: #{target}" unless path_inside?(path, @home)
+  end
+
+  def validate_target_match!(plan, first_target)
+    %w[host platform mode level home state_root].each do |key|
+      raise "plan target #{key} mismatch" unless plan.fetch("target").fetch(key) == first_target.fetch(key)
+    end
+  end
+
+  def repository_for(role)
+    plan = @plans.find { |item| item.fetch("repository").fetch("role") == role }
+    raise "unknown repository role: #{role}" unless plan
+
+    Pathname.new(plan.fetch("repository").fetch("path")).expand_path
+  end
+
+  def write_json(path, data)
+    FileUtils.mkdir_p(path.dirname)
+    temp = path.dirname.join(".#{path.basename}.tmp-#{$PROCESS_ID}")
+    temp.write(JSON.pretty_generate(data))
+    FileUtils.mv(temp.to_s, path.to_s)
+  ensure
+    FileUtils.rm_f(temp) if temp&.exist?
+  end
+
+  def write_last_apply
+    write_json(@last_apply_path, @apply)
+  end
+
+  def write_last_plan
+    modules = @plans.flat_map { |plan| plan.fetch("modules", []) }
+    core_entrypoints = @plans.flat_map { |plan| plan.fetch("core").fetch("home_entrypoints_to_write", []) }
+    links = @plans.flat_map { |plan| plan.fetch("core").fetch("links_to_create", []) }
+    cache = {
+      schema: PLAN_SET_SCHEMA,
+      generated_at: Time.now.iso8601,
+      plan_set_id:,
+      plans: @plans,
+      core: {
+        "home_entrypoints_to_write" => core_entrypoints,
+        "links_to_create" => links
+      },
+      modules:,
+      actions:
+    }
+
+    write_json(@last_plan_path, cache)
+  end
+
+  def write_state
+    temp = @state_path.dirname.join(".#{@state_path.basename}.tmp-#{$PROCESS_ID}")
+    temp.write(state_text)
+    FileUtils.mv(temp.to_s, @state_path.to_s)
+  ensure
+    FileUtils.rm_f(temp) if temp&.exist?
+  end
+
+  def state_body
+    @apply
+      .fetch(:results)
+      .reject { |result| RESULT_OK.include?(result.fetch(:status)) }
+      .map { |result| "- #{result.fetch(:module_id)} #{result.fetch(:action_id)}: #{result.fetch(:status)}" }
+      .join("\n")
+  end
+
+  def state_frontmatter
+    frontmatter = {
+      "host" => target.fetch("host"),
+      "date" => Time.now.iso8601,
+      "public" => role_repository("public"),
+      "private" => role_repository("private"),
+      "done" => module_results
+    }.compact
+    frontmatter["head"] = frontmatter.dig("public", "commit") if frontmatter["public"]
+    frontmatter
+  end
+
+  def state_text
+    text = +"---\n"
+    text << YAML.dump(state_frontmatter).delete_prefix("---\n")
+    text << "---\n"
+    text << state_body
+    text << "\n" unless text.end_with?("\n")
+    text
+  end
+
+  def role_repository(role)
+    @plans.find { |plan| plan.fetch("repository").fetch("role") == role }&.fetch("repository")
+  end
+end
+
+def main(argv)
+  options = {
+    plans: []
+  }
+
+  OptionParser
+    .new do |parser|
+      parser.banner = "Usage: apply --plan PLAN.json [--plan PLAN.json ...]"
+      parser.on("--plan PLAN", "Plan JSON to apply") { |value| options.fetch(:plans) << value }
+    end
+    .parse!(argv)
+
+  Apply.new(options).run
+  0
+rescue StandardError => e
+  warn("error: #{e.message}")
+  1
+end
+
+exit(main(ARGV)) if $PROGRAM_NAME == __FILE__

@@ -67,9 +67,10 @@ Run relevant checks after Tilde skill, helper, or migrated module changes:
 
 ```bash
 bin/plan --repo ../home --allow-dirty --platform linux --host smoke --format markdown
+.agents/tests/apply/smoke.sh
 .agents/tests/deploy/smoke.sh
 REPO_ROOT=../home .agents/tests/provision/smoke.sh
-RUBOCOP_SERVER=false RUBOCOP_CACHE_ROOT=.agents/state/rubocop-cache rubocop --cache false --config .agents/tests/provision/rubocop.yml bin/plan
+RUBOCOP_SERVER=false RUBOCOP_CACHE_ROOT=.agents/state/rubocop-cache rubocop --cache false --config .agents/tests/provision/rubocop.yml bin/plan bin/apply
 mapfile -t shell_files < <(rg --hidden -l '^#!.*(bash|sh)' -g '!**/.git/**' -g '!**/.agents/state/**')
 shellcheck "${shell_files[@]}"
 ```
