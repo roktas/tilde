@@ -38,6 +38,9 @@ main() {
 	local platform_module
 	local plan
 	local plan_json
+	local private_macos_plan_json
+	local private_plan_json
+	local private_repo
 	local refresh_plan_json
 	local repair_repo=
 	local repair_plan_json
@@ -52,6 +55,10 @@ main() {
 	skill_root=$(cd -- "$script_dir/../../.." >/dev/null && pwd)
 	plan=$skill_root/bin/plan
 	repo=${REPO_ROOT:-$(cd -- "$skill_root/../home" >/dev/null && pwd)}
+	private_repo=${PRIVATE_REPO_ROOT:-}
+	if [[ -z $private_repo && -d $repo/../home- ]]; then
+		private_repo=$(cd -- "$repo/../home-" >/dev/null && pwd)
+	fi
 	dirty_module=$repo/zz-dirty-smoke
 	extra_module=$repo/zz-extra-smoke
 	platform_module=$repo/zz-platform-smoke
@@ -75,6 +82,8 @@ main() {
 	macos_plan_json=$tmpdir/macos-plan.json
 	normal_plan_json=$tmpdir/normal-plan.json
 	plan_json=$tmpdir/plan.json
+	private_macos_plan_json=$tmpdir/private-macos-plan.json
+	private_plan_json=$tmpdir/private-plan.json
 	refresh_plan_json=$tmpdir/refresh-plan.json
 	repair_plan_json=$tmpdir/repair-plan.json
 	target_plan_json=$tmpdir/target-plan.json
@@ -82,6 +91,7 @@ main() {
 	export GIT_CONFIG_GLOBAL=${GIT_CONFIG_GLOBAL:-$tmpdir/gitconfig}
 
 	git config --global --add safe.directory "$repo"
+	[[ -z $private_repo ]] || git config --global --add safe.directory "$private_repo"
 
 	ruby -c "$plan"
 
@@ -137,27 +147,13 @@ EOF
 		abort "agents should not own the home entrypoint" if agents.fetch("links_to_create").any? { |link| link.fetch("target") == "~/AGENTS.md" }
 		abort "agents should link shared instructions under ~/.agents" unless agents.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.agents/AGENTS.md" }
 		abort "agents should keep common skills under ~/.agents" unless agents.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.agents/skills/colon" }
-		abort "agents should not expose codex-only commits globally" if agents.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.agents/skills/commits" }
+		abort "agents should expose common commits skill under ~/.agents" unless agents.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.agents/skills/commits" }
 		abort "agents should not expose system skills globally" if agents.fetch("links_to_create").any? { |link| link.fetch("target").include?("/.system") }
 		abort "agents colon skill should be the common source" if File.symlink?("agents/skills/colon")
 		abort "agents TILDE alias should be removed" if File.exist?("agents/TILDE.md")
 		abort "agents- module should be removed" if plan.fetch("modules").any? { |mod| mod.fetch("name") == "agents-" }
-		codex = plan.fetch("modules").find { |mod| mod.fetch("name") == "codex" }
-		abort "missing codex module" unless codex
-		abort "missing codex cask" unless codex.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "cask:codex" }
-		abort "codex should link codex-only skills" unless codex.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.codex/skills/commits" }
-		abort "codex should not duplicate common bash skill" if codex.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.codex/skills/bash" }
-		abort "codex should link hooks by directory" unless codex.fetch("links_to_create").any? { |link| link.fetch("source") == "hooks/shellcheck" && link.fetch("target") == "~/.codex/hooks/shellcheck" && link.fetch("fan_in") == true }
-		abort "codex should not link system skills" if codex.fetch("links_to_create").any? { |link| link.fetch("target").include?("/.system") }
-		opencode = plan.fetch("modules").find { |mod| mod.fetch("name") == "opencode" }
-		abort "missing opencode module" unless opencode
-		abort "missing opencode package" unless opencode.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "brew:opencode" }
-		abort "missing aicommits package" unless opencode.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "brew:aicommits" }
-		abort "opencode should link heavy commits skill under opencode config" unless opencode.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.config/opencode/skills/commits" }
-		abort "opencode should link system skills under opencode config" unless opencode.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.config/opencode/skills/.system" }
-		abort "opencode should not link heavy skills through ~/.agents" if opencode.fetch("links_to_create").any? { |link| link.fetch("target").start_with?("~/.agents/") }
-		abort "opencode should keep heavy commits skill" unless File.exist?("opencode/skills/commits/SKILL.md")
-		abort "opencode should keep system skills out of shared agents" unless File.exist?("opencode/skills/.system/.codex-system-skills.marker")
+		abort "codex should be a private module" if plan.fetch("modules").any? { |mod| mod.fetch("name") == "codex" }
+		abort "opencode should be a private module" if plan.fetch("modules").any? { |mod| mod.fetch("name") == "opencode" }
 		git = plan.fetch("modules").find { |mod| mod.fetch("name") == "git" }
 		abort "missing git module" unless git
 		abort "git should not be virtual" unless git.fetch("virtual") == false
@@ -169,6 +165,41 @@ EOF
 		abort "missing mc.ini copy" unless mc.fetch("copies_to_create").any? { |copy| copy.fetch("target") == "~/.config/mc/ini" }
 		abort "gnome module should not be planned" if plan.fetch("modules").any? { |mod| mod.fetch("name") == "gnome" }
 	'
+
+	if [[ -n $private_repo ]]; then
+		"$plan" --repo "$private_repo" --allow-dirty --platform linux --host smoke >"$private_plan_json"
+		"$plan" --repo "$private_repo" --allow-dirty --platform macos --host smoke >"$private_macos_plan_json"
+
+		PRIVATE_PLAN_JSON=$private_plan_json PRIVATE_MACOS_PLAN_JSON=$private_macos_plan_json ruby -rjson -e '
+			linux = JSON.parse(File.read(ENV.fetch("PRIVATE_PLAN_JSON")))
+			codex = linux.fetch("modules").find { |mod| mod.fetch("name") == "codex" }
+			abort "missing private codex module" unless codex
+			abort "missing linux codex-switcher package" unless codex.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "github:Lampese/codex-switcher" }
+			abort "linux codex should not install codex cask" if codex.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "cask:codex" }
+			abort "codex should link shared wrapper bin" unless codex.fetch("links_to_create").any? { |link| link.fetch("source") == "bin/codex" && link.fetch("target") == "~/Dropbox/bin/all/codex" && link.fetch("fan_in") == true }
+			abort "codex should link hooks into shared codex state" unless codex.fetch("links_to_create").any? { |link| link.fetch("source") == "hooks/shellcheck" && link.fetch("target") == "~/Dropbox/var/codex/hooks/shellcheck" && link.fetch("fan_in") == true }
+			abort "codex should use shared agent instructions" unless codex.fetch("special_sections").dig("Install", "body").include?("Dropbox/var/codex/AGENTS.md")
+			abort "codex should not link skills under ~/.codex" if codex.fetch("links_to_create").any? { |link| link.fetch("target").start_with?("~/.codex/skills/") }
+			dropignore = linux.fetch("modules").find { |mod| mod.fetch("name") == "dropignore" }
+			abort "missing private dropignore module" unless dropignore
+			abort "missing linux dropignore package" unless dropignore.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "github:mweirauch/dropignore" }
+			opencode = linux.fetch("modules").find { |mod| mod.fetch("name") == "opencode" }
+			abort "missing private opencode module" unless opencode
+			abort "missing opencode package" unless opencode.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "brew:opencode" }
+			abort "opencode should not install aicommits package" if opencode.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "brew:aicommits" }
+			abort "opencode should use shared agent instructions" unless opencode.fetch("special_sections").dig("Install", "body").include?("Dropbox/var/opencode/config/AGENTS.md")
+			abort "opencode should not link skills directly" if opencode.fetch("links_to_create").any? { |link| link.fetch("target").include?("/skills/") }
+
+			macos = JSON.parse(File.read(ENV.fetch("PRIVATE_MACOS_PLAN_JSON")))
+			macos_codex = macos.fetch("modules").find { |mod| mod.fetch("name") == "codex" }
+			abort "missing macos codex module" unless macos_codex
+			abort "missing macos codex cask" unless macos_codex.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "cask:codex" }
+			abort "macos codex should not install codex-switcher release" if macos_codex.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "github:Lampese/codex-switcher" }
+			macos_dropignore = macos.fetch("modules").find { |mod| mod.fetch("name") == "dropignore" }
+			abort "missing macos dropignore module" unless macos_dropignore
+			abort "missing macos dropignore rust package" unless macos_dropignore.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "brew:rust" }
+		'
+	fi
 
 	rm -rf "$target_module"
 	mkdir -p "$target_module/bin"
@@ -264,7 +295,6 @@ EOF
 		linux_dash = extra_plan.fetch("modules").find { |mod| mod.fetch("name") == "linux-" }
 		abort "missing linux dash variant at extra level" unless linux_dash
 		abort "linux dash variant should follow linux" unless extra_plan.fetch("modules")[1].fetch("name") == "linux-"
-		abort "missing linux dash dropignore package" unless linux_dash.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "github:mweirauch/dropignore" }
 		abort "calibre should be a guarded install section" unless linux_dash.fetch("special_sections").dig("Install", "body").include?("com.calibre_ebook.calibre")
 		extra = extra_plan.fetch("modules").find { |mod| mod.fetch("name") == "zz-extra-smoke" }
 		abort "missing extra module at extra level" unless extra
@@ -274,7 +304,7 @@ EOF
 		abort "missing c llvm package" unless c.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "brew:llvm" }
 		javascript = extra_plan.fetch("modules").find { |mod| mod.fetch("name") == "javascript" }
 		abort "missing javascript module" unless javascript
-		abort "missing tapped bun formula" unless javascript.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "brew:oven-sh/bun/bun" }
+		abort "missing bun formula" unless javascript.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "brew:bun" }
 		virtualbox = extra_plan.fetch("modules").find { |mod| mod.fetch("name") == "virtualbox" }
 		abort "missing virtualbox extra module" unless virtualbox
 		abort "virtualbox should be virtual" unless virtualbox.fetch("virtual") == true
@@ -368,13 +398,15 @@ EOF
 		abort "missing neovim update section" unless neovim.fetch("special_sections").key?("Update")
 	'
 
-	NORMAL_PLAN_JSON=$normal_plan_json EXTRA_PLAN_JSON=$extra_plan_json MACOS_PLAN_JSON=$macos_plan_json REFRESH_PLAN_JSON=$refresh_plan_json ruby -rjson -ropen3 -e '
+	NORMAL_PLAN_JSON=$normal_plan_json EXTRA_PLAN_JSON=$extra_plan_json MACOS_PLAN_JSON=$macos_plan_json PRIVATE_PLAN_JSON=$private_plan_json PRIVATE_MACOS_PLAN_JSON=$private_macos_plan_json REFRESH_PLAN_JSON=$refresh_plan_json ruby -rjson -ropen3 -e '
 		%w[
 			NORMAL_PLAN_JSON
 			EXTRA_PLAN_JSON
 			MACOS_PLAN_JSON
+			PRIVATE_PLAN_JSON
+			PRIVATE_MACOS_PLAN_JSON
 			REFRESH_PLAN_JSON
-		].map { |name| ENV.fetch(name) }.each do |path|
+		].filter_map { |name| ENV[name] }.select { |path| File.exist?(path) }.each do |path|
 			plan = JSON.parse(File.read(path))
 			plan.fetch("modules").each do |mod|
 				mod.fetch("special_sections").each do |name, section|

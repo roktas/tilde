@@ -14,4 +14,4 @@
 - [ ] Apply testlerinde doğrulama-öncesi-yazmama, backup, göreli Dropbox bağları, paket hatası, Bash-only bölüm, manual/deferred, kesinti ve resume durumlarını kapsamalıyız.
 - [ ] `doctor`, Dropbox aktif alanındaki kırık ve host-mutlak sembolik bağları cache/arşiv/tmp politikasına göre raporlamalı.
 - [ ] `kant` Dropbox eşzamanlaması tamamlandıktan sonra göreli Codex/Gemini/OpenCode bağlarını, Codex hook'larını ve Fish giriş kabuğunu doğrulamalıyız.
-- [ ] Bayat provision smoke beklentilerini güncel shared-agent düzeniyle uyumlu hale getirmeli ve mevcut `bin/plan` RuboCop borcunu temizlemeliyiz.
+- [x] Bayat provision smoke beklentilerini güncel shared-agent düzeniyle uyumlu hale getirmeli ve mevcut `bin/plan` RuboCop borcunu temizlemeliyiz.

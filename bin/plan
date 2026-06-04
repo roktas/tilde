@@ -170,22 +170,27 @@ class Plan
     agents = @repo.join("AGENTS.md")
     return nil unless agents.file?
 
-    frontmatter, = frontmatter_and_body(agents)
-    tilde = frontmatter["tilde"] if frontmatter.is_a?(Hash)
-    return nil unless tilde.is_a?(Hash)
+    tilde = tilde_frontmatter(agents)
+    key = companion_repo_key(tilde)
 
-    key = case tilde["role"]
+    return nil unless key && tilde[key]
+
+    path = companion_repo_path(tilde[key])
+    path.directory? ? path : nil
+  end
+
+  def companion_repo_key(tilde)
+    case tilde["role"]
     when "public"
       "private"
     when "private"
       "public"
     end
+  end
 
-    return nil unless key && tilde[key]
-
-    path = Pathname.new(tilde[key].to_s)
-    path = @repo.join(path).cleanpath unless path.absolute?
-    path.directory? ? path : nil
+  def companion_repo_path(path)
+    repo = Pathname.new(path.to_s)
+    repo.absolute? ? repo : @repo.join(repo).cleanpath
   end
 
   def frontmatter_and_body(path)
@@ -448,7 +453,7 @@ class Plan
       end
 
       puts("Level: #{mod[:level]}")
-      puts("Virtual: #{mod[:virtual] ? "yes" : "no"}")
+      puts("Virtual: #{mod[:virtual] ? 'yes' : 'no'}")
       puts
       puts_action_list("Links", mod[:links_to_create]) { |link| "`#{link[:source]}` -> `#{link[:target]}`" }
       puts_action_list("Copies", mod[:copies_to_create]) { |copy| "`#{copy[:source]}` -> `#{copy[:target]}`" }
@@ -549,7 +554,7 @@ class Plan
   def collected_special_sections(body)
     markdown_sections(body, 2).flat_map do |section|
       name = special_heading(section.fetch(:title))
-      next [{name:, content: section.fetch(:content)}] if name
+      next [{ name:, content: section.fetch(:content) }] if name
 
       platform = platform_heading(section.fetch(:title))
       next [] unless ["all", @platform].include?(platform)
@@ -558,7 +563,7 @@ class Plan
         subsection_name = special_heading(subsection.fetch(:title))
         next unless subsection_name
 
-        {name: subsection_name, content: subsection.fetch(:content)}
+        { name: subsection_name, content: subsection.fetch(:content) }
       end
     end
   end
@@ -566,7 +571,7 @@ class Plan
   def markdown_sections(body, level)
     heading = "#" * level
     body.scan(/^#{heading}\s+(.+?)\s*$\n(.*?)(?=^#{heading}\s+|\z)/m).map do |title, content|
-      {title: title.strip, content: content.strip}
+      { title: title.strip, content: content.strip }
     end
   end
 
@@ -586,8 +591,14 @@ class Plan
       platform = platform_heading(section.fetch(:title))
       next unless platform
 
-      {platform:, content: section.fetch(:content)}
+      { platform:, content: section.fetch(:content) }
     end
+  end
+
+  def tilde_frontmatter(path)
+    frontmatter, = frontmatter_and_body(path)
+    tilde = frontmatter["tilde"] if frontmatter.is_a?(Hash)
+    tilde.is_a?(Hash) ? tilde : {}
   end
 
   def platform_heading(title)
