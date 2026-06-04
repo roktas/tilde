@@ -25,6 +25,7 @@ Read [Specification](references/specification.md) first, then load the narrowest
 - Module semantics: [Modules](references/specification/modules.md).
 - Model, state, paths, and skill lifecycle: [Model](references/specification/model.md).
 - Plan/install behavior: [Provisioning](references/specification/provisioning.md).
+- Deterministic plan execution: [Apply](references/specification/apply.md).
 - Package work: [Packages](references/specification/packages.md).
 - Repository development: [Tilde Repository Development](references/development.md).
 

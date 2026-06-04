@@ -38,6 +38,7 @@ Read this file first, then load only the narrowest file needed for the work:
 | Data-layer instruction evaluation, custom commands, layout policy, and invalid policy | `references/specification/customization.md` |
 | Fresh-host, create/init/deploy, Dropbox, bootstrap, and SSH/remote modes | `references/specification/deployment.md` |
 | Planning, traversal, ordering, install, link, and update behavior | `references/specification/provisioning.md` |
+| Deterministic execution of confirmed provisioning plans | `references/specification/apply.md` |
 | Package install and managed update semantics | `references/specification/packages.md` |
 | Repository development and validation workflow | `references/development.md` |
 

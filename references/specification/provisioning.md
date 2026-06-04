@@ -5,6 +5,10 @@
 Provisioning is the lower-level module operation performed during deployment. It is intended to be idempotent where
 practical, but it is not perfectly idempotent.
 
+Planning and execution are separate. `bin/plan` produces the confirmed executable action stream; `bin/apply` validates
+and executes that exact stream according to [Apply](apply.md). Apply must not rediscover desired state or reconstruct
+action order from grouped summaries.
+
 ### Modes
 
 - `apply`: apply repository desired state to the target host. This covers first provisioning and normal state/`HEAD`
