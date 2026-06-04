@@ -401,7 +401,7 @@ class Plan
       source: link.fetch(:source),
       source_path: link.fetch(:source_path),
       target: link.fetch(:target),
-      link_value: link.fetch(:source_path),
+      link_value: link_value(link.fetch(:source_path), link.fetch(:target)),
       fan_in: link.fetch(:fan_in),
       fan_in_source: link.fetch(:fan_in_source),
       fan_in_target: link.fetch(:fan_in_target),
@@ -413,6 +413,28 @@ class Plan
 
   def module_id(module_name)
     "#{repo_role}/#{module_name}"
+  end
+
+  def link_value(source_path, target)
+    source = Pathname.new(source_path)
+    target_path = target_path(target)
+    dropbox = Pathname.new(Dir.home).join("Dropbox").expand_path
+
+    return source_path unless path_inside?(source, dropbox) && path_inside?(target_path, dropbox)
+
+    source.relative_path_from(target_path.dirname).to_s
+  end
+
+  def path_inside?(path, root)
+    path = path.expand_path
+    root = root.expand_path
+    path.to_s == root.to_s || path.to_s.start_with?("#{root}/")
+  end
+
+  def target_path(target)
+    value = target.to_s
+    value = File.join(Dir.home, value.delete_prefix("~/")) if value.start_with?("~/")
+    Pathname.new(value).expand_path
   end
 
   def fan_in_metadata(source, target)

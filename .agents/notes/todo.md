@@ -9,7 +9,7 @@
 - [x] Linux'a özgü systemd, Remmina ve masaüstü bağlantılarını platforma göre sınırlamalıyız.
 - [ ] `references/specification/apply.md` uyarınca deterministik `bin/apply` yürütücüsünü aşamalı olarak uygulamalıyız.
 - [x] `bin/plan` çıktısına sürümlü şema, plan kimliği, depo rolü, `role/name` modül kimliği ve tek sıralı `actions` akışı eklemeliyiz.
-- [ ] Planner, kaynak ve hedef aynı Dropbox ağacındaysa tam sembolik bağ değerini eşdeğer göreli yol olarak üretmeli.
+- [x] Planner, kaynak ve hedef aynı Dropbox ağacındaysa tam sembolik bağ değerini eşdeğer göreli yol olarak üretmeli.
 - [ ] Birleşik public/private `last-plan.json`, `last-apply.json` ve host state üretip iki planın aynı durum dosyalarını ezmesini önlemeliyiz.
 - [ ] Apply testlerinde doğrulama-öncesi-yazmama, backup, göreli Dropbox bağları, paket hatası, Bash-only bölüm, manual/deferred, kesinti ve resume durumlarını kapsamalıyız.
 - [ ] `doctor`, Dropbox aktif alanındaki kırık ve host-mutlak sembolik bağları cache/arşiv/tmp politikasına göre raporlamalı.

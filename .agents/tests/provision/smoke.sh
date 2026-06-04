@@ -191,6 +191,9 @@ EOF
 			abort "linux codex should not install codex cask" if codex.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "cask:codex" }
 			abort "codex should link shared wrapper bin" unless codex.fetch("links_to_create").any? { |link| link.fetch("source") == "bin/codex" && link.fetch("target") == "~/Dropbox/bin/all/codex" && link.fetch("fan_in") == true }
 			abort "codex should link hooks into shared codex state" unless codex.fetch("links_to_create").any? { |link| link.fetch("source") == "hooks/shellcheck" && link.fetch("target") == "~/Dropbox/var/codex/hooks/shellcheck" && link.fetch("fan_in") == true }
+			hook_action = linux.fetch("actions").find { |action| action.fetch("kind") == "link" && action.fetch("target") == "~/Dropbox/var/codex/hooks/shellcheck" }
+			abort "missing codex hook action" unless hook_action
+			abort "codex hook should use a relative Dropbox link value" unless hook_action.fetch("link_value") == "../../../src/home-/codex/hooks/shellcheck"
 			abort "codex should use shared agent instructions" unless codex.fetch("special_sections").dig("Install", "body").include?("Dropbox/var/codex/AGENTS.md")
 			abort "codex should not link skills under ~/.codex" if codex.fetch("links_to_create").any? { |link| link.fetch("target").start_with?("~/.codex/skills/") }
 			dropignore = linux.fetch("modules").find { |mod| mod.fetch("name") == "dropignore" }
