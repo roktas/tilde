@@ -2,11 +2,11 @@
 
 - [ ] Kurulumunun tamamlanması için kullanıcı etkileşimi gereken modüllerde bunu belirtmeli ve tüm provizyonlama sonunda bunu listelemeliyiz.
 - [x] debian'da şu paketlerin kurulu olması gerekiyor: qemu-utils qemu-system-x86 ovmf
-- [ ] `home/javascript` içindeki geçersiz `brew:oven-sh/bun/bun` bildirimini `brew:bun` olarak düzeltmeliyiz.
-- [ ] Neovim için gereken komut satırı aracını `brew:tree-sitter-cli` olarak bildirmeliyiz; `brew:tree-sitter` yeterli değil.
-- [ ] `github:Lampese/codex-switcher` paketinin macOS arm64 v0.2.2 varlıkları katı kod imzası doğrulamasından geçmiyor; kurulum politikasını veya üst sürüm düzeltmesini beklemeyi kararlaştırmalıyız.
-- [ ] `home/macos` modülü için `~/.bun/bin`, keg-only Ruby/curl/zip yolları, Tailscale uygulaması ve rclone FUSE/nfsmount tercihlerini kararlaştırmalıyız.
-- [ ] Linux'a özgü systemd, Remmina ve masaüstü bağlantılarını platforma göre sınırlamalıyız.
+- [x] `home/javascript` içindeki geçersiz `brew:oven-sh/bun/bun` bildirimini `brew:bun` olarak düzeltmeliyiz.
+- [x] Neovim için gereken komut satırı aracını `brew:tree-sitter-cli` olarak bildirmeliyiz; `brew:tree-sitter` yeterli değil.
+- [x] `github:Lampese/codex-switcher` paketinin macOS arm64 v0.2.2 varlıkları katı kod imzası doğrulamasından geçmiyor; kurulum politikasını veya üst sürüm düzeltmesini beklemeyi kararlaştırmalıyız.
+- [x] `home/macos` modülü için `~/.bun/bin`, keg-only Ruby/curl/zip yolları, Tailscale uygulaması ve rclone FUSE/nfsmount tercihlerini kararlaştırmalıyız.
+- [x] Linux'a özgü systemd, Remmina ve masaüstü bağlantılarını platforma göre sınırlamalıyız.
 - [ ] `references/specification/apply.md` uyarınca deterministik `bin/apply` yürütücüsünü aşamalı olarak uygulamalıyız.
 - [ ] `bin/plan` çıktısına sürümlü şema, plan kimliği, depo rolü, `role/name` modül kimliği ve tek sıralı `actions` akışı eklemeliyiz.
 - [ ] Planner, kaynak ve hedef aynı Dropbox ağacındaysa tam sembolik bağ değerini eşdeğer göreli yol olarak üretmeli.
