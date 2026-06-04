@@ -104,8 +104,9 @@ control-plane safety rules.
 ## Deployment
 
 Choose host kind from the target repo copy: `dropbox`, `git`, `self`, or `any`. For `dropbox`, Dropbox setup and account
-linking are interactive preconditions; guide the user, then rerun preflight. Do not create a Git clone on a `dropbox`
-target unless the user changes host kind.
+linking are interactive preconditions; guide the user, then run `bin/preflight` in the target context. Treat required
+files and Git traversal failures as blockers, and macOS File Provider flags as advisory. Do not create a Git clone on a
+`dropbox` target unless the user changes host kind.
 
 For real local deployment or `remote-git`, require a clean worktree and pushed target commit. Generate plans with
 `bin/plan`; it never applies changes. Write deployment state on the target first and optionally mirror it back to the

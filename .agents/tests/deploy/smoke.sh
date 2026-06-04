@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+[[ -z ${TRACE:-} ]] || set -x
+unset CDPATH
+
+cleanup_tmpdir=
+
+# ------------------------------------------------------------------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------------------------------------------------------------------
+
+cleanup() {
+	[[ -z $cleanup_tmpdir ]] || rm -rf "$cleanup_tmpdir"
+}
+
+# ------------------------------------------------------------------------------------------------------------------------
+# Main
+# ------------------------------------------------------------------------------------------------------------------------
+
+main() {
+	local bootstrap
+	local bootstrap_bin
+	local bootstrap_home
+	local bootstrap_out
+	local err
+	local fake_bin
+	local object
+	local preflight
+	local repo
+	local script_dir
+	local skill_root
+	local tree
+	local tmpdir
+
+	script_dir=$(cd -- "${BASH_SOURCE[0]%/*}" >/dev/null && pwd)
+	skill_root=$(cd -- "$script_dir/../../.." >/dev/null && pwd)
+	bootstrap=$skill_root/bin/bootstrap
+	preflight=$skill_root/bin/preflight
+
+	tmpdir=$(mktemp -d)
+	cleanup_tmpdir=$tmpdir
+	trap cleanup EXIT HUP INT QUIT TERM
+
+	err=$tmpdir/preflight.err
+	fake_bin=$tmpdir/bin
+	repo=$tmpdir/repo
+	bootstrap_bin=$tmpdir/bootstrap-bin
+	bootstrap_home=$tmpdir/home
+	bootstrap_out=$tmpdir/bootstrap.out
+
+	mkdir -p \
+		"$bootstrap_bin" \
+		"$bootstrap_home/.linuxbrew/bin" \
+		"$bootstrap_home/.linuxbrew/opt/curl/bin" \
+		"$bootstrap_home/.linuxbrew/opt/ruby/bin" \
+		"$fake_bin" \
+		"$repo"
+	printf '# Smoke\n' >"$repo/README.md"
+	git -C "$repo" init -q
+	git -C "$repo" config user.email smoke@example.invalid
+	git -C "$repo" config user.name Smoke
+	git -C "$repo" add README.md
+	git -C "$repo" commit -q -m init
+
+	"$preflight" --require README.md "$repo" >/dev/null
+
+	if "$preflight" --require missing "$repo" >/dev/null 2>"$err"; then
+		echo "expected missing required path to fail" >&2
+		exit 1
+	fi
+	grep -q "required checkout path is missing or unreadable" "$err"
+
+	cat >"$fake_bin/uname" <<'EOF'
+#!/usr/bin/env bash
+printf 'Darwin\n'
+EOF
+	cat >"$fake_bin/fileproviderctl" <<'EOF'
+#!/usr/bin/env bash
+cat <<'STATUS'
+isDownloading = 1;
+isKeepDownloaded = 0;
+isRecursivelyDownloaded = 0;
+STATUS
+EOF
+	chmod +x "$fake_bin/fileproviderctl" "$fake_bin/uname"
+
+	PATH=$fake_bin:$PATH "$preflight" "$repo" >/dev/null 2>"$err"
+	grep -q "checkout is downloading" "$err"
+	grep -q "checkout is not marked keep downloaded" "$err"
+	grep -q "checkout is not recursively downloaded" "$err"
+
+	cat >"$bootstrap_bin/apt-get" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+	cat >"$bootstrap_bin/sudo" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+	cat >"$bootstrap_home/.linuxbrew/bin/brew" <<'EOF'
+#!/usr/bin/env bash
+case ${1:-} in
+--prefix)
+	if (($# == 1)); then
+		printf '%s\n' "$HOME/.linuxbrew"
+	else
+		printf '%s/opt/%s\n' "$HOME/.linuxbrew" "$2"
+	fi
+	;;
+install | update)
+	;;
+shellenv)
+	printf 'export PATH="%s/bin:$PATH"\n' "$HOME/.linuxbrew"
+	;;
+*)
+	exit 1
+	;;
+esac
+EOF
+	cat >"$bootstrap_home/.linuxbrew/opt/curl/bin/curl" <<'EOF'
+#!/usr/bin/env bash
+printf 'curl fake-homebrew\n'
+EOF
+	cat >"$bootstrap_home/.linuxbrew/opt/ruby/bin/ruby" <<'EOF'
+#!/usr/bin/env bash
+printf 'ruby fake-homebrew\n'
+EOF
+	chmod +x \
+		"$bootstrap_bin/apt-get" \
+		"$bootstrap_bin/sudo" \
+		"$bootstrap_home/.linuxbrew/bin/brew" \
+		"$bootstrap_home/.linuxbrew/opt/curl/bin/curl" \
+		"$bootstrap_home/.linuxbrew/opt/ruby/bin/ruby"
+
+	HOME=$bootstrap_home PATH=$bootstrap_bin:/usr/bin:/bin "$bootstrap" linux >"$bootstrap_out"
+	grep -q "ruby fake-homebrew" "$bootstrap_out"
+	grep -q "curl fake-homebrew" "$bootstrap_out"
+	grep -Fq "$bootstrap_home/.linuxbrew/bin/brew shellenv" "$bootstrap_home/.profile"
+
+	tree=$(git -C "$repo" rev-parse 'HEAD^{tree}')
+	object=$repo/.git/objects/${tree:0:2}/${tree:2}
+	rm -f "$object"
+
+	if "$preflight" "$repo" >/dev/null 2>"$err"; then
+		echo "expected missing Git tree object to fail" >&2
+		exit 1
+	fi
+	grep -q "checkout has no readable Git HEAD tree" "$err"
+}
+
+main "$@"

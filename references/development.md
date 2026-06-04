@@ -14,6 +14,7 @@ Load this reference when editing this repository, the Tilde skill, helper script
 - Status helper: `bin/status`
 - Plan helper: `bin/plan`
 - Bootstrap helper: `bin/bootstrap`
+- Checkout preflight helper: `bin/preflight`
 - Provisioning state: `~/.local/state/tilde/hosts/HOST/state.md`
 - Agent resume checkpoint: `.agents/state/checkpoints/assistant.md`
 - Shared notes and TODO inbox: `.agents/notes/todo.md`
@@ -66,6 +67,7 @@ Run relevant checks after Tilde skill, helper, or migrated module changes:
 
 ```bash
 bin/plan --repo ../home --allow-dirty --platform linux --host smoke --format markdown
+.agents/tests/deploy/smoke.sh
 REPO_ROOT=../home .agents/tests/provision/smoke.sh
 RUBOCOP_SERVER=false RUBOCOP_CACHE_ROOT=.agents/state/rubocop-cache rubocop --cache false --config .agents/tests/provision/rubocop.yml bin/plan
 mapfile -t shell_files < <(rg --hidden -l '^#!.*(bash|sh)' -g '!**/.git/**' -g '!**/.agents/state/**')

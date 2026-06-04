@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+[[ -z ${TRACE:-} ]] || set -x
+unset CDPATH
+
+# ------------------------------------------------------------------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------------------------------------------------------------------
+
+check_file_provider() {
+	local repo=$1
+	local status
+
+	[[ $(uname -s) == Darwin ]] || return
+	command -v fileproviderctl >/dev/null 2>&1 || return
+	status=$(fileproviderctl evaluate "$repo" 2>/dev/null) || return
+
+	[[ $status != *'isDownloading = 1;'* ]] || warn "W: checkout is downloading: $repo"
+	[[ $status != *'isKeepDownloaded = 0;'* ]] || warn "W: checkout is not marked keep downloaded: $repo"
+	[[ $status != *'isRecursivelyDownloaded = 0;'* ]] || warn "W: checkout is not recursively downloaded: $repo"
+}
+
+check_repo() {
+	local repo=$1
+	shift
+
+	local required
+
+	if [[ ! -d $repo ]]; then
+		warn "E: checkout is missing: $repo"
+		return 1
+	fi
+
+	for required; do
+		if [[ ! -r $repo/$required ]]; then
+			warn "E: required checkout path is missing or unreadable: $repo/$required"
+			return 1
+		fi
+	done
+
+	if ! git -C "$repo" rev-parse --verify HEAD >/dev/null 2>&1; then
+		warn "E: checkout has no readable Git HEAD: $repo"
+		return 1
+	fi
+
+	if ! git -C "$repo" cat-file -e 'HEAD^{tree}' >/dev/null 2>&1; then
+		warn "E: checkout has no readable Git HEAD tree: $repo"
+		return 1
+	fi
+
+	if ! git -C "$repo" status --porcelain=v1 --untracked-files=no >/dev/null 2>&1; then
+		warn "E: checkout Git tree cannot be traversed: $repo"
+		return 1
+	fi
+
+	check_file_provider "$repo"
+	printf 'OK: %s\n' "$repo"
+}
+
+warn() {
+	printf '%s\n' "$*" >&2
+}
+
+# ------------------------------------------------------------------------------------------------------------------------
+# Main
+# ------------------------------------------------------------------------------------------------------------------------
+
+usage() {
+	cat <<-EOF
+		Usage: preflight [--require PATH] REPO...
+	EOF
+}
+
+main() {
+	local failed=0
+	local repo
+	local -a repos=()
+	local -a required=()
+
+	while (($# > 0)); do
+		case $1 in
+		--help)
+			usage
+			return
+			;;
+		--require)
+			(($# > 1)) || {
+				warn "E: --require needs a checkout-relative path"
+				return 2
+			}
+			required+=("$2")
+			shift 2
+			;;
+		--)
+			shift
+			repos+=("$@")
+			break
+			;;
+		-*)
+			warn "E: unknown option: $1"
+			usage >&2
+			return 2
+			;;
+		*)
+			repos+=("$1")
+			shift
+			;;
+		esac
+	done
+
+	if ((${#repos[@]} == 0)); then
+		usage >&2
+		return 2
+	fi
+
+	for repo in "${repos[@]}"; do
+		check_repo "$repo" "${required[@]}" || failed=1
+	done
+
+	return "$failed"
+}
+
+main "$@"

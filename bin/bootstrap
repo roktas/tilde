@@ -31,6 +31,30 @@ detect_platform() {
 	esac
 }
 
+find_homebrew() {
+	local brew
+	local -a candidates=(
+		/opt/homebrew/bin/brew
+		/usr/local/bin/brew
+		"$HOME/.linuxbrew/bin/brew"
+		/home/linuxbrew/.linuxbrew/bin/brew
+	)
+
+	if brew=$(command -v brew 2>/dev/null); then
+		printf '%s\n' "$brew"
+		return
+	fi
+
+	for brew in "${candidates[@]}"; do
+		if [[ -x $brew ]]; then
+			printf '%s\n' "$brew"
+			return
+		fi
+	done
+
+	return 1
+}
+
 # ------------------------------------------------------------------------------------------------------------------------
 # Commands
 # ------------------------------------------------------------------------------------------------------------------------
@@ -52,17 +76,32 @@ install_apt_base() {
 }
 
 install_homebrew() {
-	if command -v brew >/dev/null; then
+	if find_homebrew >/dev/null; then
 		return
 	fi
 
 	bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-	abort "Homebrew was installed; ensure brew is on PATH, then rerun bootstrap"
+	abort "Homebrew was installed; rerun bootstrap"
 }
 
 load_homebrew() {
-	command -v brew >/dev/null || abort "brew is not on PATH"
-	eval "$(brew shellenv)"
+	local brew
+
+	brew=$(find_homebrew) || abort "Homebrew is not installed"
+	eval "$("$brew" shellenv)"
+}
+
+load_homebrew_tools() {
+	local formula
+	local prefix
+
+	for formula in curl ruby; do
+		prefix=$(brew --prefix "$formula")
+		PATH=$prefix/bin:$PATH
+	done
+
+	export PATH
+	hash -r
 }
 
 persist_homebrew() {
@@ -133,6 +172,7 @@ main() {
 
 	brew update
 	brew install curl git ruby
+	load_homebrew_tools
 
 	ruby --version
 	git --version

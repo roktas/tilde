@@ -173,6 +173,16 @@ install and guide the user through the platform-appropriate manual Dropbox setup
 After the user confirms Dropbox is installed, linked, and synced, re-run the preflight. Only then run bootstrap when
 needed and continue to plan/install.
 
+Run `bin/preflight` in the target context to make the checkout check bounded and repeatable. Supply important
+checkout-relative paths with `--require`; for example, require `AGENTS.md` for a data repository and `SKILL.md`,
+`bin/plan`, and `bin/bootstrap` for the Tilde repository. A missing required path, unreadable Git `HEAD` or `HEAD` tree,
+or Git tree that cannot be traversed blocks deployment. Do not use an unbounded full-object `git fsck` during ordinary
+preflight; reserve deeper repository diagnosis for doctor flows.
+
+On macOS, File Provider status such as an active download, a checkout not marked keep downloaded, or a checkout not
+marked recursively downloaded is advisory. Report those flags, but let required-file and Git traversal checks decide
+whether the checkout is usable.
+
 Do not create a separate Git clone on a target that was selected as `dropbox` unless the user explicitly changes the
 host kind to `git`. This avoids two competing public data checkouts on personal machines.
 
@@ -222,7 +232,10 @@ On apt-based Linux, bootstrap installs the small base needed for Homebrew, such 
 
 On macOS, bootstrap checks for Xcode Command Line Tools first, installs Homebrew, and installs `curl`, `git`, and
 `ruby` through Homebrew. If Command Line Tools installation is started, bootstrap stops and the user reruns it after the
-platform installer finishes.
+platform installer finishes. Bootstrap must detect an existing Homebrew installation in standard macOS and Linuxbrew
+locations even when non-interactive SSH does not put `brew` on `PATH`. After installing formulas, bootstrap uses the
+Homebrew `curl` and keg-only Ruby paths for its own verification. Later remote processes that require Homebrew Ruby must
+load the target Homebrew environment and Ruby formula path explicitly.
 
 ### Remote Modes
 
