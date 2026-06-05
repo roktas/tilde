@@ -118,10 +118,12 @@ use `gemini-cli` or `brew:gemini-cli`, not `brew: [gemini-cli]`.
 
 Valid package types are `brew`, `cask`, `deb`, `npm`, `gem`, `egg`, `flatpak`, `scoop`, `github`, and `skill`.
 
-When no package type is provided, Linux and macOS default to `brew`; Windows defaults to `scoop`. `deb` installs are
-system-wide through `sudo`. Other package types are installed user-wide through their package managers. Prefer `bun` for
-`npm` packages and `uv` for `egg` Python tools. `github` packages are installed from release assets, with executables
-placed in `~/.local/bin`. `skill` packages install agent skills from Git-backed sources into `~/.agents/skills`.
+When no package type is provided, Linux and macOS default to `brew`; Windows defaults to `scoop`. For ordinary Homebrew
+formulae in Linux, macOS, or shared scopes, use the bare package name instead of a redundant `brew:` prefix. `deb`
+installs are system-wide through `sudo`. Other package types are installed user-wide through their package managers.
+Prefer `bun` for `npm` packages and `uv` for `egg` Python tools. `github` packages are installed from release assets,
+with executables placed in `~/.local/bin`. `skill` packages install agent skills from Git-backed sources into
+`~/.agents/skills`.
 
 If `packages` is missing, the module is virtual and installs no packages. Add package names explicitly for modules that
 install packages. `packages: []` is valid but usually unnecessary.
