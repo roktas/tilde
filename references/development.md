@@ -12,6 +12,7 @@ Load this reference when editing this repository, the Tilde skill, helper script
 - Dotagents spec alias: `.agents/specs/tilde.md`
 - Tilde skill: `SKILL.md`
 - Status helper: `bin/status`
+- Doctor helper: `bin/doctor`
 - Plan helper: `bin/plan`
 - Bootstrap helper: `bin/bootstrap`
 - Checkout preflight helper: `bin/preflight`
@@ -69,8 +70,9 @@ Run relevant checks after Tilde skill, helper, or migrated module changes:
 bin/plan --repo ../home --allow-dirty --platform linux --host smoke --format markdown
 .agents/tests/apply/smoke.sh
 .agents/tests/deploy/smoke.sh
+.agents/tests/doctor/smoke.sh
 REPO_ROOT=../home .agents/tests/provision/smoke.sh
-RUBOCOP_SERVER=false RUBOCOP_CACHE_ROOT=.agents/state/rubocop-cache rubocop --cache false --config .agents/tests/provision/rubocop.yml bin/plan bin/apply
+RUBOCOP_SERVER=false RUBOCOP_CACHE_ROOT=.agents/state/rubocop-cache rubocop --cache false --config .agents/tests/provision/rubocop.yml bin/plan bin/apply bin/doctor
 mapfile -t shell_files < <(rg --hidden -l '^#!.*(bash|sh)' -g '!**/.git/**' -g '!**/.agents/state/**')
 shellcheck "${shell_files[@]}"
 ```

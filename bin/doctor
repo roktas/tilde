@@ -1,0 +1,187 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "json"
+require "optparse"
+require "pathname"
+require "socket"
+require "time"
+
+class Doctor
+  def initialize(options)
+    @format = options.fetch(:format)
+    @home = Pathname.new(ENV.fetch("HOME", Dir.home)).expand_path
+    @host = options[:host] || Socket.gethostname.split(".").first
+    @state_dir = expand(options[:state_dir] || "~/.local/state/tilde")
+  end
+
+  def run
+    report = collect
+    @format == "markdown" ? puts_markdown(report) : puts(JSON.pretty_generate(report))
+  end
+
+  private
+
+  def area(path)
+    names = path.relative_path_from(dropbox).each_filename.map(&:downcase)
+    return "cache" if names.intersect?(%w[.cache cache caches .dropbox.cache])
+    return "archive" if names.intersect?(%w[archive archives arsiv])
+    return "tmp" if names.intersect?(%w[.tmp tmp temp temporary])
+
+    "active"
+  end
+
+  def collect
+    plan = read_plan
+    findings = plan.fetch("actions", []).filter_map { |action| inspect_action(action) }
+    {
+      schema: "tilde.doctor/v1",
+      generated_at: Time.now.iso8601,
+      host: @host,
+      state_dir: show(@state_dir),
+      last_plan: show(plan_path),
+      findings:
+    }
+  end
+
+  def display_target(target, path)
+    target.start_with?("~/") ? target : show(path)
+  end
+
+  def expand(path)
+    text = path.to_s
+    return @home if text == "~"
+    return @home.join(text.delete_prefix("~/")).expand_path if text.start_with?("~/")
+
+    Pathname.new(text).expand_path
+  end
+
+  def finding(action, path, link, problems)
+    {
+      area: area(path),
+      module_id: action["module_id"],
+      action_id: action["id"],
+      target: display_target(action.fetch("target"), path),
+      link:,
+      problems:
+    }
+  end
+
+  def host_absolute?(link)
+    link == @home.to_s || link.start_with?("#{@home}/")
+  end
+
+  def inspect_action(action)
+    return nil unless link_action?(action)
+
+    path = expand(action.fetch("target"))
+    return nil unless managed_dropbox_link?(path)
+
+    link = File.readlink(path.to_s)
+    problems = problems(path, link)
+    return nil if problems.empty?
+
+    finding(action, path, link, problems)
+  rescue SystemCallError => e
+    finding(action, path, nil, ["error: #{e.message}"])
+  end
+
+  def inside?(path, root)
+    path = path.expand_path
+    root = root.expand_path
+    path.to_s == root.to_s || path.to_s.start_with?("#{root}/")
+  end
+
+  def link_action?(action)
+    action["kind"] == "link" && action["target"]
+  end
+
+  def managed_dropbox_link?(path)
+    inside?(path, dropbox) && path.symlink?
+  end
+
+  def plan_path
+    @plan_path ||= @state_dir.join("hosts", @host, "last-plan.json")
+  end
+
+  def read_plan
+    JSON.parse(plan_path.read)
+  rescue Errno::ENOENT
+    { "actions" => [] }
+  rescue JSON::ParserError => e
+    { "actions" => [], "error" => e.message }
+  end
+
+  def problems(path, link)
+    problems = []
+    problems << "broken" unless resolved?(path)
+    problems << "host-absolute" if host_absolute?(link)
+    problems
+  end
+
+  def resolved?(path)
+    path.realpath
+    true
+  rescue Errno::ENOENT
+    false
+  end
+
+  def dropbox
+    @dropbox ||= @home.join("Dropbox").expand_path
+  end
+
+  def show(path)
+    path = Pathname.new(path.to_s)
+    text = path.to_s
+    text == @home.to_s ? "~" : text.sub(%r{\A#{Regexp.escape(@home.to_s)}/}, "~/")
+  end
+
+  def puts_markdown(report)
+    puts("# Tilde Doctor")
+    puts
+    puts("- Host: `#{report.fetch(:host)}`")
+    puts("- State root: `#{report.fetch(:state_dir)}`")
+    puts("- Last plan cache: `#{report.fetch(:last_plan)}`")
+    puts
+    puts("## Dropbox Links")
+    findings = report.fetch(:findings)
+    if findings.empty?
+      puts("- No broken or host-absolute managed Dropbox links found.")
+    else
+      findings.each do |item|
+        puts(
+          "- `#{item.fetch(:target)}`: #{item.fetch(:problems).join(', ')} " \
+          "(`#{item.fetch(:area)}`, `#{item.fetch(:module_id)}`)"
+        )
+      end
+    end
+  end
+end
+
+def main(argv)
+  options = {
+    format: "markdown"
+  }
+
+  OptionParser
+    .new do |parser|
+      parser.banner = "Usage: doctor [options]"
+      parser.on("--format FORMAT", "Output format: json or markdown") { |value| options[:format] = value }
+      parser.on("--host HOST", "Host short name") { |value| options[:host] = value }
+      parser.on("--state-dir PATH", "Tilde state directory") { |value| options[:state_dir] = value }
+    end
+    .parse!(argv)
+
+  unless %w[json markdown].include?(options[:format])
+    warn("Unsupported format: #{options[:format]}")
+    return 2
+  end
+
+  Doctor.new(options).run
+  0
+rescue StandardError => e
+  warn("error: #{e.message}")
+  1
+end
+
+exit(main(ARGV)) if $PROGRAM_NAME == __FILE__

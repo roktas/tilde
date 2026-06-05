@@ -72,7 +72,9 @@ Public command semantics:
   caches are missing, print a limited-status warning and suggest explicit next commands such as
   `$tilde status discover`, `$tilde doctor`, or `$tilde deploy`.
 - `doctor`: diagnose host/home health, repository discovery, dirty worktrees, broken managed links, missing state, and
-  Dropbox/Git consistency. It reports findings and suggestions, but it is not a whole-home audit.
+  Dropbox/Git consistency. It reports findings and suggestions, but it is not a whole-home audit. For Dropbox-backed
+  managed links, classify findings as active, cache, archive, or tmp so cleanup decisions do not treat disposable or
+  archival areas like live desired state.
 - `adopt`: inspect a requested app, config, package identity, or explicit path; propose how to move it into the public
   or private data repository; and wait for confirmation before any write.
 - `clean`: propose conservative cleanup for selected home content. It may include duplicate candidates when relevant.
