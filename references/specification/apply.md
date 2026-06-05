@@ -67,7 +67,7 @@ Validation failure blocks the entire apply without changing managed targets or d
 
 The first implementation should support these action kinds:
 
-- `home-entrypoint`: write an approved fallback home entrypoint.
+- `entrypoint`: write an approved fallback home entrypoint.
 - `package`: install or refresh one exact package declaration through a supported package handler.
 - `section`: execute one exact Bash-only special-section block.
 - `link`: create or replace one symbolic link using a fully materialized link value.
@@ -137,8 +137,10 @@ Host `state.md` folds action results into repository-qualified module results. A
 actions are `ok`, `unchanged`, or `ignored`; `deferred` and `notok` make the module `notok` with details in the state
 body.
 
-`last-plan.json`, `last-apply.json`, and host state represent the combined public/private deployment. Independent public
-and private writes must not overwrite each other's cached plan or apply results.
+`last-plan.json` is a combined cache of the confirmed public/private input plans, not another input plan. Its schema
+must identify the cache format separately from the executable `tilde.plan/v1` plan schema. `last-apply.json` and host
+state represent the same combined public/private deployment. Independent public and private writes must not overwrite
+each other's cached plan or apply results.
 
 ## Non-Goals
 

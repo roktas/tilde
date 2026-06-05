@@ -14,21 +14,21 @@ require "time"
 require "yaml"
 
 class Apply
-  SCHEMA = "tilde.plan/v1"
   APPLY_SCHEMA = "tilde.apply/v1"
-  PLAN_SET_SCHEMA = "tilde.plan-set/v1"
+  CACHE_SCHEMA = "tilde.cache/v1"
+  PLAN_SCHEMA = "tilde.plan/v1"
   RESULT_OK = %w[ok unchanged ignored].freeze
   ROLES = %w[public private].freeze
   ROLE_ORDER = {
     "public" => 0,
     "private" => 1
   }.freeze
-  SUPPORTED_ACTIONS = %w[home-entrypoint package section link copy manual].freeze
+  SUPPORTED_ACTIONS = %w[entrypoint package section link copy manual].freeze
   SUPPORTED_CONFLICTS = %w[backup none write-fallback-file].freeze
   SUPPORTED_PACKAGE_TYPES = %w[brew cask deb egg flatpak gem npm scoop].freeze
   ACTION_HANDLERS = {
     "copy" => :execute_copy,
-    "home-entrypoint" => :execute_home_entrypoint,
+    "entrypoint" => :execute_entrypoint,
     "link" => :execute_link,
     "manual" => :execute_manual,
     "package" => :execute_package,
@@ -221,7 +221,7 @@ class Apply
     FileUtils.rm_rf(temp) if temp
   end
 
-  def execute_home_entrypoint(action)
+  def execute_entrypoint(action)
     source = Pathname.new(action.fetch("source_path"))
     target = expand_target(action.fetch("target"))
     return action_result(action, "unchanged") if target.file? && target.read == source.read
@@ -311,7 +311,7 @@ class Apply
       schema: APPLY_SCHEMA,
       started_at: @started_at,
       completed: false,
-      plan_set_id:,
+      input_id:,
       plans: @plans.map { |plan| plan_metadata(plan) },
       results: []
     }
@@ -359,8 +359,8 @@ class Apply
     }
   end
 
-  def plan_set_id
-    @plan_set_id ||= begin
+  def input_id
+    @input_id ||= begin
       ids = @plans.map { |plan| plan.fetch("plan_id") }
       "sha256:#{Digest::SHA256.hexdigest(JSON.generate(ids))}"
     end
@@ -389,7 +389,7 @@ class Apply
 
     data = JSON.parse(@last_apply_path.read)
     return nil if data["completed"]
-    return nil unless data["plan_set_id"] == plan_set_id
+    return nil unless data["input_id"] == input_id
 
     data
   rescue JSON::ParserError
@@ -453,7 +453,7 @@ class Apply
   end
 
   def validate!
-    validate_plan_set!
+    validate_plans!
     validate_repositories!
     validate_actions!
   end
@@ -498,7 +498,7 @@ class Apply
   end
 
   def validate_plan!(plan)
-    raise "unsupported plan schema: #{plan['schema']}" unless plan["schema"] == SCHEMA
+    raise "unsupported plan schema: #{plan['schema']}" unless plan["schema"] == PLAN_SCHEMA
     raise "missing plan id" unless plan["plan_id"].to_s.start_with?("sha256:")
     raise "plan id mismatch" unless plan.fetch("plan_id") == current_plan_hash(plan)
     raise "target home mismatch" unless Pathname.new(plan.fetch("target").fetch("home")).expand_path == @home
@@ -506,7 +506,7 @@ class Apply
     raise "target platform mismatch" unless plan.fetch("target").fetch("platform") == detect_platform
   end
 
-  def validate_plan_set!
+  def validate_plans!
     roles = {}
     first_target = @plans.first&.fetch("target")
     raise "at least one plan is required" unless first_target
@@ -597,9 +597,9 @@ class Apply
     core_entrypoints = @plans.flat_map { |plan| plan.fetch("core").fetch("home_entrypoints_to_write", []) }
     links = @plans.flat_map { |plan| plan.fetch("core").fetch("links_to_create", []) }
     cache = {
-      schema: PLAN_SET_SCHEMA,
+      schema: CACHE_SCHEMA,
       generated_at: Time.now.iso8601,
-      plan_set_id:,
+      input_id:,
       plans: @plans,
       core: {
         "home_entrypoints_to_write" => core_entrypoints,

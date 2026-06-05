@@ -241,6 +241,8 @@ EOF
 		abort "wrong apply schema" unless apply.fetch("schema") == "tilde.apply/v1"
 		abort "apply should complete after resume" unless apply.fetch("completed")
 		last_plan = JSON.parse(File.read(ENV.fetch("LAST_PLAN")))
+		abort "wrong plan cache schema" unless last_plan.fetch("schema") == "tilde.cache/v1"
+		abort "input id mismatch" unless last_plan.fetch("input_id") == apply.fetch("input_id")
 		abort "last plan should combine public and private" unless last_plan.fetch("plans").length == 2
 		abort "last plan should include private modules" unless last_plan.fetch("modules").any? { |mod| mod.fetch("id") == "private/zzz-private" }
 		results = apply.fetch("results")

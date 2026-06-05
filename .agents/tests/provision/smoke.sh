@@ -123,6 +123,7 @@ EOF
 		ids = actions.map { |action| action.fetch("id") }
 		abort "action ids should be unique" unless ids.uniq == ids
 		abort "actions should use role-qualified module ids" unless actions.all? { |action| action.fetch("module_id") == "core" || action.fetch("module_id").include?("/") }
+		abort "legacy home-entrypoint action kind leaked" if actions.any? { |action| action.fetch("kind") == "home-entrypoint" }
 		abort "missing manual linux install action" unless actions.any? { |action| action.fetch("kind") == "manual" && action.fetch("module_id") == "public/linux" && action.fetch("name") == "Install" }
 		abort "missing agents link action" unless actions.any? { |action| action.fetch("kind") == "link" && action.fetch("module_id") == "public/agents" && action.fetch("target") == "~/.agents/AGENTS.md" && action.fetch("link_value").end_with?("/agents/AGENTS.md") }
 		abort "wrong mode" unless plan.fetch("mode") == "apply"
@@ -137,6 +138,7 @@ EOF
 			# Companion-owned home entrypoints are checked by a focused fixture below.
 		else
 			abort "missing fallback home entrypoint" unless core_entrypoints.any? { |entrypoint| entrypoint.fetch("source") == "assets/AGENTS.md" && entrypoint.fetch("target") == "~/AGENTS.md" && entrypoint.fetch("strategy") == "write-fallback-file" }
+			abort "missing fallback entrypoint action" unless actions.any? { |action| action.fetch("kind") == "entrypoint" && action.fetch("module_id") == "core" && action.fetch("target") == "~/AGENTS.md" }
 		end
 		linux = plan.fetch("modules").find { |mod| mod.fetch("name") == "linux" }
 		abort "missing linux platform module" unless linux

@@ -15,7 +15,7 @@ class Plan
   SKILL_ROOT = Pathname.new(__dir__).parent.expand_path.freeze
   FALLBACK_ENTRYPOINT_SOURCE = "assets/AGENTS.md"
   HOME_ENTRYPOINT_TARGET = "~/AGENTS.md"
-  SCHEMA = "tilde.plan/v1"
+  PLAN_SCHEMA = "tilde.plan/v1"
   DEFAULT_PACKAGE_TYPE = {
     "linux" => "brew",
     "macos" => "brew",
@@ -65,7 +65,7 @@ class Plan
     core = core_plan(modules)
 
     plan = {
-      schema: SCHEMA,
+      schema: PLAN_SCHEMA,
       generated_at: Time.now.iso8601,
       repo: @repo.to_s,
       head: @head,
@@ -268,10 +268,10 @@ class Plan
     hosts.empty? || hosts.include?(@host)
   end
 
-  def home_entrypoint_action(entrypoint)
+  def entrypoint_action(entrypoint)
     {
-      id: "core:home-entrypoint:#{entrypoint.fetch(:target)}",
-      kind: "home-entrypoint",
+      id: "core:entrypoint:#{entrypoint.fetch(:target)}",
+      kind: "entrypoint",
       module_id: "core",
       module_name: "core",
       repo_role:,
@@ -557,12 +557,8 @@ class Plan
   end
 
   def ordered_actions(plan)
-    actions = []
+    actions = plan.fetch(:core).fetch(:home_entrypoints_to_write).map { |entrypoint| entrypoint_action(entrypoint) }
     used = {}
-
-    plan.fetch(:core).fetch(:home_entrypoints_to_write).each do |entrypoint|
-      actions << home_entrypoint_action(entrypoint)
-    end
 
     plan.fetch(:modules).flat_map { |mod| module_actions(mod) }.each do |action|
       action[:id] = action_id(action.fetch(:id), used)
