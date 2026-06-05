@@ -49,7 +49,7 @@ main() {
 
 	case $command in
 	plan)
-		there run .agents/tests/provision/smoke.sh
+		there run .agents/tests/plan/smoke.sh
 		;;
 	boot)
 		there run bin/bootstrap

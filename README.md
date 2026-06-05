@@ -330,5 +330,4 @@ suggests `$tilde status discover`, `$tilde doctor`, or `$tilde deploy` instead o
 ## References
 
 See `references/specification.md` for the canonical specification entrypoint, always-read contract, and routing map.
-Detailed protocol, command, home, customization, deployment, provisioning, and package semantics live under
-`references/specification/`.
+Detailed behavior lives in the routed files under `references/specification/`.

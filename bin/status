@@ -33,19 +33,39 @@ class Status
     modules.sum { |mod| Array(mod[key]).length }
   end
 
-  def cache_surface(path)
-    return {present: false, path: display_path(path)} unless path.file?
-
-    cached_plan_summary(path, JSON.parse(path.read))
-  rescue JSON::ParserError => e
-    {present: true, path: display_path(path), error: e.message}
+  def apply_summary(path, data)
+    {
+      present: true,
+      path: display_path(path),
+      schema: data["schema"],
+      started_at: data["started_at"],
+      completed: data["completed"],
+      result_count: Array(data["results"]).length
+    }
   end
 
-  def cached_plan_summary(path, data)
+  def apply_surface(path)
+    return { present: false, path: display_path(path) } unless path.file?
+
+    apply_summary(path, JSON.parse(path.read))
+  rescue JSON::ParserError => e
+    { present: true, path: display_path(path), error: e.message }
+  end
+
+  def plan_surface(path)
+    return { present: false, path: display_path(path) } unless path.file?
+
+    plan_summary(path, JSON.parse(path.read))
+  rescue JSON::ParserError => e
+    { present: true, path: display_path(path), error: e.message }
+  end
+
+  def plan_summary(path, data)
     modules = Array(data["modules"])
     {
       present: true,
       path: display_path(path),
+      schema: data["schema"],
       generated_at: data["generated_at"],
       repo: data["repo"],
       head: data["head"],
@@ -82,14 +102,14 @@ class Status
   def cache_summary
     host_dir = @state_dir.join("hosts", @host)
     {
-      last_plan: cache_surface(host_dir.join("last-plan.json")),
-      last_apply: cache_surface(host_dir.join("last-apply.json"))
+      last_plan: plan_surface(host_dir.join("last-plan.json")),
+      last_apply: apply_surface(host_dir.join("last-apply.json"))
     }
   end
 
   def config_summary(path, config)
-    return {present: false, path: display_path(path)} unless path.file?
-    return {present: true, path: display_path(path), error: config.fetch("_error")} if config_error?(config)
+    return { present: false, path: display_path(path) } unless path.file?
+    return { present: true, path: display_path(path), error: config.fetch("_error") } if config_error?(config)
 
     {
       present: true,
@@ -133,8 +153,8 @@ class Status
   end
 
   def host_state_summary(path, frontmatter, body)
-    return {present: false, path: display_path(path)} unless path.file?
-    return {present: true, path: display_path(path), error: frontmatter.fetch("_error")} if frontmatter.key?("_error")
+    return { present: false, path: display_path(path) } unless path.file?
+    return { present: true, path: display_path(path), error: frontmatter.fetch("_error") } if frontmatter.key?("_error")
 
     done = frontmatter.fetch("done", {}) || {}
     {
@@ -164,7 +184,7 @@ class Status
   def link_summary(path)
     path = expand_home(path)
     exists = path.exist? || path.symlink?
-    summary = {path: display_path(path), exists:}
+    summary = { path: display_path(path), exists: }
     return summary unless exists
 
     stat = path.lstat
@@ -178,9 +198,9 @@ class Status
 
     summary
   rescue Errno::ENOENT
-    {path: display_path(path), exists: false}
+    { path: display_path(path), exists: false }
   rescue SystemCallError => e
-    {path: display_path(path), exists:, error: e.message}
+    { path: display_path(path), exists:, error: e.message }
   end
 
   def link_type(stat)
@@ -208,7 +228,7 @@ class Status
     puts("## Deployment")
     puts("- Config: #{presence_line(status.dig(:config, :present), status.dig(:config, :path))}")
     puts("- Host state: #{presence_line(host_state[:present], host_state[:path])}")
-    puts("- Last apply date: `#{host_state[:date] || "unknown"}`") if host_state[:present]
+    puts("- Last apply date: `#{host_state[:date] || 'unknown'}`") if host_state[:present]
     puts("- Recorded modules: `#{host_state[:done_count]}`") if host_state[:present]
     puts("- Last plan cache: #{plan_cache}")
     puts("- Last apply cache: #{apply_cache}")
@@ -283,7 +303,7 @@ class Status
     _, yaml_text, body = text.split(/^---\s*$\n?/, 3)
     [YAML.safe_load(yaml_text, aliases: true, permitted_classes: [Date, Time]) || {}, body]
   rescue Psych::SyntaxError => e
-    [{"_error" => e.message}, nil]
+    [{ "_error" => e.message }, nil]
   end
 
   def read_yaml(path)
@@ -291,7 +311,7 @@ class Status
 
     YAML.safe_load(path.read, aliases: true, permitted_classes: [Date, Time]) || {}
   rescue Psych::SyntaxError => e
-    {"_error" => e.message}
+    { "_error" => e.message }
   end
 
   def realpath_or_nil(path)
@@ -306,7 +326,7 @@ class Status
 
     branch = repo[:branch] || "unknown branch"
     dirty = repo[:dirty] ? "dirty" : "clean"
-    "`#{repo[:path]}` `#{branch}` `#{repo[:head] || "unknown"}`, #{dirty}"
+    "`#{repo[:path]}` `#{branch}` `#{repo[:head] || 'unknown'}`, #{dirty}"
   end
 
   def repo_problem(repo)
@@ -319,7 +339,7 @@ class Status
   end
 
   def repo_summary(label, path)
-    return {label:, path: nil, exists: false, git: false} unless path
+    return { label:, path: nil, exists: false, git: false } unless path
 
     summary = {
       label:,
@@ -391,18 +411,19 @@ class Status
     unless status.dig(:caches, :last_plan, :present)
       warnings <<
         "No cached plan was found; managed-surface counts require explicit " \
-          "`$tilde status discover` or `$tilde doctor`."
+        "`$tilde status discover` or `$tilde doctor`."
     end
 
     if partial?(status)
       warnings <<
         "Fast status is partial and did not regenerate plans, validate live links, " \
-          "query packages, call Dropbox, or scan home."
+        "query packages, call Dropbox, or scan home."
     end
 
     if status.dig(:home_entrypoint, "~/AGENTS.md", :legacy_skill_symlink)
       warnings <<
-        "`~/AGENTS.md` points at the fallback skill template; deploy should replace it with a data-repository home entrypoint link."
+        "`~/AGENTS.md` points at the fallback skill template; deploy should replace it with " \
+        "a data-repository home entrypoint link."
     end
 
     warnings

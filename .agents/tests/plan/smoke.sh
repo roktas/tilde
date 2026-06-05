@@ -469,7 +469,7 @@ EOF
 		abort "skipped repair module should not include copies" unless mc.fetch("copies_to_create").empty?
 	'
 
-	echo "provision smoke ok"
+	echo "plan smoke ok"
 }
 
 main "$@"

@@ -71,8 +71,9 @@ bin/plan --repo ../home --allow-dirty --platform linux --host smoke --format mar
 .agents/tests/apply/smoke.sh
 .agents/tests/deploy/smoke.sh
 .agents/tests/doctor/smoke.sh
-REPO_ROOT=../home .agents/tests/provision/smoke.sh
-RUBOCOP_SERVER=false RUBOCOP_CACHE_ROOT=.agents/state/rubocop-cache rubocop --cache false --config .agents/tests/provision/rubocop.yml bin/plan bin/apply bin/doctor
+.agents/tests/status/smoke.sh
+REPO_ROOT=../home .agents/tests/plan/smoke.sh
+RUBOCOP_SERVER=false RUBOCOP_CACHE_ROOT=.agents/state/rubocop-cache rubocop --cache false --config .agents/tests/rubocop.yml bin/plan bin/apply bin/doctor bin/status
 mapfile -t shell_files < <(rg --hidden -l '^#!.*(bash|sh)' -g '!**/.git/**' -g '!**/.agents/state/**')
 shellcheck "${shell_files[@]}"
 ```
@@ -126,5 +127,5 @@ bin/smoke prune
 Use `"there"` directly when a test needs a custom command:
 
 ```bash
-there run .agents/tests/provision/smoke.sh
+there run .agents/tests/plan/smoke.sh
 ```

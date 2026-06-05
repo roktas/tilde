@@ -590,7 +590,7 @@ class Plan
   end
 
   def puts_markdown(plan)
-    puts("# Provision Plan")
+    puts("# Tilde Plan")
     puts
     puts("- schema: `#{plan[:schema]}`")
     puts("- plan: `#{plan[:plan_id]}`")
