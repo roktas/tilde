@@ -58,7 +58,7 @@ The executor validates the complete plan set before the first write:
 - source paths are readable and remain inside their declared repository;
 - target paths are valid for the target home;
 - every action kind, package type, conflict strategy, and result policy is supported;
-- every action condition is supported;
+- every action and package condition is supported, and mirrored condition values agree;
 - action dependencies refer to known earlier actions;
 - state and backup parent paths are valid and writable without creating or changing them.
 

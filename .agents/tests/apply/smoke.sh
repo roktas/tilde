@@ -148,6 +148,8 @@ main() {
 	local apply
 	local apply_json
 	local bad_err
+	local bad_condition_err
+	local bad_condition_plan
 	local bad_plan
 	local bad_repo
 	local fake_bin
@@ -182,8 +184,10 @@ main() {
 	plan_json=$tmpdir/plan.json
 	private_plan_json=$tmpdir/private-plan.json
 	bad_plan=$tmpdir/bad-plan.json
+	bad_condition_plan=$tmpdir/bad-condition-plan.json
 	apply_json=$tmpdir/apply.json
 	bad_err=$tmpdir/bad.err
+	bad_condition_err=$tmpdir/bad-condition.err
 
 	mkdir -p \
 		"$fake_bin" \
@@ -201,12 +205,12 @@ EOF
 	cat >"$fake_bin/flatpak" <<'EOF'
 #!/usr/bin/env bash
 printf 'flatpak ran\n' > "$HOME"/flatpak-ran
-exit 9
+exit 0
 EOF
 	cat >"$fake_bin/systemctl" <<'EOF'
 #!/usr/bin/env bash
 if [[ ${1:-} == get-default ]]; then
-	printf 'multi-user.target\n'
+	printf '%s\n' "${TILDE_FAKE_SYSTEMCTL:-multi-user.target}"
 	exit 0
 fi
 
@@ -234,6 +238,30 @@ EOF
 	HOME=$home XDG_STATE_HOME=$state "$plan" --repo "$repo" --platform linux --host "$host" >"$plan_json"
 	HOME=$home XDG_STATE_HOME=$state "$plan" --repo "$private_repo" --platform linux --host "$host" >"$private_plan_json"
 
+	PLAN_JSON=$plan_json BAD_CONDITION_PLAN=$bad_condition_plan ruby -rjson -rdigest -e '
+		def canonicalize(value)
+			case value
+			when Array
+				value.map { |item| canonicalize(item) }
+			when Hash
+				value.keys.map(&:to_s).sort.to_h do |key|
+					[key, canonicalize(value[key])]
+				end
+			else
+				value
+			end
+		end
+
+		plan = JSON.parse(File.read(ENV.fetch("PLAN_JSON")))
+		action = plan.fetch("actions").find { |item| item.dig("package", "type") == "flatpak" }
+		abort "missing flatpak action" unless action
+		action.delete("condition")
+		action.fetch("package")["condition"] = "headless"
+		content = canonicalize(plan.reject { |key, _value| %w[generated_at plan_id].include?(key) })
+		plan["plan_id"] = "sha256:#{Digest::SHA256.hexdigest(JSON.generate(content))}"
+		File.write(ENV.fetch("BAD_CONDITION_PLAN"), JSON.pretty_generate(plan))
+	'
+
 	cp -a "$repo" "$bad_repo"
 	HOME=$home XDG_STATE_HOME=$state "$plan" --repo "$bad_repo" --platform linux --host "$host" >"$bad_plan"
 	rm -f "$bad_repo/aaa-link/source.txt"
@@ -245,9 +273,15 @@ EOF
 	grep -q "repository dirty state mismatch\\|source is not readable" "$bad_err"
 	[[ ! -e $home/manual-ran ]]
 
-	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:/usr/bin:/bin TILDE_APPLY_STOP_AFTER=1 "$apply" \
+	if HOME=$home XDG_STATE_HOME=$state "$apply" --plan "$bad_condition_plan" >"$tmpdir/bad-condition.out" 2>"$bad_condition_err"; then
+		echo "expected unsupported nested condition to fail validation" >&2
+		exit 1
+	fi
+	grep -q "unsupported condition: headless" "$bad_condition_err"
+
+	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:/usr/bin:/bin TILDE_APPLY_STOP_AFTER=3 "$apply" \
 		--plan "$private_plan_json" --plan "$plan_json" >"$tmpdir/partial.out"
-	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:/usr/bin:/bin "$apply" \
+	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:/usr/bin:/bin TILDE_FAKE_SYSTEMCTL=graphical.target "$apply" \
 		--plan "$private_plan_json" --plan "$plan_json" >"$apply_json"
 
 	[[ -L $home/Dropbox/var/app/source-link.txt ]]
@@ -257,7 +291,7 @@ EOF
 	grep -q '^old copy$' "$state"/tilde/hosts/"$host"/backups/*/.config/sample/copy.txt
 	grep -q '^section$' "$home/section/created.txt"
 	grep -q '^private$' "$home/.config/private/private.txt"
-	[[ ! -e $home/flatpak-ran ]]
+	grep -q '^flatpak ran$' "$home/flatpak-ran"
 	[[ ! -e $home/manual-ran ]]
 	[[ -f $state/tilde/hosts/$host/last-plan.json ]]
 	[[ -f $state/tilde/hosts/$host/last-apply.json ]]
@@ -274,7 +308,7 @@ EOF
 		abort "last plan should include private modules" unless last_plan.fetch("modules").any? { |mod| mod.fetch("id") == "private/zzz-private" }
 		results = apply.fetch("results")
 		abort "missing resumed action" unless results.any? { |result| result.fetch("diagnostics", {})["resumed"] }
-		abort "missing ignored flatpak result" unless results.any? { |result| result.fetch("module_id") == "public/flatpak" && result.fetch("status") == "ignored" && result.fetch("diagnostics", {}).fetch("reason") == "condition not met: graphical" }
+		abort "flatpak should run after ignored partial result" unless results.any? { |result| result.fetch("module_id") == "public/flatpak" && result.fetch("status") == "ok" }
 		abort "missing package failure" unless results.any? { |result| result.fetch("module_id") == "public/pkg" && result.fetch("status") == "notok" }
 		abort "missing manual deferred result" unless results.any? { |result| result.fetch("module_id") == "public/manual" && result.fetch("status") == "deferred" }
 		state, = File.read(ENV.fetch("STATE_FILE")).split(/^---\s*$/, 3)[1, 2]

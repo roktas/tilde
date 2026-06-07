@@ -18,6 +18,7 @@ class Apply
   CACHE_SCHEMA = "tilde.cache/v1"
   PLAN_SCHEMA = "tilde.plan/v1"
   RESULT_OK = %w[ok unchanged ignored].freeze
+  RESUMABLE_RESULTS = %w[ok unchanged].freeze
   ROLES = %w[public private].freeze
   ROLE_ORDER = {
     "public" => 0,
@@ -434,7 +435,7 @@ class Apply
     return nil unless @resume
 
     result = @resume.fetch("results", []).find { |item| item.fetch("action_id") == action.fetch("id") }
-    return nil unless result && RESULT_OK.include?(result.fetch("status"))
+    return nil unless result && RESUMABLE_RESULTS.include?(result.fetch("status"))
 
     {
       action_id: result.fetch("action_id"),
@@ -521,9 +522,15 @@ class Apply
   end
 
   def validate_condition!(action)
-    condition = action["condition"]
-    return unless condition
+    package = action["package"]
+    conditions = [action["condition"]]
+    conditions << package["condition"] if package.is_a?(Hash)
+    conditions = conditions.compact.uniq
+    return if conditions.empty?
 
+    raise "conflicting conditions: #{conditions.join(', ')}" if conditions.length > 1
+
+    condition = conditions.first
     raise "unsupported condition: #{condition}" unless SUPPORTED_CONDITIONS.include?(condition)
   end
 
