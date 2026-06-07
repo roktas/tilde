@@ -16,8 +16,9 @@ Installation commands:
   to a user-writable gem home. Do not use `sudo gem install`.
 - `egg:<name>`: `uv tool install <name>`. If the package does not expose the expected executable, inspect package docs
   and use a module README special section for package-specific flags such as `--with`.
-- `flatpak:<app-id>`: `flatpak install --user flathub <app-id>` unless the module explicitly requires system-wide
-  Flatpak install.
+- `flatpak:<app-id>`: conditionally install only on graphical targets with `flatpak install --user flathub <app-id>`,
+  unless the module explicitly requires system-wide Flatpak install. The `graphical` condition is always true on macOS,
+  true on Linux only when `systemctl get-default` is `graphical.target`, and false elsewhere.
 - `scoop:<name>`: `scoop install <name>`
 - `github:<owner>/<repo>`: inspect official release metadata with the GitHub API, GitHub MCP, or `gh release` commands.
   Select the asset that matches target platform and architecture, download to a temp directory, verify checksum or
@@ -60,7 +61,8 @@ Managed update commands:
 - `gem:<name>`: `gem update --user-install --no-document <name>`. Do not use bare `gem update`.
 - `egg:<name>`: `uv tool upgrade <name>`. Use `uv tool install <name>` when changing version constraints or install
   flags.
-- `flatpak:<app-id>`: `flatpak update --user <app-id>` for per-user installs created by Tilde.
+- `flatpak:<app-id>`: conditionally run `flatpak update --user <app-id>` for per-user installs created by Tilde when
+  the `graphical` condition is met.
 - `scoop:<name>`: run `scoop update` first, then `scoop update <name>`.
 - `github:<owner>/<repo>`: inspect latest release assets again, compare with the installed binary when possible, and
   replace the executable only after selecting the matching asset.

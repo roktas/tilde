@@ -58,6 +58,7 @@ The executor validates the complete plan set before the first write:
 - source paths are readable and remain inside their declared repository;
 - target paths are valid for the target home;
 - every action kind, package type, conflict strategy, and result policy is supported;
+- every action condition is supported;
 - action dependencies refer to known earlier actions;
 - state and backup parent paths are valid and writable without creating or changing them.
 
@@ -83,6 +84,10 @@ and exit status, then removes the temporary script.
 Actions that require an interactive terminal or user decision are marked `manual` or `deferred` instead of being
 attempted in a non-interactive remote apply. A `manual` action records a `deferred` result with the original instruction
 and reason.
+
+Package actions may include supported conditions. When a condition is not met, the executor records the action as
+`ignored` and does not run the package command. The `graphical` condition is always true on macOS, true on Linux only
+when `systemctl get-default` is `graphical.target`, and false elsewhere.
 
 ## Determinism
 

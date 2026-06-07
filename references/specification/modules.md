@@ -131,15 +131,15 @@ install packages. `packages: []` is valid but usually unnecessary.
 Package management defaults to installation only. Packages removed from frontmatter are not removed unless the user
 explicitly asks for package removal.
 
-`packages` is plan-time declaration only. The harness does not evaluate runtime conditions. If package installation
-depends on runtime state, put a guarded command in a special README section such as `Install` or `Preinstall` instead.
-If the condition is not met, the command may exit `0` as an intentional no-op.
+Most `packages` declarations are unconditional plan-time declarations. If package installation depends on runtime state,
+put a guarded command in a special README section such as `Install` or `Preinstall` instead. If the condition is not
+met, the command may exit `0` as an intentional no-op.
 
-GUI or desktop-host-dependent package installs also belong in guarded special-section commands, not in frontmatter
-`packages`. Because SSH provisioning can target a desktop host without a GUI session, do not use `DISPLAY` or
-`WAYLAND_DISPLAY` as the package-install guard. On Linux, prefer `systemctl get-default == graphical.target` for package
-installs. Keep session checks such as `DISPLAY`, `WAYLAND_DISPLAY`, and `XDG_CURRENT_DESKTOP` for commands that truly
-require an active GUI session, such as `gsettings`, MIME association, or launching GUI programs.
+Flatpak package declarations are the exception: `flatpak:<app-id>` actions always carry the `graphical` condition and
+are ignored when that condition is not met. `graphical` is always true on macOS, true on Linux only when
+`systemctl get-default` is `graphical.target`, and false elsewhere. Keep session checks such as `DISPLAY`,
+`WAYLAND_DISPLAY`, and `XDG_CURRENT_DESKTOP` for commands that truly require an active GUI session, such as `gsettings`,
+MIME association, or launching GUI programs.
 
 **`level`** is the provisioning scope level. Valid values are `minimal`, `normal`, and `extra`. The default is `normal`.
 Plan selection uses threshold semantics: `minimal` includes only `minimal`; `normal` includes `minimal` and `normal`;

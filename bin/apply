@@ -24,6 +24,7 @@ class Apply
     "private" => 1
   }.freeze
   SUPPORTED_ACTIONS = %w[entrypoint package section link copy manual].freeze
+  SUPPORTED_CONDITIONS = %w[graphical].freeze
   SUPPORTED_CONFLICTS = %w[backup none write-fallback-file].freeze
   SUPPORTED_PACKAGE_TYPES = %w[brew cask deb egg flatpak gem npm scoop].freeze
   ACTION_HANDLERS = {
@@ -142,6 +143,17 @@ class Apply
     command = PACKAGE_COMMANDS[[action.fetch("operation"), package.fetch("type")]]
 
     command&.call(name)
+  end
+
+  def condition_met?(condition)
+    case condition
+    when nil
+      true
+    when "graphical"
+      graphical?
+    else
+      false
+    end
   end
 
   def copy_equal?(source, target)
@@ -263,6 +275,11 @@ class Apply
       return action_result(action, "deferred", { "reason" => "unsupported package handler: #{type}" })
     end
 
+    condition = action["condition"] || package["condition"]
+    unless condition_met?(condition)
+      return action_result(action, "ignored", { "reason" => "condition not met: #{condition}" })
+    end
+
     command = command_for(action)
     return action_result(action, "deferred", { "reason" => "unsupported package operation" }) unless command
 
@@ -300,6 +317,18 @@ class Apply
     raise stderr.strip unless status.success?
 
     stdout.strip
+  end
+
+  def graphical?
+    case detect_platform
+    when "macos"
+      true
+    when "linux"
+      stdout, _stderr, status = Open3.capture3("systemctl", "get-default")
+      status.success? && stdout.strip == "graphical.target"
+    else
+      false
+    end
   end
 
   def host
@@ -461,6 +490,7 @@ class Apply
   def validate_action!(action, seen)
     validate_action_id!(action, seen)
     validate_action_kind!(action)
+    validate_condition!(action)
     validate_conflict!(action)
     validate_target!(action["target"]) if action.key?("target")
     validate_source!(action) if action.key?("source_path")
@@ -488,6 +518,13 @@ class Apply
   def validate_conflict!(action)
     strategy = action.fetch("conflict", {}).fetch("strategy", "none")
     raise "unsupported conflict strategy: #{strategy}" unless SUPPORTED_CONFLICTS.include?(strategy)
+  end
+
+  def validate_condition!(action)
+    condition = action["condition"]
+    return unless condition
+
+    raise "unsupported condition: #{condition}" unless SUPPORTED_CONDITIONS.include?(condition)
   end
 
   def validate_package!(action)

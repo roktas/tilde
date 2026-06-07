@@ -29,6 +29,9 @@ class Plan
   MODES = %w[apply refresh repair upgrade].freeze
 
   PACKAGE_TYPES = %w[brew cask deb npm gem egg flatpak scoop github skill].freeze
+  PACKAGE_CONDITIONS = {
+    "flatpak" => "graphical"
+  }.freeze
   SPECIAL_SECTIONS = %w[
     Preinstall
     Install
@@ -459,8 +462,9 @@ class Plan
     {
       type:,
       name:,
-      value: "#{type}:#{name}"
-    }
+      value: "#{type}:#{name}",
+      condition: PACKAGE_CONDITIONS[type]
+    }.compact
   end
 
   def normalize_packages(config)
@@ -578,10 +582,11 @@ class Plan
         repo_role: mod.fetch(:repo_role),
         operation:,
         package:,
+        condition: package[:condition],
         conflict: {
           strategy: "none"
         }
-      }
+      }.compact
     end
   end
 

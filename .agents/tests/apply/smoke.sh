@@ -27,6 +27,7 @@ write_repo() {
 
 	mkdir -p \
 		"$repo/aaa-link" \
+		"$repo/flatpak" \
 		"$repo/manual" \
 		"$repo/pkg" \
 		"$repo/section"
@@ -55,6 +56,16 @@ all:
 EOF
 	printf 'link\n' >"$repo/aaa-link/source.txt"
 	printf 'copy\n' >"$repo/aaa-link/copy.txt"
+
+	cat >"$repo/flatpak/README.md" <<'EOF'
+---
+all:
+  packages:
+    - flatpak:org.example.App
+---
+
+# Flatpak
+EOF
 
 	cat >"$repo/manual/README.md" <<'EOF'
 # Manual
@@ -187,7 +198,22 @@ main() {
 printf 'fake brew failure\n' >&2
 exit 7
 EOF
+	cat >"$fake_bin/flatpak" <<'EOF'
+#!/usr/bin/env bash
+printf 'flatpak ran\n' > "$HOME"/flatpak-ran
+exit 9
+EOF
+	cat >"$fake_bin/systemctl" <<'EOF'
+#!/usr/bin/env bash
+if [[ ${1:-} == get-default ]]; then
+	printf 'multi-user.target\n'
+	exit 0
+fi
+
+exit 1
+EOF
 	chmod +x "$fake_bin/brew"
+	chmod +x "$fake_bin/flatpak" "$fake_bin/systemctl"
 
 	printf 'old link\n' >"$home/Dropbox/var/app/source-link.txt"
 	printf 'old copy\n' >"$home/.config/sample/copy.txt"
@@ -231,6 +257,7 @@ EOF
 	grep -q '^old copy$' "$state"/tilde/hosts/"$host"/backups/*/.config/sample/copy.txt
 	grep -q '^section$' "$home/section/created.txt"
 	grep -q '^private$' "$home/.config/private/private.txt"
+	[[ ! -e $home/flatpak-ran ]]
 	[[ ! -e $home/manual-ran ]]
 	[[ -f $state/tilde/hosts/$host/last-plan.json ]]
 	[[ -f $state/tilde/hosts/$host/last-apply.json ]]
@@ -247,6 +274,7 @@ EOF
 		abort "last plan should include private modules" unless last_plan.fetch("modules").any? { |mod| mod.fetch("id") == "private/zzz-private" }
 		results = apply.fetch("results")
 		abort "missing resumed action" unless results.any? { |result| result.fetch("diagnostics", {})["resumed"] }
+		abort "missing ignored flatpak result" unless results.any? { |result| result.fetch("module_id") == "public/flatpak" && result.fetch("status") == "ignored" && result.fetch("diagnostics", {}).fetch("reason") == "condition not met: graphical" }
 		abort "missing package failure" unless results.any? { |result| result.fetch("module_id") == "public/pkg" && result.fetch("status") == "notok" }
 		abort "missing manual deferred result" unless results.any? { |result| result.fetch("module_id") == "public/manual" && result.fetch("status") == "deferred" }
 		state, = File.read(ENV.fetch("STATE_FILE")).split(/^---\s*$/, 3)[1, 2]
@@ -255,6 +283,7 @@ EOF
 		abort "state should include private metadata" unless frontmatter.fetch("private").fetch("role") == "private"
 		done = frontmatter.fetch("done")
 		abort "link module should be ok" unless done.fetch("public/aaa-link") == "ok"
+		abort "flatpak module should be ok" unless done.fetch("public/flatpak") == "ok"
 		abort "manual module should be notok" unless done.fetch("public/manual") == "notok"
 		abort "package module should be notok" unless done.fetch("public/pkg") == "notok"
 		abort "private module should be ok" unless done.fetch("private/zzz-private") == "ok"

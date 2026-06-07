@@ -313,7 +313,12 @@ EOF
 		linux_dash = extra_plan.fetch("modules").find { |mod| mod.fetch("name") == "linux-" }
 		abort "missing linux dash variant at extra level" unless linux_dash
 		abort "linux dash variant should follow linux" unless extra_plan.fetch("modules")[1].fetch("name") == "linux-"
-		abort "calibre should be a guarded install section" unless linux_dash.fetch("special_sections").dig("Install", "body").include?("com.calibre_ebook.calibre")
+		calibre = linux_dash.fetch("packages_to_install").find { |pkg| pkg.fetch("value") == "flatpak:com.calibre_ebook.calibre" }
+		abort "missing calibre flatpak package" unless calibre
+		abort "calibre should be graphical" unless calibre.fetch("condition") == "graphical"
+		calibre_action = extra_plan.fetch("actions").find { |action| action.fetch("id") == "public/linux-:package:install:flatpak:com.calibre_ebook.calibre" }
+		abort "missing calibre package action" unless calibre_action
+		abort "calibre action should be graphical" unless calibre_action.fetch("condition") == "graphical"
 		extra = extra_plan.fetch("modules").find { |mod| mod.fetch("name") == "zz-extra-smoke" }
 		abort "missing extra module at extra level" unless extra
 		abort "wrong extra module level" unless extra.fetch("level") == "extra"
@@ -328,7 +333,9 @@ EOF
 		abort "virtualbox should be virtual" unless virtualbox.fetch("virtual") == true
 		abort "missing virtualbox install section" unless virtualbox.fetch("special_sections").key?("Install")
 		abort "missing virtualbox postinstall section" unless virtualbox.fetch("special_sections").key?("Postinstall")
-		abort "ghostty should not be planned on linux" if extra_plan.fetch("modules").any? { |mod| mod.fetch("name") == "ghostty" }
+		ghostty = extra_plan.fetch("modules").find { |mod| mod.fetch("name") == "ghostty" }
+		abort "missing ghostty module" unless ghostty
+		abort "ghostty linux plan should not install cask" if ghostty.fetch("packages_to_install").any? { |pkg| pkg.fetch("type") == "cask" }
 		vscode = extra_plan.fetch("modules").find { |mod| mod.fetch("name") == "vscode" }
 		abort "missing vscode module" unless vscode
 		abort "vscode linux plan should not install cask" if vscode.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "cask:visual-studio-code" }
