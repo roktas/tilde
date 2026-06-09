@@ -29,6 +29,9 @@ Read [Specification](references/specification.md) first, then load the narrowest
 - Package work: [Packages](references/specification/packages.md).
 - Repository development: [Tilde Repository Development](references/development.md).
 
+Package type and platform scope are separate. Do not infer `macos` scope from a prefix such as `cask:`; preserve the
+module's declared `all`, `linux`, or `macos` scope unless package availability or module intent says otherwise.
+
 ## Prompt Contract
 
 Treat `$tilde [command] [subject...] [qualifiers...]`, `tilde`-prefixed, and `~`-prefixed (second word is a known

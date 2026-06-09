@@ -118,6 +118,9 @@ use `gemini-cli` or `brew:gemini-cli`, not `brew: [gemini-cli]`.
 
 Valid package types are `brew`, `cask`, `deb`, `npm`, `gem`, `egg`, `flatpak`, `scoop`, `github`, and `skill`.
 
+Package type prefixes do not imply platform scope. In particular, `cask:` means Homebrew cask install behavior, not
+macOS-only intent; express OS support with the enclosing `all`, `linux`, `macos`, or `windows` scope.
+
 When no package type is provided, Linux and macOS default to `brew`; Windows defaults to `scoop`. For ordinary Homebrew
 formulae in Linux, macOS, or shared scopes, use the bare package name instead of a redundant `brew:` prefix. `deb`
 installs are system-wide through `sudo`. Other package types are installed user-wide through their package managers.
