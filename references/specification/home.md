@@ -42,7 +42,7 @@ Use runtime XDG user dirs for localized desktop directories. Do not infer aggres
 
 ### `~/Dropbox`
 
-Source checkouts live under `~/Dropbox/src`.
+Source checkouts live directly under `~/Dropbox`; the old `~/Dropbox/src` layout is a legacy fallback.
 
 ## Operations
 
@@ -167,8 +167,9 @@ With two positional repository arguments, the first is public and the second is 
 Default repository locations are convenience only. Default-location discovery uses the conventional public/private
 directory-name pair `home` and `home-`; these names are discovery hints, not repository identity. Prefer:
 
-1. `~/Dropbox/src/home` and `~/Dropbox/src/home-` when `~/Dropbox/src` exists.
-2. `~/.local/src/home` and `~/.local/src/home-` otherwise.
+1. `~/Dropbox/home` and `~/Dropbox/home-` when the direct Dropbox topic layout exists.
+2. `~/Dropbox/src/home` and `~/Dropbox/src/home-` as a legacy fallback.
+3. `~/.local/src/home` and `~/.local/src/home-` otherwise.
 
 If a default path already exists, Tilde should inspect it for Tilde repository identity before using it. If it does not
 exist, `create` or `deploy` may offer to create it after confirmation.
