@@ -191,12 +191,12 @@ EOF
 			abort "missing private codex module" unless codex
 			abort "missing linux codex-switcher package" unless codex.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "github:Lampese/codex-switcher" }
 			abort "linux codex should not install codex cask" if codex.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "cask:codex" }
-			abort "codex should link shared wrapper bin" unless codex.fetch("links_to_create").any? { |link| link.fetch("source") == "bin/codex" && link.fetch("target") == "~/Dropbox/bin/all/codex" && link.fetch("fan_in") == true }
-			abort "codex should link hooks into shared codex state" unless codex.fetch("links_to_create").any? { |link| link.fetch("source") == "hooks/shellcheck" && link.fetch("target") == "~/Dropbox/var/codex/hooks/shellcheck" && link.fetch("fan_in") == true }
-			hook_action = linux.fetch("actions").find { |action| action.fetch("kind") == "link" && action.fetch("target") == "~/Dropbox/var/codex/hooks/shellcheck" }
+			abort "codex should link shared wrapper bin" unless codex.fetch("links_to_create").any? { |link| link.fetch("source") == "bin/codex" && link.fetch("target") == "~/Dropbox/allos/bin/codex" && link.fetch("fan_in") == true }
+			abort "codex should link hooks into shared codex state" unless codex.fetch("links_to_create").any? { |link| link.fetch("source") == "hooks/shellcheck" && link.fetch("target") == "~/Dropbox/allos/var/codex/hooks/shellcheck" && link.fetch("fan_in") == true }
+			hook_action = linux.fetch("actions").find { |action| action.fetch("kind") == "link" && action.fetch("target") == "~/Dropbox/allos/var/codex/hooks/shellcheck" }
 			abort "missing codex hook action" unless hook_action
-			abort "codex hook should use a relative Dropbox link value" unless hook_action.fetch("link_value") == "../../../src/home-/codex/hooks/shellcheck"
-			abort "codex should use shared agent instructions" unless codex.fetch("special_sections").dig("Install", "body").include?("Dropbox/var/codex/AGENTS.md")
+			abort "codex hook should use a relative Dropbox link value" unless hook_action.fetch("link_value") == "../../../../home-/codex/hooks/shellcheck"
+			abort "codex should use shared agent instructions" unless codex.fetch("special_sections").dig("Install", "body").include?("Dropbox/allos/var/codex/AGENTS.md")
 			abort "codex should not link skills under ~/.codex" if codex.fetch("links_to_create").any? { |link| link.fetch("target").start_with?("~/.codex/skills/") }
 			dropignore = linux.fetch("modules").find { |mod| mod.fetch("name") == "dropignore" }
 			abort "missing private dropignore module" unless dropignore
@@ -205,7 +205,7 @@ EOF
 			abort "missing private opencode module" unless opencode
 			abort "missing opencode package" unless opencode.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "brew:opencode" }
 			abort "opencode should not install aicommits package" if opencode.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "brew:aicommits" }
-			abort "opencode should use shared agent instructions" unless opencode.fetch("special_sections").dig("Install", "body").include?("Dropbox/var/opencode/config/AGENTS.md")
+			abort "opencode should use shared agent instructions" unless opencode.fetch("special_sections").dig("Install", "body").include?("Dropbox/allos/var/opencode/config/AGENTS.md")
 			abort "opencode should not link skills directly" if opencode.fetch("links_to_create").any? { |link| link.fetch("target").include?("/skills/") }
 
 			macos = JSON.parse(File.read(ENV.fetch("PRIVATE_MACOS_PLAN_JSON")))

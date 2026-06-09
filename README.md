@@ -43,8 +43,8 @@ $tilde deploy dry-run
 $tilde deploy
 ```
 
-With no path, Tilde proposes the conventional public/private pair under `~/Dropbox` when available, falls back to the
-legacy pair under `~/Dropbox/src`, and otherwise uses `~/.local/src`.
+With no path, Tilde proposes the conventional public/private pair under `~/Dropbox` when available, and otherwise uses
+`~/.local/src`.
 
 ### Existing Data Repositories
 
@@ -220,7 +220,7 @@ Use runtime XDG user dirs for localized desktop directories.
 
 ### `~/Dropbox`
 
-Source checkouts live directly under `~/Dropbox`; the old `~/Dropbox/src` layout is a legacy fallback.
+Source checkouts live directly under `~/Dropbox`.
 
 ## Operations
 
@@ -279,7 +279,6 @@ Default locations are convenience only:
 
 ```text
 public/private repository paths under ~/Dropbox
-legacy public/private repository paths under ~/Dropbox/src
 public/private repository paths under ~/.local/src
 ```
 

@@ -52,22 +52,22 @@ main() {
 	mkdir -p \
 		"$home/Dropbox/.dropbox.cache" \
 		"$home/Dropbox/.tmp" \
+		"$home/Dropbox/allos/bin" \
 		"$home/Dropbox/archive" \
-		"$home/Dropbox/bin" \
-		"$home/Dropbox/src/home/bin" \
+		"$home/Dropbox/home/bin" \
 		"$state/tilde/hosts/$host"
 
-	printf 'tool\n' >"$home/Dropbox/src/home/bin/tool"
-	ln -s "$home/Dropbox/src/home/bin/tool" "$home/Dropbox/bin/tool"
+	printf 'tool\n' >"$home/Dropbox/home/bin/tool"
+	ln -s "$home/Dropbox/home/bin/tool" "$home/Dropbox/allos/bin/tool"
 	ln -s "$home/Dropbox/missing" "$home/Dropbox/.dropbox.cache/broken"
-	ln -s "$home/Dropbox/src/home/bin/tool" "$home/Dropbox/archive/tool"
-	ln -s ../src/home/bin/tool "$home/Dropbox/.tmp/tool"
+	ln -s "$home/Dropbox/home/bin/tool" "$home/Dropbox/archive/tool"
+	ln -s ../home/bin/tool "$home/Dropbox/.tmp/tool"
 
 	cat >"$state/tilde/hosts/$host/last-plan.json" <<EOF
 {
   "schema": "tilde.cache/v1",
   "actions": [
-    {"id": "public/bin:link:tool", "kind": "link", "module_id": "public/bin", "target": "~/Dropbox/bin/tool"},
+    {"id": "public/allos:link:tool", "kind": "link", "module_id": "public/allos", "target": "~/Dropbox/allos/bin/tool"},
     {"id": "public/cache:link:broken", "kind": "link", "module_id": "public/cache", "target": "~/Dropbox/.dropbox.cache/broken"},
     {"id": "public/archive:link:tool", "kind": "link", "module_id": "public/archive", "target": "~/Dropbox/archive/tool"},
     {"id": "public/tmp:link:tool", "kind": "link", "module_id": "public/tmp", "target": "~/Dropbox/.tmp/tool"},
@@ -84,8 +84,8 @@ EOF
 		findings = data.fetch("findings")
 		abort "wrong finding count" unless findings.length == 3
 		by_target = findings.to_h { |item| [item.fetch("target"), item] }
-		abort "active link should be host-absolute" unless by_target.fetch("~/Dropbox/bin/tool").fetch("problems") == ["host-absolute"]
-		abort "active link should be active" unless by_target.fetch("~/Dropbox/bin/tool").fetch("area") == "active"
+		abort "active link should be host-absolute" unless by_target.fetch("~/Dropbox/allos/bin/tool").fetch("problems") == ["host-absolute"]
+		abort "active link should be active" unless by_target.fetch("~/Dropbox/allos/bin/tool").fetch("area") == "active"
 		abort "cache link should be broken and host-absolute" unless by_target.fetch("~/Dropbox/.dropbox.cache/broken").fetch("problems") == ["broken", "host-absolute"]
 		abort "cache link should be cache" unless by_target.fetch("~/Dropbox/.dropbox.cache/broken").fetch("area") == "cache"
 		abort "archive link should be archive" unless by_target.fetch("~/Dropbox/archive/tool").fetch("area") == "archive"

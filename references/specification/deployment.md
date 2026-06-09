@@ -67,10 +67,10 @@ $tilde deploy
 ```
 
 With no explicit repository path, `create` and first-run `deploy` use default-location discovery: prefer the
-conventional `home`/`home-` public/private pair directly under `~/Dropbox`, then the legacy pair under `~/Dropbox/src`,
-then under `~/.local/src`. If the public path does not exist, `deploy` may propose a `create` phase. A newly created
-empty repository should not force immediate provisioning. Offer clear choices such as finishing initialization, running
-bootstrap checks, starting adoption, or applying an empty/minimal desired state.
+conventional `home`/`home-` public/private pair directly under `~/Dropbox`, then under `~/.local/src`. If the public
+path does not exist, `deploy` may propose a `create` phase. A newly created empty repository should not force immediate
+provisioning. Offer clear choices such as finishing initialization, running bootstrap checks, starting adoption, or
+applying an empty/minimal desired state.
 
 When public/private home repositories already exist, the typical local flow is:
 
