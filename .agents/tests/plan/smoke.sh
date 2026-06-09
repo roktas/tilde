@@ -191,7 +191,8 @@ EOF
 			abort "missing private codex module" unless codex
 			abort "missing linux codex-switcher package" unless codex.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "github:Lampese/codex-switcher" }
 			abort "linux codex should not install codex cask" if codex.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "cask:codex" }
-			abort "codex should link shared wrapper bin" unless codex.fetch("links_to_create").any? { |link| link.fetch("source") == "bin/codex" && link.fetch("target") == "~/Dropbox/allos/bin/codex" && link.fetch("fan_in") == true }
+			abort "codex cli wrapper should be removed" if codex.fetch("links_to_create").any? { |link| link.fetch("source") == "bin/codex" || link.fetch("target") == "~/Dropbox/allos/bin/codex" }
+			abort "codex-switcher wrapper should remain" unless codex.fetch("links_to_create").any? { |link| link.fetch("source") == "bin/codex-switcher" && link.fetch("target") == "~/Dropbox/allos/bin/codex-switcher" }
 			abort "codex should link hooks into shared codex state" unless codex.fetch("links_to_create").any? { |link| link.fetch("source") == "hooks/shellcheck" && link.fetch("target") == "~/Dropbox/allos/var/codex/hooks/shellcheck" && link.fetch("fan_in") == true }
 			hook_action = linux.fetch("actions").find { |action| action.fetch("kind") == "link" && action.fetch("target") == "~/Dropbox/allos/var/codex/hooks/shellcheck" }
 			abort "missing codex hook action" unless hook_action
@@ -200,6 +201,7 @@ EOF
 			abort "codex should ignore local temp files with Dropbox attributes" unless codex.fetch("special_sections").dig("Postinstall", "body").include?("attr -s com.dropbox.ignored")
 			abort "codex should ignore the shared temp directory" unless codex.fetch("special_sections").dig("Postinstall", "body").include?("Dropbox/allos/var/codex/.tmp")
 			abort "codex should not link skills under ~/.codex" if codex.fetch("links_to_create").any? { |link| link.fetch("target").start_with?("~/.codex/skills/") }
+			abort "linux copilot module should not be planned" if linux.fetch("modules").any? { |mod| mod.fetch("name") == "copilot" }
 			abort "dropignore module should be removed" if linux.fetch("modules").any? { |mod| mod.fetch("name") == "dropignore" }
 			opencode = linux.fetch("modules").find { |mod| mod.fetch("name") == "opencode" }
 			abort "missing private opencode module" unless opencode
@@ -214,6 +216,10 @@ EOF
 			abort "missing macos codex cask" unless macos_codex.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "cask:codex" }
 			abort "macos codex should not install codex-switcher release" if macos_codex.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "github:Lampese/codex-switcher" }
 			abort "macos codex should use Dropbox File Provider ignore attributes" unless macos_codex.fetch("special_sections").dig("Postinstall", "body").include?("com.apple.fileprovider.ignore#P")
+			copilot = macos.fetch("modules").find { |mod| mod.fetch("name") == "copilot" }
+			abort "missing macos copilot module" unless copilot
+			abort "missing macos copilot cask" unless copilot.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "cask:copilot" }
+			abort "copilot wrapper should be removed" if copilot.fetch("links_to_create").any? { |link| link.fetch("source") == "bin/copilot" || link.fetch("target") == "~/Dropbox/allos/bin/copilot" }
 			abort "macos dropignore module should be removed" if macos.fetch("modules").any? { |mod| mod.fetch("name") == "dropignore" }
 		'
 	fi
