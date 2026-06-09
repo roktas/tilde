@@ -201,7 +201,10 @@ EOF
 			abort "codex should ignore local temp files with Dropbox attributes" unless codex.fetch("special_sections").dig("Postinstall", "body").include?("attr -s com.dropbox.ignored")
 			abort "codex should ignore the shared temp directory" unless codex.fetch("special_sections").dig("Postinstall", "body").include?("Dropbox/allos/var/codex/.tmp")
 			abort "codex should not link skills under ~/.codex" if codex.fetch("links_to_create").any? { |link| link.fetch("target").start_with?("~/.codex/skills/") }
-			abort "linux copilot module should not be planned" if linux.fetch("modules").any? { |mod| mod.fetch("name") == "copilot" }
+			copilot = linux.fetch("modules").find { |mod| mod.fetch("name") == "copilot" }
+			abort "missing linux copilot module" unless copilot
+			abort "missing linux copilot-cli cask" unless copilot.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "cask:copilot-cli" }
+			abort "linux copilot wrapper should be removed" if copilot.fetch("links_to_create").any? { |link| link.fetch("source") == "bin/copilot" || link.fetch("target") == "~/Dropbox/allos/bin/copilot" }
 			abort "dropignore module should be removed" if linux.fetch("modules").any? { |mod| mod.fetch("name") == "dropignore" }
 			opencode = linux.fetch("modules").find { |mod| mod.fetch("name") == "opencode" }
 			abort "missing private opencode module" unless opencode
@@ -218,7 +221,7 @@ EOF
 			abort "macos codex should use Dropbox File Provider ignore attributes" unless macos_codex.fetch("special_sections").dig("Postinstall", "body").include?("com.apple.fileprovider.ignore#P")
 			copilot = macos.fetch("modules").find { |mod| mod.fetch("name") == "copilot" }
 			abort "missing macos copilot module" unless copilot
-			abort "missing macos copilot cask" unless copilot.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "cask:copilot" }
+			abort "missing macos copilot-cli cask" unless copilot.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "cask:copilot-cli" }
 			abort "copilot wrapper should be removed" if copilot.fetch("links_to_create").any? { |link| link.fetch("source") == "bin/copilot" || link.fetch("target") == "~/Dropbox/allos/bin/copilot" }
 			abort "macos dropignore module should be removed" if macos.fetch("modules").any? { |mod| mod.fetch("name") == "dropignore" }
 		'
