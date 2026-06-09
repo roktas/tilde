@@ -197,10 +197,10 @@ EOF
 			abort "missing codex hook action" unless hook_action
 			abort "codex hook should use a relative Dropbox link value" unless hook_action.fetch("link_value") == "../../../../home-/codex/hooks/shellcheck"
 			abort "codex should use shared agent instructions" unless codex.fetch("special_sections").dig("Install", "body").include?("Dropbox/allos/var/codex/AGENTS.md")
+			abort "codex should ignore local temp files with Dropbox attributes" unless codex.fetch("special_sections").dig("Postinstall", "body").include?("attr -s com.dropbox.ignored")
+			abort "codex should ignore the shared temp directory" unless codex.fetch("special_sections").dig("Postinstall", "body").include?("Dropbox/allos/var/codex/.tmp")
 			abort "codex should not link skills under ~/.codex" if codex.fetch("links_to_create").any? { |link| link.fetch("target").start_with?("~/.codex/skills/") }
-			dropignore = linux.fetch("modules").find { |mod| mod.fetch("name") == "dropignore" }
-			abort "missing private dropignore module" unless dropignore
-			abort "missing linux dropignore package" unless dropignore.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "github:mweirauch/dropignore" }
+			abort "dropignore module should be removed" if linux.fetch("modules").any? { |mod| mod.fetch("name") == "dropignore" }
 			opencode = linux.fetch("modules").find { |mod| mod.fetch("name") == "opencode" }
 			abort "missing private opencode module" unless opencode
 			abort "missing opencode package" unless opencode.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "brew:opencode" }
@@ -213,9 +213,8 @@ EOF
 			abort "missing macos codex module" unless macos_codex
 			abort "missing macos codex cask" unless macos_codex.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "cask:codex" }
 			abort "macos codex should not install codex-switcher release" if macos_codex.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "github:Lampese/codex-switcher" }
-			macos_dropignore = macos.fetch("modules").find { |mod| mod.fetch("name") == "dropignore" }
-			abort "missing macos dropignore module" unless macos_dropignore
-			abort "missing macos dropignore rust package" unless macos_dropignore.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "brew:rust" }
+			abort "macos codex should use Dropbox File Provider ignore attributes" unless macos_codex.fetch("special_sections").dig("Postinstall", "body").include?("com.apple.fileprovider.ignore#P")
+			abort "macos dropignore module should be removed" if macos.fetch("modules").any? { |mod| mod.fetch("name") == "dropignore" }
 		'
 	fi
 
