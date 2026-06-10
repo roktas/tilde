@@ -34,6 +34,9 @@ module's declared `all`, `linux`, or `macos` scope unless package availability o
 
 ## Prompt Contract
 
+Tilde is a skill the agent reads and applies directly. There is no `tilde` binary on any machine; SSH-based operations
+are executed by the agent via SSH commands.
+
 Treat `$tilde [command] [subject...] [qualifiers...]`, `tilde`-prefixed, and `~`-prefixed (second word is a known
 public or internal tilde command) messages as compact natural-language commands, not strict shell invocations. `~`
 followed by a path (e.g. `~/.config`) is not a command. Interpret each command by its specification semantics, and do not
