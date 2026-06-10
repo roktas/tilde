@@ -168,6 +168,10 @@ platform only. Top-level sections such as `## Install` remain valid and are trea
 top-level special section and a scoped special section share the same name, their bodies are concatenated in document
 order.
 
+Module body commands may assume the tools installed by earlier modules in provisioning order, especially the active
+platform module and its variant. Prefer placing shared command-line tool dependencies in those earlier modules so
+later module instructions stay direct and do not need to rediscover their prerequisites.
+
 The harness does not interpret a special `Precondition` section, fenced-block metadata, or custom skip exit codes.
 Runtime guards belong inside the command block. Exit-code semantics are plain: `0` means success or intentional no-op;
 non-zero means failure.

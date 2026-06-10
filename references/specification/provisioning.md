@@ -54,6 +54,11 @@ state and existing managed external resources can both be brought current.
 - Other root modules run alphabetically by directory name. `misc` has no special position.
 - A future `order` frontmatter key may be interpreted as numeric weight. Modules without `order` use the default weight;
   ties keep alphabetical order.
+- Later module `Install` and `Postinstall` sections may rely on tools provided by earlier modules, especially the
+  active platform module and its variant.
+- If a later module needs a tool that is not already provided by earlier modules, declare that tool in an earlier
+  platform module or move the work into an earlier bootstrap phase instead of hiding the dependency inside the later
+  module.
 
 ### Install
 
