@@ -92,6 +92,10 @@
 Machine-specific runtime state lives outside the installed skill and outside the public/private data repositories by
 default.
 
+Deployment state is an optimization and provenance cache, not the source of desired state. If host deployment state is
+missing, `apply` and the install phase of `update` must treat the host as fresh and rely on idempotent handlers. This
+may be slower and noisier, but it must not be semantically destructive.
+
 Preferred state root:
 
 ```text

@@ -5,6 +5,19 @@
 Group package installs by package type, present commands in the plan, and run them only after confirmation. Package
 removal is never inferred from removed frontmatter entries.
 
+The executor may use a cheap installed-package snapshot before running install actions for package managers that support
+fast local listing. This is a best-effort optimization, not a desired-state source and not a planner input. Take the
+snapshot once per apply run and package type, skip only exact installed-token matches, and report those actions as
+`unchanged`. If the snapshot command is missing, fails, or cannot answer the exact token question, run the normal
+idempotent install command. Do not infer aliases, virtual packages, providers, replacements, or package validity from
+the snapshot.
+
+Cheap snapshot examples:
+
+- Homebrew formulae: `brew list --formula -1`.
+- Homebrew casks: `brew list --cask -1`.
+- Deb packages: `dpkg-query -W -f='${binary:Package}\n'`.
+
 Installation commands:
 
 - `brew:<name>`: `brew install <name>`
