@@ -48,6 +48,7 @@ main() {
 	local repo
 	local script_dir
 	local skill_root
+	local state_skip_plan_json
 	local target_module
 	local target_plan_json
 	local tmpdir
@@ -89,6 +90,7 @@ main() {
 	private_plan_json=$tmpdir/private-plan.json
 	refresh_plan_json=$tmpdir/refresh-plan.json
 	repair_plan_json=$tmpdir/repair-plan.json
+	state_skip_plan_json=$tmpdir/state-skip-plan.json
 	target_plan_json=$tmpdir/target-plan.json
 	upgrade_plan_json=$tmpdir/upgrade-plan.json
 
@@ -184,6 +186,40 @@ EOF
 		abort "missing mc.ini copy" unless mc.fetch("copies_to_create").any? { |copy| copy.fetch("target") == "~/.config/mc/ini" }
 		abort "gnome module should not be planned" if plan.fetch("modules").any? { |mod| mod.fetch("name") == "gnome" }
 	'
+
+	head=$(git -C "$repo" rev-parse HEAD)
+	mkdir -p "$XDG_STATE_HOME/tilde/hosts/smoke"
+	cat >"$XDG_STATE_HOME/tilde/hosts/smoke/state.md" <<EOF
+---
+host: smoke
+head: $head
+public:
+  commit: $head
+done:
+  public/linux: ok
+  public/git: ok
+  mc: ok
+---
+EOF
+
+	"$plan" --repo "$repo" --allow-dirty --platform linux --host smoke >"$state_skip_plan_json"
+
+	STATE_SKIP_PLAN_JSON=$state_skip_plan_json ruby -rjson -e '
+		plan = JSON.parse(File.read(ENV.fetch("STATE_SKIP_PLAN_JSON")))
+		linux = plan.fetch("modules").find { |mod| mod.fetch("name") == "linux" }
+		abort "missing linux module" unless linux
+		abort "role-qualified linux state should skip module" unless linux.fetch("skipped")
+		abort "skipped linux should not include packages" unless linux.fetch("packages_to_install").empty?
+		git = plan.fetch("modules").find { |mod| mod.fetch("name") == "git" }
+		abort "missing git module" unless git
+		abort "role-qualified git state should skip module" unless git.fetch("skipped")
+		abort "skipped git should not include packages" unless git.fetch("packages_to_install").empty?
+		abort "skipped git should not include links" unless git.fetch("links_to_create").empty?
+		mc = plan.fetch("modules").find { |mod| mod.fetch("name") == "mc" }
+		abort "missing mc module" unless mc
+		abort "legacy mc state should still skip module" unless mc.fetch("skipped")
+	'
+	rm -f "$XDG_STATE_HOME/tilde/hosts/smoke/state.md"
 
 	if [[ -n $private_repo ]]; then
 		"$plan" --repo "$private_repo" --allow-dirty --platform linux --host smoke >"$private_plan_json"
@@ -509,8 +545,10 @@ EOF
 	cat >"$XDG_STATE_HOME/tilde/hosts/smoke-repair/state.md" <<EOF
 ---
 head: $head
+public:
+  commit: $head
 done:
-  git: notok
+  public/git: notok
   mc: ok
 ---
 EOF

@@ -850,9 +850,9 @@ class Plan
 
   def repair_skip_status(module_name)
     return [true, "no previous state to repair"] unless @previous_state
-    return [true, "state head differs from current head"] unless @previous_state["head"] == @head
+    return [true, "state head differs from current head"] unless current_state_head?
 
-    status = normalize_map(@previous_state["done"])[module_name]
+    status = module_state_status(module_name)
     return [false, nil] if status == "notok"
 
     [true, "not marked notok at current head"]
@@ -894,12 +894,26 @@ class Plan
     return [false, nil] if refresh? || upgrade?
     return repair_skip_status(module_name) if repair?
     return [false, nil] unless @previous_state
-    return [false, nil] unless @previous_state["head"] == @head
+    return [false, nil] unless current_state_head?
 
-    status = normalize_map(@previous_state["done"])[module_name]
+    status = module_state_status(module_name)
     return [true, "already #{status} at current head"] if %w[ok ignored].include?(status)
 
     [false, nil]
+  end
+
+  def current_state_head?
+    previous_state_commit == @head
+  end
+
+  def module_state_status(module_name)
+    done = normalize_map(@previous_state["done"])
+    done[module_id(module_name)] || done[module_name]
+  end
+
+  def previous_state_commit
+    role_state = normalize_map(@previous_state[repo_role])
+    role_state["commit"] || (repo_role == "public" ? @previous_state["head"] : nil)
   end
 
   def selected_special_sections(body)
