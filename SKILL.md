@@ -125,6 +125,19 @@ For real local deployment or `remote-git`, require a clean worktree and pushed t
 `bin/plan`; it never applies changes. Write deployment state on the target first and optionally mirror it back to the
 controller. Run `bin/bootstrap` only as the explicit state-free bootstrap prelude.
 
-For remote SSH orchestration, do not rely on the target login shell. Wrap multi-command snippets in explicit POSIX
-`sh -c` and keep the snippet POSIX-compatible. Do not use `bash -lc` as the default remote glue on macOS; reserve Bash
-for explicit Bash script entrypoints such as `bin/bootstrap` or a target-resolved Homebrew Bash when truly required.
+For remote SSH orchestration, do not rely on the target login shell. The canonical multi-command form is a POSIX
+`sh -s` heredoc; use this shape for remote dry-run, update, deploy, status, and doctor snippets:
+
+```sh
+ssh HOST sh -s <<'SH'
+set -eu
+# ...
+SH
+```
+
+Do not start remote commands with `set -e; ...`, and do not use `sh -c` or `bash -lc` for multi-command remote
+orchestration. Reserve Bash only for explicit Bash script entrypoints such as `bin/bootstrap` or a target-resolved
+Homebrew Bash when truly required.
+
+Before presenting or running a remote multi-command snippet, scan it once: if it contains `ssh ... 'set -e;`,
+`ssh ... sh -c`, or `ssh ... bash -lc`, rewrite it to the `sh -s` heredoc form.

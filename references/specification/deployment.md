@@ -34,23 +34,36 @@ discovery.
 If no public/private arguments are given, Tilde resolves them from local state, home-entrypoint metadata, or the remote
 target's configured state according to the command's semantics.
 
-Remote SSH orchestration must not rely on the target user's login shell. Multi-command remote snippets must invoke a
-POSIX shell explicitly and keep the snippet POSIX-compatible:
+Remote SSH orchestration must not rely on the target user's login shell. The canonical multi-command remote form is a
+POSIX `sh -s` heredoc; agents must use this shape for remote dry-run, update, deploy, status, and doctor snippets unless
+the user explicitly asks for a different transport:
 
 ```sh
-ssh HOST 'sh -c '"'"'
+ssh HOST sh -s <<'SH'
 set -eu
-echo "planning"
-~/.agents/skills/tilde/bin/plan --repo ~/Dropbox/home --mode apply --host HOST --format json > /tmp/plan.json
-'"'"''
+export PATH="/opt/homebrew/bin:/usr/local/bin:/home/linuxbrew/.linuxbrew/bin:$PATH"
+skill="$HOME/.agents/skills/tilde"
+"$skill/bin/plan" --repo "$HOME/Dropbox/home" --mode apply --host HOST --format json > /tmp/plan.json
+SH
 ```
 
-Do not begin an SSH command with login-shell syntax such as `set -e; ...`; targets may use Fish, Zsh, or another shell
-with different `set` semantics. Do not use `bash -lc` as default remote glue on macOS, because `bash` may resolve to the
-old system Bash instead of a Homebrew Bash. Use Bash only for explicit Bash script entrypoints such as `bin/bootstrap`
-or scripts with a Bash shebang. When a post-bootstrap remote step genuinely requires Homebrew Bash, resolve that
-interpreter target-locally from the Homebrew environment or an explicit target path instead of assuming `bash` means it.
-Do not rely on login-shell startup files for `PATH`; set any required environment inside the remote snippet.
+The quoted heredoc delimiter prevents local-shell expansion; variables expand on the target inside `sh`. This shape
+keeps the remote body visible and avoids nested quote bugs. Do not begin an SSH command with login-shell syntax such as
+`set -e; ...`; targets may use Fish, Zsh, or another shell with different `set` semantics. Do not compress
+multi-command remote orchestration into `ssh HOST 'sh -c ...'`, and do not use `bash -lc` as default remote glue on
+macOS, because `bash` may resolve to the old system Bash instead of a Homebrew Bash. Use Bash only for explicit Bash
+script entrypoints such as `bin/bootstrap` or scripts with a Bash shebang. When a post-bootstrap remote step genuinely
+requires Homebrew Bash, resolve that interpreter target-locally from the Homebrew environment or an explicit target path
+instead of assuming `bash` means it. Do not rely on login-shell startup files for `PATH`; set any required environment
+inside the remote snippet.
+
+Do not use these forms for multi-command Tilde orchestration:
+
+```sh
+ssh HOST 'set -e; ...'
+ssh HOST 'sh -c ...'
+ssh HOST 'bash -lc ...'
+```
 
 If the target machine already has a Dropbox-backed public data repository copy, use that copy. If the public repository
 is cloned to a target machine, the default location is `~/.local/src/<repo-name>`. The directory name is the
