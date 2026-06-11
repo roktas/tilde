@@ -28,10 +28,12 @@ class Plan
   }.freeze
   MODES = %w[apply refresh repair upgrade].freeze
 
+  FULL_REFRESH_PACKAGE_TYPES = %w[egg flatpak gem github npm skill].freeze
   PACKAGE_TYPES = %w[brew cask deb npm gem egg flatpak scoop github skill].freeze
   PACKAGE_CONDITIONS = {
     "flatpak" => "graphical"
   }.freeze
+  SCOPES = %w[fast full].freeze
   SPECIAL_SECTIONS = %w[
     Preinstall
     Install
@@ -52,6 +54,7 @@ class Plan
     @mode = options.fetch(:mode)
     @platform = options[:platform] || detect_platform
     @repo = Pathname.new(options.fetch(:repo)).expand_path
+    @scope = options[:scope] || default_scope
   end
 
   def run
@@ -59,6 +62,7 @@ class Plan
     validate_level!
     validate_mode!
     validate_platform!
+    validate_scope!
     validate_worktree!
 
     @head = git("rev-parse", "HEAD")
@@ -77,6 +81,7 @@ class Plan
       host: @host,
       level: @level,
       mode: @mode,
+      scope: @scope,
       platform: @platform,
       state_path: state_path.to_s,
       repository: repository_identity,
@@ -113,6 +118,14 @@ class Plan
     merge_config(all, platform)
   end
 
+  def active_system_packages(modules)
+    packages = []
+    packages << system_package("brew") if homebrew_active?(modules)
+    packages << system_package("deb") if apt_active?
+    packages << system_package("scoop") if scoop_active?(modules)
+    packages
+  end
+
   def apply_like? = apply? || repair?
 
   def actions_skipped?(skipped) = skipped || !apply_like?
@@ -140,10 +153,55 @@ class Plan
     Digest::SHA256.hexdigest(JSON.generate(content))
   end
 
+  def apt_active? = @platform == "linux" && command_available?("apt-get")
+
+  def broad_upgrade_packages(modules)
+    packages = []
+    packages << system_package("cask") if homebrew_active?(modules)
+    packages << system_package("deb") if apt_active?
+    packages << system_package("flatpak") if flatpak_active?(modules)
+    packages << system_package("scoop") if scoop_active?(modules)
+    packages
+  end
+
+  def command_available?(name)
+    ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).any? do |dir|
+      path = File.join(dir, name)
+      File.file?(path) && File.executable?(path)
+    end
+  end
+
   def current_branch
     git("branch", "--show-current")
   rescue StandardError
     nil
+  end
+
+  def default_scope
+    case @mode
+    when "refresh"
+      "fast"
+    when "upgrade"
+      "full"
+    end
+  end
+
+  def configure_update_packages(modules)
+    return modules unless refresh? || upgrade?
+
+    modules.each do |mod|
+      mod[:packages_to_refresh] = []
+      mod[:packages_to_upgrade] = []
+    end
+
+    if full_refresh?
+      add_full_refresh_packages(modules)
+    else
+      add_fast_refresh_packages(modules)
+    end
+
+    add_broad_upgrade_packages(modules) if upgrade?
+    modules
   end
 
   def core_plan(modules)
@@ -184,6 +242,64 @@ class Plan
         strategy: "write-fallback-file"
       }
     ]
+  end
+
+  def flatpak_active?(modules) = command_available?("flatpak") || package_type_present?(modules, %w[flatpak])
+
+  def full_refresh? = upgrade? || (refresh? && @scope == "full")
+
+  def full_refresh_packages(packages)
+    packages.select { |package| FULL_REFRESH_PACKAGE_TYPES.include?(package.fetch(:type)) }
+  end
+
+  def homebrew_active?(modules) = command_available?("brew") || package_type_present?(modules, %w[brew cask])
+
+  def add_broad_upgrade_packages(modules)
+    target = update_package_module(modules)
+    return unless target
+
+    target[:packages_to_upgrade].concat(broad_upgrade_packages(modules))
+  end
+
+  def add_fast_refresh_packages(modules)
+    target = update_package_module(modules)
+    return unless target
+
+    target[:packages_to_refresh].concat(active_system_packages(modules))
+  end
+
+  def add_full_refresh_packages(modules)
+    add_fast_refresh_packages(modules)
+
+    modules.each do |mod|
+      mod[:packages_to_refresh].concat(full_refresh_packages(mod.fetch(:packages)))
+    end
+  end
+
+  def package_type_present?(modules, types)
+    modules.any? do |mod|
+      mod.fetch(:packages).any? { |package| types.include?(package.fetch(:type)) }
+    end
+  end
+
+  def scoop_active?(modules)
+    @platform == "windows" && (command_available?("scoop") || package_type_present?(modules, %w[scoop]))
+  end
+
+  def system_package(type)
+    {
+      type:,
+      name: "*",
+      value: "#{type}:*",
+      system: true,
+      condition: PACKAGE_CONDITIONS[type]
+    }.compact
+  end
+
+  def update_package_module(modules)
+    return nil if repo_role == "private" && companion_repo
+
+    modules.find { |mod| mod.fetch(:name) == @platform } || modules.first
   end
 
   def home_entrypoint_linked_by_module?(modules)
@@ -481,13 +597,9 @@ class Plan
 
   def package_actions(packages, mode, skipped)
     return [] if skipped
-    return [] unless package_mode?(mode)
+    return packages if mode == "apply" && apply_like?
 
-    packages
-  end
-
-  def package_mode?(mode)
-    mode == "apply" ? apply_like? : @mode == mode
+    []
   end
 
   def planned_module(dir)
@@ -516,9 +628,10 @@ class Plan
       readme: readme.to_s,
       level:,
       home_entrypoint:,
+      packages:,
       packages_to_install: package_actions(packages, "apply", skipped),
-      packages_to_refresh: package_actions(packages, "refresh", skipped),
-      packages_to_upgrade: package_actions(packages, "upgrade", skipped),
+      packages_to_refresh: [],
+      packages_to_upgrade: [],
       links_to_create: links,
       copies_to_create: actions_skipped ? [] : normalize_copies(config, dir),
       special_sections: section_actions(body, skipped),
@@ -536,7 +649,7 @@ class Plan
     dirs << platform_variant_dir if platform_variant_dir.join("README.md").file?
     dirs.concat(module_dirs.reject { |dir| [platform_dir, platform_variant_dir].include?(dir) })
 
-    dirs.filter_map { |dir| planned_module(dir) }
+    configure_update_packages(dirs.filter_map { |dir| planned_module(dir) })
   end
 
   def home_entrypoint_declared?(config)
@@ -606,6 +719,7 @@ class Plan
     puts("- host: `#{plan[:host]}`")
     puts("- level: `#{plan[:level]}`")
     puts("- mode: `#{plan[:mode]}`")
+    puts("- scope: `#{plan[:scope]}`") if plan[:scope]
     puts("- platform: `#{plan[:platform]}`")
     puts("- state: `#{plan[:state_path]}`")
     puts("- actions: `#{plan[:actions].length}`")
@@ -767,7 +881,8 @@ class Plan
 
   def selected_special_sections(body)
     sections = special_sections(body)
-    return sections.select { |name, _section| name == "Update" } if refresh? || upgrade?
+    return sections.select { |name, _section| name == "Update" } if full_refresh?
+    return {} if refresh?
 
     sections.except("Update")
   end
@@ -863,6 +978,7 @@ class Plan
       host: @host,
       platform: @platform,
       mode: @mode,
+      scope: @scope,
       level: @level,
       home: Dir.home,
       state_root: state_root.to_s,
@@ -886,6 +1002,19 @@ class Plan
     return if MODES.include?(@mode)
 
     raise "Unsupported mode: #{@mode}"
+  end
+
+  def validate_scope!
+    case @mode
+    when "refresh"
+      return if SCOPES.include?(@scope)
+    when "upgrade"
+      return if @scope == "full"
+    else
+      return if @scope.nil?
+    end
+
+    raise "Unsupported scope for #{@mode}: #{@scope || '(none)'}"
   end
 
   def validate_repo!
@@ -919,6 +1048,7 @@ def main(argv)
       parser.on("--mode MODE", "Mode: apply, refresh, repair, upgrade") { |value| options[:mode] = value }
       parser.on("--platform PLATFORM", "Platform: linux, macos, windows") { |value| options[:platform] = value }
       parser.on("--repo PATH", "Repository root") { |value| options[:repo] = value }
+      parser.on("--scope SCOPE", "Refresh scope: fast or full") { |value| options[:scope] = value }
     end
     .parse!(argv)
 

@@ -159,6 +159,8 @@ main() {
 	local plan_json
 	local private_plan_json
 	local private_repo
+	local refresh_apply_json
+	local refresh_plan_json
 	local repo
 	local script_dir
 	local skill_root
@@ -183,6 +185,8 @@ main() {
 	fake_bin=$tmpdir/bin
 	plan_json=$tmpdir/plan.json
 	private_plan_json=$tmpdir/private-plan.json
+	refresh_apply_json=$tmpdir/refresh-apply.json
+	refresh_plan_json=$tmpdir/refresh-plan.json
 	bad_plan=$tmpdir/bad-plan.json
 	bad_condition_plan=$tmpdir/bad-condition-plan.json
 	apply_json=$tmpdir/apply.json
@@ -199,12 +203,26 @@ main() {
 
 	cat >"$fake_bin/brew" <<'EOF'
 #!/usr/bin/env bash
-printf 'fake brew failure\n' >&2
-exit 7
+if [[ ${1:-} == install && ${2:-} == broken ]]; then
+	printf 'fake brew failure\n' >&2
+	exit 7
+fi
+
+printf 'brew %s\n' "$*" >> "$HOME"/package-log
+	exit 0
+EOF
+	cat >"$fake_bin/apt-get" <<'EOF'
+#!/usr/bin/env bash
+exit 0
 EOF
 	cat >"$fake_bin/flatpak" <<'EOF'
 #!/usr/bin/env bash
 printf 'flatpak ran\n' > "$HOME"/flatpak-ran
+exit 0
+EOF
+	cat >"$fake_bin/sudo" <<'EOF'
+#!/usr/bin/env bash
+printf 'sudo %s\n' "$*" >> "$HOME"/package-log
 exit 0
 EOF
 	cat >"$fake_bin/systemctl" <<'EOF'
@@ -212,12 +230,12 @@ EOF
 if [[ ${1:-} == get-default ]]; then
 	printf '%s\n' "${TILDE_FAKE_SYSTEMCTL:-multi-user.target}"
 	exit 0
-fi
+	fi
 
-exit 1
+	exit 1
 EOF
-	chmod +x "$fake_bin/brew"
-	chmod +x "$fake_bin/flatpak" "$fake_bin/systemctl"
+	chmod +x "$fake_bin/apt-get" "$fake_bin/brew"
+	chmod +x "$fake_bin/flatpak" "$fake_bin/sudo" "$fake_bin/systemctl"
 
 	printf 'old link\n' >"$home/Dropbox/var/app/source-link.txt"
 	printf 'old copy\n' >"$home/.config/sample/copy.txt"
@@ -279,9 +297,9 @@ EOF
 	fi
 	grep -q "unsupported condition: headless" "$bad_condition_err"
 
-	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:/usr/bin:/bin TILDE_APPLY_STOP_AFTER=3 "$apply" \
+	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH TILDE_APPLY_STOP_AFTER=3 "$apply" \
 		--plan "$private_plan_json" --plan "$plan_json" >"$tmpdir/partial.out"
-	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:/usr/bin:/bin TILDE_FAKE_SYSTEMCTL=graphical.target "$apply" \
+	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH TILDE_FAKE_SYSTEMCTL=graphical.target "$apply" \
 		--plan "$private_plan_json" --plan "$plan_json" >"$apply_json"
 
 	[[ -L $home/Dropbox/var/app/source-link.txt ]]
@@ -321,6 +339,26 @@ EOF
 		abort "manual module should be notok" unless done.fetch("public/manual") == "notok"
 		abort "package module should be notok" unless done.fetch("public/pkg") == "notok"
 		abort "private module should be ok" unless done.fetch("private/zzz-private") == "ok"
+	'
+
+	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH "$plan" \
+		--repo "$repo" --mode refresh --platform linux --host "$host" >"$refresh_plan_json"
+	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH "$apply" \
+		--plan "$refresh_plan_json" >"$refresh_apply_json"
+
+	grep -q '^brew update$' "$home/package-log"
+	grep -q '^brew upgrade$' "$home/package-log"
+	grep -q '^sudo apt-get update$' "$home/package-log"
+	grep -q '^sudo apt-get upgrade -y$' "$home/package-log"
+
+	REFRESH_APPLY_JSON=$refresh_apply_json ruby -rjson -e '
+		apply = JSON.parse(File.read(ENV.fetch("REFRESH_APPLY_JSON")))
+		abort "refresh apply should complete" unless apply.fetch("completed")
+		commands = apply.fetch("results").flat_map { |result| result.fetch("diagnostics", {}).fetch("commands", []) }
+		abort "missing brew update diagnostics" unless commands.any? { |run| run.fetch("command") == %w[brew update] }
+		abort "missing brew upgrade diagnostics" unless commands.any? { |run| run.fetch("command") == %w[brew upgrade] }
+		abort "missing apt update diagnostics" unless commands.any? { |run| run.fetch("command") == %w[sudo apt-get update] }
+		abort "missing apt upgrade diagnostics" unless commands.any? { |run| run.fetch("command") == %w[sudo apt-get upgrade -y] }
 	'
 
 	echo "apply smoke ok"

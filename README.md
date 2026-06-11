@@ -64,7 +64,7 @@ $tilde init PUBLIC_REPO PRIVATE_REPO
 
 ### Update An Existing Deployment
 
-After a host has already been deployed, reconcile changed desired state and refresh managed external resources:
+After a host has already been deployed, reconcile changed desired state and run the fast update path:
 
 ```text
 $tilde update
@@ -81,6 +81,20 @@ Use `dry-run` or `plan-only` first when you want the proposal without applying i
 ```text
 $tilde update dry-run
 $tilde update ssh:<host> dry-run
+```
+
+Use `update full` for the full managed update path, including managed non-system package declarations and module
+`Update` sections:
+
+```text
+$tilde update full
+```
+
+Use `upgrade` for the widest update path. It includes `update full`, then runs broad package-manager upgrades that may
+affect packages not declared by Tilde:
+
+```text
+$tilde upgrade
 ```
 
 ### Adopt New State After Deployment
@@ -310,8 +324,8 @@ applying it.
 | `organize` | Propose organization changes, including archive moves when relevant. |
 | `repair` | Retry failed install phases from recorded state. |
 | `status` | Show a short deployment, home-entrypoint, and managed-surface summary. |
-| `update` | Reconcile desired state, then refresh managed external resources. |
-| `upgrade` | Run broad package-manager upgrades after explicit confirmation. |
+| `update` | Reconcile desired state, then run the fast update path. |
+| `upgrade` | Run `update full`, then broad package-manager upgrades after explicit confirmation. |
 
 Example prompts shown by help:
 

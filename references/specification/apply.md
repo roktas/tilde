@@ -157,7 +157,8 @@ The first executor does not:
 - provide full rollback for packages or special sections;
 - resolve ambiguous package or release metadata;
 - repair dirty repositories or unexpected target content;
-- run broad package-manager upgrades unless the confirmed plan explicitly uses upgrade mode.
+- run broad package-manager upgrades unless the confirmed plan explicitly uses upgrade mode. Upgrade mode includes the
+  full managed update path first, then the broad package-manager actions.
 
 ## Acceptance
 

@@ -13,15 +13,19 @@ action order from grouped summaries.
 
 - `apply`: apply repository desired state to the target host. This covers first provisioning and normal state/`HEAD`
   reconciliation, including new links, copies, packages, and selected special sections.
-- `refresh`: update only managed external resources: active plan packages and `README.md` `Update` sections. It may run
-  even when `HEAD` is unchanged.
+- `refresh`: update external resources using an explicit scope. Fast scope is the default for plain `update`; it runs
+  normal updates for active system package managers after the public `update` flow has reconciled desired state. Full
+  scope is selected by `update full`; it also refreshes managed non-system package types and selected `README.md`
+  `Update` sections. Refresh may run even when `HEAD` is unchanged.
 - `repair`: retry modules marked `notok` in deployment state at the same `HEAD`.
-- `upgrade`: broad package-manager upgrade mode. It may affect packages outside the managed set and runs only on
+- `upgrade`: broad package-manager upgrade mode. It first includes the full refresh behavior, then runs
+  package-manager-wide or aggressive upgrade actions. It may affect packages outside the managed set and runs only on
   explicit user request after scope is described.
 
 `apply` and `repair` are deployment-state/`HEAD` driven. `refresh` and `upgrade` are external-resource/time driven.
-The user-facing `update` command runs the `apply` and `refresh` phases in that order, after confirmation, so new desired
-state and existing managed external resources can both be brought current.
+The user-facing `update` command runs the `apply` and fast `refresh` phases in that order, after confirmation, so new
+desired state and normal system package managers can both be brought current. `update full` uses full refresh scope.
+`upgrade` is a superset of `update full`.
 
 ### Init
 
@@ -42,9 +46,11 @@ state and existing managed external resources can both be brought current.
 - Interpret `HEAD`/deployment-state differences to produce the active provisioning set. Added packages, added links,
   removed links, and added copies matter. Removed packages and removed copies are not automatic removal actions.
 - In `apply`, run install and file/link phases.
-- In `refresh`, refresh packages and selected `Update` sections in managed scope only.
+- In fast `refresh`, run normal broad updates for active system package managers only.
+- In full `refresh`, also refresh managed non-system package declarations and selected `Update` sections.
 - In `repair`, retry `notok` modules at the same `HEAD`.
-- In `upgrade`, run broad package-manager updates only after explicit confirmation.
+- In `upgrade`, run full refresh first, then broad or aggressive package-manager updates only after explicit
+  confirmation.
 - Save deployment state.
 
 ### Ordering
@@ -81,4 +87,5 @@ state and existing managed external resources can both be brought current.
 
 ### Update
 
-- Run `Update` instructions only in `refresh` or explicitly requested `upgrade`. Do not run them during normal `apply`.
+- Run `Update` instructions only in full `refresh` or explicitly requested `upgrade`. Do not run them during plain
+  `update`, fast `refresh`, or normal `apply`.

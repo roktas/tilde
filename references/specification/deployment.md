@@ -103,9 +103,19 @@ $tilde update ssh:<host>
 
 Use `update dry-run` or `update plan-only` when the user wants the returning-user proposal without applying it.
 
-`update` reconciles desired state, then refreshes managed external resources. It is equivalent to the public
-returning-user flow of `internal.install` followed by `internal.refresh`, after confirmation. It is not a broad
-package-manager upgrade; use `upgrade` only when the user explicitly requests global or package-manager-wide upgrades.
+Plain `update` reconciles desired state, refreshes links, and runs the fast update path for represented system package
+managers. It is equivalent to the public returning-user flow of `internal.install` followed by
+`internal.refresh(scope=fast)`, after confirmation.
+
+Use `update full` when the user wants full managed refresh: fast update plus managed non-system package declarations and
+module `Update` sections. Use `upgrade` when the user wants the widest update: `update full` plus broad or aggressive
+package-manager upgrades that may affect packages not declared by Tilde.
+
+The update command scope ladder is:
+
+```text
+update < update full < upgrade
+```
 
 After accepting an adoption proposal for a new app, config, package, or explicit path, apply the changed desired state
 through the returning-user update flow:

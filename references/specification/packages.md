@@ -38,34 +38,58 @@ gh release download --repo OWNER/REPO --pattern 'PATTERN'
 
 ## Package Updates
 
-Default update scope is managed packages only: update only package entries present in the active provisioning plan, one
-package at a time or grouped by explicit package names. Do not run package-manager-wide upgrade commands unless the user
-explicitly asks for a full/global update.
+Update scope is explicit and ordered:
 
-Before managed updates, run metadata refresh commands at most once per package manager represented in the confirmed
-update set:
+```text
+update < update full < upgrade
+```
 
-- `brew update`
-- `sudo apt update`
-- `scoop update`
-- `flatpak update --appstream`
+Plain `update` uses the fast update path. It must not update every managed package declaration one by one. It reconciles
+desired state, then runs normal broad updates for active system package managers. This fast path is intentionally
+allowed to affect packages outside the Tilde-managed set when the active package manager's normal upgrade command is
+global.
 
-Managed update commands:
+`update full` includes the fast update path, then refreshes managed non-system package declarations and selected module
+`Update` sections. It remains bounded by Tilde-managed declarations except for the fast system package-manager step it
+inherits from plain `update`.
 
-- `brew:<name>`: `brew upgrade <name>`
-- `cask:<name>`: `brew upgrade --cask <name>`. If the cask is excluded from normal upgrades because it uses
-  `version :latest` or self-updates, use `brew upgrade --cask --greedy <name>` only after calling out that extra scope.
-- `deb:<name>`: `sudo apt-get install --only-upgrade -y <name>` after `sudo apt update`. If the package may not be
-  installed yet, treat it as an install action.
+`upgrade` includes `update full`, then runs broad or aggressive package-manager upgrades after explicit confirmation.
+Its proposal must say that packages not declared by Tilde may be affected.
+
+Fast system package-manager updates:
+
+- Homebrew is active when `brew` is available on the target or the active plan contains `brew:<name>` or `cask:<name>`.
+  Run `brew update`, then `brew upgrade`. Do not use `--greedy` in plain `update` or `update full`.
+- Apt is active on Linux when `apt-get` is available, even if no `deb:<name>` package declaration is present. Run
+  `sudo apt-get update`, then `sudo apt-get upgrade -y`.
+- Scoop is active on Windows when `scoop` is available or the active plan contains `scoop:<name>`. Run `scoop update`,
+  then `scoop update *`.
+
+Do not fail fast update merely because one supported system package manager is unavailable on a platform where another
+active system package manager can be updated. Report unavailable managers when their absence prevents a requested
+package action.
+
+Full managed non-system updates:
+
 - `npm:<name>`: `bun update -g <name>`
 - `gem:<name>`: `gem update --user-install --no-document <name>`. Do not use bare `gem update`.
 - `egg:<name>`: `uv tool upgrade <name>`. Use `uv tool install <name>` when changing version constraints or install
   flags.
 - `flatpak:<app-id>`: conditionally run `flatpak update --user <app-id>` for per-user installs created by Tilde when
-  the `graphical` condition is met.
-- `scoop:<name>`: run `scoop update` first, then `scoop update <name>`.
+  the `graphical` condition is met. Do not update all Flatpaks during `update full`.
 - `github:<owner>/<repo>`: inspect latest release assets again, compare with the installed binary when possible, and
   replace the executable only after selecting the matching asset.
 - `skill:<source>`: fetch the matching Git checkout and update with a non-destructive fast-forward-only merge. Dirty
   targets block automatic updates. Put any nonstandard Tilde skill update behavior in the owning module's `README.md`
   body instead of expanding `skill:` into a broad skill-management schema.
+
+Broad or aggressive `upgrade` examples:
+
+- Homebrew casks that normal `brew upgrade` skips may use `brew upgrade --cask --greedy` only after the proposal calls
+  out the wider cask scope.
+- Apt may use `sudo apt-get full-upgrade -y` only after the proposal calls out that packages may be installed, removed,
+  or held differently than a normal upgrade.
+- Flatpak may run `flatpak update -y --user` for all per-user Flatpaks only when the graphical condition is met and the
+  proposal calls out that unmanaged apps may be affected.
+- Scoop may use package-manager-wide update behavior beyond the active Tilde declarations after the proposal calls out
+  that unmanaged apps may be affected.

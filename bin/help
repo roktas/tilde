@@ -16,8 +16,8 @@ readonly -a COMMANDS=(
 	'organize|Propose organization changes, including archive moves when relevant.'
 	'repair|Retry failed install phases from recorded state.'
 	'status|Show a short deployment, home-entrypoint, and managed-surface summary.'
-	'update|Reconcile desired state, then refresh managed external resources.'
-	'upgrade|Run broad package-manager upgrades after explicit confirmation.'
+	'update|Reconcile desired state, then run the fast update path.'
+	'upgrade|Run `update full`, then broad package-manager upgrades after explicit confirmation.'
 )
 
 readonly -a EXAMPLES=(
@@ -81,13 +81,13 @@ usage_suffix_for() {
 		printf '%s\n' ' [public-repo] [private-repo]'
 		;;
 	update)
-		printf '%s\n' ' [ssh:<host>] [dry-run|plan-only]'
+		printf '%s\n' ' [ssh:<host>] [full] [dry-run|plan-only]'
 		;;
 	repair)
 		printf '%s\n' ' [dry-run|plan-only]'
 		;;
 	upgrade)
-		printf '%s\n' ''
+		printf '%s\n' ' [dry-run|plan-only]'
 		;;
 	esac
 }

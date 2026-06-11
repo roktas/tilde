@@ -45,22 +45,38 @@ class Apply
     %w[install gem] => ->(name) { ["gem", "install", "--user-install", "--no-document", name] },
     %w[install npm] => ->(name) { ["bun", "install", "-g", name] },
     %w[install scoop] => ->(name) { ["scoop", "install", name] },
-    %w[refresh brew] => ->(name) { ["brew", "upgrade", name] },
+    %w[refresh brew] => ->(name) { name == "*" ? [%w[brew update], %w[brew upgrade]] : ["brew", "upgrade", name] },
     %w[refresh cask] => ->(name) { ["brew", "upgrade", "--cask", name] },
-    %w[refresh deb] => ->(name) { ["sudo", "apt-get", "install", "--only-upgrade", "-y", name] },
+    %w[refresh deb] => lambda { |name|
+      if name == "*"
+        [%w[sudo apt-get update], %w[sudo apt-get upgrade -y]]
+      else
+        %w[sudo apt-get install --only-upgrade -y] + [name]
+      end
+    },
     %w[refresh egg] => ->(name) { ["uv", "tool", "upgrade", name] },
     %w[refresh flatpak] => ->(name) { ["flatpak", "update", "-y", "--user", name] },
     %w[refresh gem] => ->(name) { ["gem", "update", "--user-install", "--no-document", name] },
     %w[refresh npm] => ->(name) { ["bun", "update", "-g", name] },
-    %w[refresh scoop] => ->(name) { ["scoop", "update", name] },
+    %w[refresh scoop] => ->(name) { name == "*" ? [%w[scoop update], %w[scoop update *]] : ["scoop", "update", name] },
     %w[upgrade brew] => ->(name) { ["brew", "upgrade", name] },
-    %w[upgrade cask] => ->(name) { ["brew", "upgrade", "--cask", name] },
-    %w[upgrade deb] => ->(name) { ["sudo", "apt-get", "install", "--only-upgrade", "-y", name] },
+    %w[upgrade cask] => lambda { |name|
+      name == "*" ? %w[brew upgrade --cask --greedy] : ["brew", "upgrade", "--cask", name]
+    },
+    %w[upgrade deb] => lambda { |name|
+      if name == "*"
+        %w[sudo apt-get full-upgrade -y]
+      else
+        %w[sudo apt-get install --only-upgrade -y] + [name]
+      end
+    },
     %w[upgrade egg] => ->(name) { ["uv", "tool", "upgrade", name] },
-    %w[upgrade flatpak] => ->(name) { ["flatpak", "update", "-y", "--user", name] },
+    %w[upgrade flatpak] => lambda { |name|
+      name == "*" ? %w[flatpak update -y --user] : ["flatpak", "update", "-y", "--user", name]
+    },
     %w[upgrade gem] => ->(name) { ["gem", "update", "--user-install", "--no-document", name] },
     %w[upgrade npm] => ->(name) { ["bun", "update", "-g", name] },
-    %w[upgrade scoop] => ->(name) { ["scoop", "update", name] }
+    %w[upgrade scoop] => ->(name) { name == "*" ? %w[scoop update *] : ["scoop", "update", name] }
   }.freeze
 
   def initialize(options)
@@ -138,12 +154,15 @@ class Apply
     end
   end
 
-  def command_for(action)
+  def commands_for(action)
     package = action.fetch("package")
     name = package.fetch("name")
     command = PACKAGE_COMMANDS[[action.fetch("operation"), package.fetch("type")]]
 
-    command&.call(name)
+    commands = command&.call(name)
+    return unless commands
+
+    commands.first.is_a?(Array) ? commands : [commands]
   end
 
   def condition_met?(condition)
@@ -281,13 +300,19 @@ class Apply
       return action_result(action, "ignored", { "reason" => "condition not met: #{condition}" })
     end
 
-    command = command_for(action)
-    return action_result(action, "deferred", { "reason" => "unsupported package operation" }) unless command
+    commands = commands_for(action)
+    return action_result(action, "deferred", { "reason" => "unsupported package operation" }) unless commands
 
-    stdout, stderr, status = Open3.capture3(*command)
-    result = status.success? ? "ok" : "notok"
-    action_result(action, result,
-                  { "command" => command, "stdout" => stdout, "stderr" => stderr, "exit" => status.exitstatus })
+    runs = []
+    commands.each do |command|
+      stdout, stderr, status = Open3.capture3(*command)
+      run = { "command" => command, "stdout" => stdout, "stderr" => stderr, "exit" => status.exitstatus }
+      return action_result(action, "notok", { "commands" => runs + [run] }) unless status.success?
+
+      runs << run
+    end
+
+    action_result(action, "ok", { "commands" => runs })
   end
 
   def execute_section(action)
@@ -611,7 +636,7 @@ class Apply
   end
 
   def validate_target_match!(plan, first_target)
-    %w[host platform mode level home state_root].each do |key|
+    %w[host platform mode scope level home state_root].each do |key|
       raise "plan target #{key} mismatch" unless plan.fetch("target").fetch(key) == first_target.fetch(key)
     end
   end

@@ -31,8 +31,8 @@ Use this public action inventory for help output:
 | `organize` | Propose organization changes, including archive moves when relevant. |
 | `repair` | Retry failed install phases from recorded state. |
 | `status` | Show a short deployment, home-entrypoint, and managed-surface summary. |
-| `update` | Reconcile desired state, then refresh managed external resources. |
-| `upgrade` | Run broad package-manager upgrades after explicit confirmation. |
+| `update` | Reconcile desired state, then run the fast update path. |
+| `upgrade` | Run `update full`, then broad package-manager upgrades after explicit confirmation. |
 
 After the table, show these short help notes:
 
@@ -62,9 +62,12 @@ Public command semantics:
 - `deploy`: the main first-run and new-host journey command. It may orchestrate `create`, `init`,
   `internal.bootstrap`/preflight, planning, and `internal.install`, while preserving proposal-first behavior for each
   phase.
-- `update`: run the returning-user maintenance flow: `internal.install`, then `internal.refresh`, after confirmation.
+- `update`: run the returning-user maintenance flow after confirmation. Plain `update` means
+  `internal.install`, then `internal.refresh` with fast scope. `update full` means `internal.install`, then
+  `internal.refresh` with full managed scope.
 - `repair`: public wrapper over `internal.repair`.
-- `upgrade`: run broad package-manager upgrades only on explicit request after describing scope.
+- `upgrade`: run `update full`, then broad package-manager upgrades only on explicit request after describing scope.
+  `upgrade` is the widest update command and may affect packages not declared by Tilde.
 - `status`: print a short read-only summary of configured public/private repositories, deployment state, and
   home-entrypoint facts, plus a concise managed-link/copy/package surface summary when cached state is available. It should
   prefer the installed `bin/status` helper when available so the agent can produce the summary with one read-only
@@ -139,7 +142,9 @@ Internal commands:
 - `internal.plan` or `.plan`: generate a provisioning plan.
 - `internal.apply` or `.apply`: apply a provisioning plan.
 - `internal.install` or `.install`: install desired state from public/private data repositories.
-- `internal.refresh` or `.refresh`: refresh managed external resources.
+- `internal.refresh` or `.refresh`: refresh external resources with an explicit scope. Fast scope runs after
+  desired-state link reconciliation and updates normal system package managers; full scope also refreshes managed
+  non-system package types and selected `Update` sections.
 - `internal.repair` or `.repair`: retry failed modules or failed installation phases from recorded state.
 
 If a user explicitly requests an internal command, explain that it is internal and suggest the public command that covers
@@ -149,9 +154,15 @@ the same workflow, unless the user is developing Tilde itself.
 
 ```text
 deploy = init + internal.bootstrap/preflight + internal.install
-update = internal.install + internal.refresh
+update = internal.install + internal.refresh(scope=fast)
+update full = internal.install + internal.refresh(scope=full)
+upgrade = update full + broad package-manager upgrade
 repair = public wrapper over internal.repair
 ```
+
+The update commands form an explicit scope ladder: `update < update full < upgrade`. Do not treat plain `update` as a
+full managed refresh. Do not treat `update full` as a broad global upgrade. `upgrade` includes `update full` first, then
+adds package-manager-wide or aggressive upgrade actions that may go beyond Tilde-managed declarations.
 
 The `dry-run`, `plan`, and `plan-only` qualifiers on public commands use `internal.plan` to produce a proposal and then
 stop before applying changes.

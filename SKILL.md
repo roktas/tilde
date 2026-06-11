@@ -62,9 +62,10 @@ equivalent. If only text is available, present explicit choices with target, eff
 - `create`: create public/private home repository skeletons.
 - `init`: register existing public/private repositories on this host.
 - `deploy`: prepare a local or remote host and install desired state.
-- `update`: run the normal returning-user maintenance flow.
+- `update`: run the normal returning-user maintenance flow with the fast update path. `update full` runs the full
+  managed update path.
 - `repair`: retry failed install phases from recorded state.
-- `upgrade`: run broad package-manager upgrades after explicit confirmation.
+- `upgrade`: run `update full`, then broad package-manager upgrades after explicit confirmation.
 - `status`: show a short read-only deployment, home-entrypoint, and managed-surface summary. Keep it fast and state-first:
   prefer `bin/status --format markdown` when available; do not regenerate plans, validate live links, query package
   managers, or call Dropbox by default. If full deployment state or caches are missing, warn that status is partial and
@@ -88,6 +89,9 @@ ordinary help. Treat `plan` and `dry-run` as qualifiers on public commands, not 
   policy.
 - `$tilde update`: update an already deployed local host.
 - `$tilde update ssh:<host>`: update an already deployed remote host.
+- `$tilde update full`: run full managed update for an already deployed local host.
+- `$tilde update ssh:<host> full`: run full managed update for an already deployed remote host.
+- `$tilde upgrade`: run the widest update path, including `update full` and broad package-manager upgrades.
 - Add `dry-run` or `plan-only` when the user wants the proposal without applying it.
 
 ## Discovery

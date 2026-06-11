@@ -30,6 +30,7 @@ main() {
 	local dirty_plan_err
 	local extra_module
 	local extra_plan_json
+	local full_refresh_plan_json
 	local head
 	local invalid_plan_err
 	local invalid_plan_json
@@ -50,6 +51,7 @@ main() {
 	local target_module
 	local target_plan_json
 	local tmpdir
+	local upgrade_plan_json
 
 	script_dir=$(cd -- "${BASH_SOURCE[0]%/*}" >/dev/null && pwd)
 	skill_root=$(cd -- "$script_dir/../../.." >/dev/null && pwd)
@@ -77,6 +79,7 @@ main() {
 	export XDG_STATE_HOME=$tmpdir/state
 	dirty_plan_err=$tmpdir/dirty-plan.err
 	extra_plan_json=$tmpdir/extra-plan.json
+	full_refresh_plan_json=$tmpdir/full-refresh-plan.json
 	invalid_plan_err=$tmpdir/invalid-package-plan.err
 	invalid_plan_json=$tmpdir/invalid-package-plan.json
 	macos_plan_json=$tmpdir/macos-plan.json
@@ -87,6 +90,7 @@ main() {
 	refresh_plan_json=$tmpdir/refresh-plan.json
 	repair_plan_json=$tmpdir/repair-plan.json
 	target_plan_json=$tmpdir/target-plan.json
+	upgrade_plan_json=$tmpdir/upgrade-plan.json
 
 	export GIT_CONFIG_GLOBAL=${GIT_CONFIG_GLOBAL:-$tmpdir/gitconfig}
 
@@ -418,20 +422,55 @@ EOF
 	rm -rf "$platform_module"
 
 	"$plan" --repo "$repo" --mode refresh --platform linux --host smoke >"$refresh_plan_json"
+	"$plan" --repo "$repo" --mode refresh --scope full --platform linux --host smoke >"$full_refresh_plan_json"
+	"$plan" --repo "$repo" --mode upgrade --platform linux --host smoke >"$upgrade_plan_json"
 
 	REFRESH_PLAN_JSON=$refresh_plan_json ruby -rjson -e '
 		plan = JSON.parse(File.read(ENV.fetch("REFRESH_PLAN_JSON")))
 		abort "wrong refresh mode" unless plan.fetch("mode") == "refresh"
+		abort "wrong refresh scope" unless plan.fetch("scope") == "fast"
 		abort "refresh should not create core links" unless plan.fetch("core").fetch("links_to_create").empty?
 		abort "refresh should not write fallback home entrypoints" unless plan.fetch("core").fetch("home_entrypoints_to_write").empty?
 		neovim = plan.fetch("modules").find { |mod| mod.fetch("name") == "neovim" }
 		abort "missing neovim module" unless neovim
 		abort "refresh should not create links" unless neovim.fetch("links_to_create").empty?
-		abort "missing neovim refresh package" unless neovim.fetch("packages_to_refresh").any? { |pkg| pkg.fetch("value") == "brew:neovim" }
+		linux = plan.fetch("modules").find { |mod| mod.fetch("name") == "linux" }
+		abort "missing linux module" unless linux
+		abort "missing fast brew refresh" unless linux.fetch("packages_to_refresh").any? { |pkg| pkg.fetch("value") == "brew:*" }
+		abort "refresh should not include per-package brew refresh" if plan.fetch("modules").any? { |mod| mod.fetch("packages_to_refresh").any? { |pkg| pkg.fetch("value") == "brew:neovim" } }
+		abort "fast refresh should not include update section" if neovim.fetch("special_sections").key?("Update")
+	'
+
+	FULL_REFRESH_PLAN_JSON=$full_refresh_plan_json ruby -rjson -e '
+		plan = JSON.parse(File.read(ENV.fetch("FULL_REFRESH_PLAN_JSON")))
+		abort "wrong full refresh mode" unless plan.fetch("mode") == "refresh"
+		abort "wrong full refresh scope" unless plan.fetch("scope") == "full"
+		javascript = plan.fetch("modules").find { |mod| mod.fetch("name") == "javascript" }
+		abort "missing javascript module" unless javascript
+		abort "missing managed npm refresh" unless javascript.fetch("packages_to_refresh").any? { |pkg| pkg.fetch("value") == "npm:@biomejs/biome" }
+		neovim = plan.fetch("modules").find { |mod| mod.fetch("name") == "neovim" }
+		abort "missing neovim module" unless neovim
 		abort "missing neovim update section" unless neovim.fetch("special_sections").key?("Update")
 	'
 
-	NORMAL_PLAN_JSON=$normal_plan_json EXTRA_PLAN_JSON=$extra_plan_json MACOS_PLAN_JSON=$macos_plan_json PRIVATE_PLAN_JSON=$private_plan_json PRIVATE_MACOS_PLAN_JSON=$private_macos_plan_json REFRESH_PLAN_JSON=$refresh_plan_json ruby -rjson -ropen3 -e '
+	UPGRADE_PLAN_JSON=$upgrade_plan_json ruby -rjson -e '
+		plan = JSON.parse(File.read(ENV.fetch("UPGRADE_PLAN_JSON")))
+		abort "wrong upgrade mode" unless plan.fetch("mode") == "upgrade"
+		abort "wrong upgrade scope" unless plan.fetch("scope") == "full"
+		linux = plan.fetch("modules").find { |mod| mod.fetch("name") == "linux" }
+		abort "missing linux module" unless linux
+		abort "upgrade should include fast brew refresh" unless linux.fetch("packages_to_refresh").any? { |pkg| pkg.fetch("value") == "brew:*" }
+		abort "upgrade should include broad cask upgrade" unless linux.fetch("packages_to_upgrade").any? { |pkg| pkg.fetch("value") == "cask:*" }
+		abort "upgrade should include broad flatpak upgrade" unless linux.fetch("packages_to_upgrade").any? { |pkg| pkg.fetch("value") == "flatpak:*" }
+		javascript = plan.fetch("modules").find { |mod| mod.fetch("name") == "javascript" }
+		abort "missing javascript module" unless javascript
+		abort "upgrade should include managed npm refresh" unless javascript.fetch("packages_to_refresh").any? { |pkg| pkg.fetch("value") == "npm:@biomejs/biome" }
+		neovim = plan.fetch("modules").find { |mod| mod.fetch("name") == "neovim" }
+		abort "missing neovim module" unless neovim
+		abort "upgrade should include update section" unless neovim.fetch("special_sections").key?("Update")
+	'
+
+	NORMAL_PLAN_JSON=$normal_plan_json EXTRA_PLAN_JSON=$extra_plan_json MACOS_PLAN_JSON=$macos_plan_json PRIVATE_PLAN_JSON=$private_plan_json PRIVATE_MACOS_PLAN_JSON=$private_macos_plan_json REFRESH_PLAN_JSON=$refresh_plan_json FULL_REFRESH_PLAN_JSON=$full_refresh_plan_json UPGRADE_PLAN_JSON=$upgrade_plan_json ruby -rjson -ropen3 -e '
 		%w[
 			NORMAL_PLAN_JSON
 			EXTRA_PLAN_JSON
@@ -439,6 +478,8 @@ EOF
 			PRIVATE_PLAN_JSON
 			PRIVATE_MACOS_PLAN_JSON
 			REFRESH_PLAN_JSON
+			FULL_REFRESH_PLAN_JSON
+			UPGRADE_PLAN_JSON
 		].filter_map { |name| ENV[name] }.select { |path| File.exist?(path) }.each do |path|
 			plan = JSON.parse(File.read(path))
 			plan.fetch("modules").each do |mod|

@@ -62,8 +62,8 @@ installed helper `bin/help --format markdown` emits the canonical public table.
 | `organize` | Propose organization changes, including archive moves when relevant. |
 | `repair` | Retry failed install phases from recorded state. |
 | `status` | Show a short deployment, home-entrypoint, and managed-surface summary. |
-| `update` | Reconcile desired state, then refresh managed external resources. |
-| `upgrade` | Run broad package-manager upgrades after explicit confirmation. |
+| `update` | Reconcile desired state, then run the fast update path. |
+| `upgrade` | Run `update full`, then broad package-manager upgrades after explicit confirmation. |
 
 Detailed public and internal command semantics live in `references/specification/commands.md`.
 
