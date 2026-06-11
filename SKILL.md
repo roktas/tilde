@@ -124,3 +124,7 @@ files and Git traversal failures as blockers, and macOS File Provider flags as a
 For real local deployment or `remote-git`, require a clean worktree and pushed target commit. Generate plans with
 `bin/plan`; it never applies changes. Write deployment state on the target first and optionally mirror it back to the
 controller. Run `bin/bootstrap` only as the explicit state-free bootstrap prelude.
+
+For remote SSH orchestration, do not rely on the target login shell. Wrap multi-command snippets in explicit POSIX
+`sh -c` and keep the snippet POSIX-compatible. Do not use `bash -lc` as the default remote glue on macOS; reserve Bash
+for explicit Bash script entrypoints such as `bin/bootstrap` or a target-resolved Homebrew Bash when truly required.

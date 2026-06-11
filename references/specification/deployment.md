@@ -34,6 +34,24 @@ discovery.
 If no public/private arguments are given, Tilde resolves them from local state, home-entrypoint metadata, or the remote
 target's configured state according to the command's semantics.
 
+Remote SSH orchestration must not rely on the target user's login shell. Multi-command remote snippets must invoke a
+POSIX shell explicitly and keep the snippet POSIX-compatible:
+
+```sh
+ssh HOST 'sh -c '"'"'
+set -eu
+echo "planning"
+~/.agents/skills/tilde/bin/plan --repo ~/Dropbox/home --mode apply --host HOST --format json > /tmp/plan.json
+'"'"''
+```
+
+Do not begin an SSH command with login-shell syntax such as `set -e; ...`; targets may use Fish, Zsh, or another shell
+with different `set` semantics. Do not use `bash -lc` as default remote glue on macOS, because `bash` may resolve to the
+old system Bash instead of a Homebrew Bash. Use Bash only for explicit Bash script entrypoints such as `bin/bootstrap`
+or scripts with a Bash shebang. When a post-bootstrap remote step genuinely requires Homebrew Bash, resolve that
+interpreter target-locally from the Homebrew environment or an explicit target path instead of assuming `bash` means it.
+Do not rely on login-shell startup files for `PATH`; set any required environment inside the remote snippet.
+
 If the target machine already has a Dropbox-backed public data repository copy, use that copy. If the public repository
 is cloned to a target machine, the default location is `~/.local/src/<repo-name>`. The directory name is the
 repository's own name; do not force it to `home`.
@@ -222,6 +240,9 @@ When bootstrapping a remote target that does not have the installed skill yet, d
 ```bash
 ssh HOST 'bash -s' < bin/bootstrap
 ```
+
+This is an explicit Bash script delivery exception, not the general remote orchestration shell. `bin/bootstrap` must
+remain compatible with the target's baseline Bash until Homebrew is installed and available.
 
 When `tilde.roktas.dev` exists as the GitHub-backed public site for the installed skill, prefer the public bootstrap endpoint
 where HTTPS and `curl` are available:
