@@ -175,6 +175,9 @@ main() {
 	local repo
 	local script_dir
 	local skill_root
+	local skip_apply_json
+	local skip_plan_json
+	local skip_private_plan_json
 	local state
 	local state_before_refresh
 	local tmpdir
@@ -199,6 +202,9 @@ main() {
 	private_plan_json=$tmpdir/private-plan.json
 	refresh_apply_json=$tmpdir/refresh-apply.json
 	refresh_plan_json=$tmpdir/refresh-plan.json
+	skip_apply_json=$tmpdir/skip-apply.json
+	skip_plan_json=$tmpdir/skip-plan.json
+	skip_private_plan_json=$tmpdir/skip-private-plan.json
 	state_before_refresh=$tmpdir/state-before-refresh.md
 	bad_plan=$tmpdir/bad-plan.json
 	bad_condition_plan=$tmpdir/bad-condition-plan.json
@@ -391,6 +397,57 @@ EOF
 	grep -q '^gh release view --repo owner/tool --json tagName,assets$' "$home/package-log"
 	grep -q '^gh release download --repo owner/tool --pattern tool_1\.2\.3_linux_amd64\.deb --dir .*/tilde-github-.* --clobber$' "$home/package-log"
 	grep -q '^sudo apt-get install -y .*/tool_1\.2\.3_linux_amd64\.deb$' "$home/package-log"
+
+	PLAN_JSON=$plan_json PRIVATE_PLAN_JSON=$private_plan_json SKIP_PLAN_JSON=$skip_plan_json SKIP_PRIVATE_PLAN_JSON=$skip_private_plan_json ruby -rjson -rdigest -e '
+		def canonicalize(value)
+			case value
+			when Array
+				value.map { |item| canonicalize(item) }
+			when Hash
+				value.keys.map(&:to_s).sort.to_h do |key|
+					[key, canonicalize(value[key])]
+				end
+			else
+				value
+			end
+		end
+
+		def write_skip_plan(source, target)
+			plan = JSON.parse(File.read(source))
+			plan["actions"] = []
+			plan.fetch("modules").each do |mod|
+				mod["skipped"] = true
+				mod["skip_reason"] = "already ok at current head"
+				mod["packages_to_install"] = []
+				mod["packages_to_refresh"] = []
+				mod["packages_to_upgrade"] = []
+				mod["links_to_create"] = []
+				mod["copies_to_create"] = []
+				mod["special_sections"] = {}
+			end
+			content = canonicalize(plan.reject { |key, _value| %w[generated_at plan_id].include?(key) })
+			plan["plan_id"] = "sha256:#{Digest::SHA256.hexdigest(JSON.generate(content))}"
+			File.write(target, JSON.pretty_generate(plan))
+		end
+
+		write_skip_plan(ENV.fetch("PLAN_JSON"), ENV.fetch("SKIP_PLAN_JSON"))
+		write_skip_plan(ENV.fetch("PRIVATE_PLAN_JSON"), ENV.fetch("SKIP_PRIVATE_PLAN_JSON"))
+	'
+
+	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH "$apply" \
+		--plan "$skip_private_plan_json" --plan "$skip_plan_json" >"$skip_apply_json"
+
+	SKIP_APPLY_JSON=$skip_apply_json STATE_FILE=$state/tilde/hosts/$host/state.md ruby -rjson -ryaml -e '
+		apply = JSON.parse(File.read(ENV.fetch("SKIP_APPLY_JSON")))
+		abort "skip apply should complete" unless apply.fetch("completed")
+		abort "skip apply should have no action results" unless apply.fetch("results").empty?
+		state, = File.read(ENV.fetch("STATE_FILE")).split(/^---\s*$/, 3)[1, 2]
+		frontmatter = YAML.safe_load(state)
+		done = frontmatter.fetch("done")
+		abort "skipped public ok module should be preserved" unless done.fetch("public/aaa-link") == "ok"
+		abort "skipped public notok module should be preserved" unless done.fetch("public/pkg") == "notok"
+		abort "skipped private module should be preserved" unless done.fetch("private/zzz-private") == "ok"
+	'
 
 	cp "$state/tilde/hosts/$host/state.md" "$state_before_refresh"
 	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH "$plan" \

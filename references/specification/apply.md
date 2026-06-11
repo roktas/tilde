@@ -137,9 +137,11 @@ must skip only actions already recorded as `ok` or `unchanged`.
 
 For `apply` and `repair` plans, host `state.md` folds action results into repository-qualified module results. A module
 is `ok` only when all required actions are `ok`, `unchanged`, or `ignored`; `deferred` and `notok` make the module
-`notok` with details in the state body. `refresh` and `upgrade` plans update `last-plan.json` and `last-apply.json` but
-must not overwrite deployment `state.md`, because they are external-resource runs rather than desired-state deployment
-records.
+`notok` with details in the state body. When an `apply` or `repair` plan skips modules because the current deployment
+state already covers them, state writing must preserve the previous module results for those skipped modules. An
+actionless apply must not collapse a populated `done` map to `{}`. `refresh` and `upgrade` plans update `last-plan.json`
+and `last-apply.json` but must not overwrite deployment `state.md`, because they are external-resource runs rather than
+desired-state deployment records.
 
 `last-plan.json` is a combined cache of the confirmed public/private input plans, not another input plan. Its schema
 must identify the cache format separately from the executable `tilde.plan/v1` plan schema. `last-apply.json` and host

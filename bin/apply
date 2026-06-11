@@ -2,6 +2,7 @@
 # frozen_string_literal: true
 
 require "digest"
+require "date"
 require "fileutils"
 require "json"
 require "open3"
@@ -665,9 +666,11 @@ class Apply
   end
 
   def module_results
-    module_statuses.transform_values do |values|
-      values.all? { |value| RESULT_OK.include?(value) } ? "ok" : "notok"
+    results = skipped_module_results
+    module_statuses.each do |module_id, values|
+      results[module_id] = values.all? { |value| RESULT_OK.include?(value) } ? "ok" : "notok"
     end
+    results
   end
 
   def module_statuses
@@ -678,6 +681,10 @@ class Apply
     end
 
     statuses
+  end
+
+  def modules
+    @modules ||= @plans.flat_map { |plan| plan.fetch("modules", []) }
   end
 
   def path_inside?(path, root)
@@ -732,6 +739,30 @@ class Apply
     data
   rescue JSON::ParserError
     nil
+  end
+
+  def previous_done
+    return @previous_done if defined?(@previous_done)
+
+    @previous_done = read_state_done
+  end
+
+  def previous_module_status(mod)
+    previous_done[mod.fetch("id")] || previous_done[mod.fetch("name")]
+  end
+
+  def read_state_done
+    return {} unless @state_path.file?
+
+    text = @state_path.read
+    return {} unless text.start_with?("---\n")
+
+    _head, yaml, _body = text.split(/^---\s*$\n?/, 3)
+    frontmatter = YAML.safe_load(yaml, aliases: true, permitted_classes: [Date, Time]) || {}
+    done = frontmatter["done"]
+    done.is_a?(Hash) ? done : {}
+  rescue Psych::SyntaxError
+    {}
   end
 
   def skill_name(source)
@@ -1039,6 +1070,15 @@ class Apply
 
   def role_repository(role)
     @plans.find { |plan| plan.fetch("repository").fetch("role") == role }&.fetch("repository")
+  end
+
+  def skipped_module_results
+    modules.filter_map do |mod|
+      next unless mod["skipped"]
+
+      status = previous_module_status(mod)
+      [mod.fetch("id"), status] if status
+    end.to_h
   end
 end
 
