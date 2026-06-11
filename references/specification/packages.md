@@ -23,7 +23,8 @@ Installation commands:
 - `github:<owner>/<repo>`: inspect official release metadata with the GitHub API, GitHub MCP, or `gh release` commands.
   Select the asset that matches target platform and architecture, download to a temp directory, verify checksum or
   provenance when provided, extract it, and copy executables to `~/.local/bin`. If asset or executable layout is
-  ambiguous, ask before installing.
+  ambiguous, report `notok` or ask before installing. Non-interactive `bin/apply` may only install an unambiguous
+  matching asset; otherwise the module should use README instructions for package-specific choices.
 - `skill:<source>`: install an agent skill from a Git-backed source. Accepted scalar sources include
   `github.com/<owner>/<repo>` and full Git URLs. The source repository contains the skill at its root; the skill name is
   the source repository basename; and the target is `~/.agents/skills/<name>`. If the target is missing, clone the
@@ -78,7 +79,8 @@ Full managed non-system updates:
 - `flatpak:<app-id>`: conditionally run `flatpak update --user <app-id>` for per-user installs created by Tilde when
   the `graphical` condition is met. Do not update all Flatpaks during `update full`.
 - `github:<owner>/<repo>`: inspect latest release assets again, compare with the installed binary when possible, and
-  replace the executable only after selecting the matching asset.
+  replace the executable only after selecting the matching asset. Non-interactive `bin/apply` must not guess when the
+  matching asset or executable is ambiguous.
 - `skill:<source>`: fetch the matching Git checkout and update with a non-destructive fast-forward-only merge. Dirty
   targets block automatic updates. Put any nonstandard Tilde skill update behavior in the owning module's `README.md`
   body instead of expanding `skill:` into a broad skill-management schema.

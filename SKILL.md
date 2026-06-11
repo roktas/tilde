@@ -47,9 +47,10 @@ Bare `$tilde` means `help`. It is read-only and must behave like `$tilde help`.
 
 `$tilde help` prints the public command inventory as a GitHub-flavored Markdown table with `Command` and `Action`
 columns, then shows the general prompt format, detailed-help form, bare-command default, and a short example prompt
-section. `$tilde help COMMAND` shows only that public command. If `COMMAND` is unknown or internal, say so and then show
-the public command table. Prefer `bin/help --format markdown` when available for bare `$tilde` and `$tilde help`.
-Present the output as rendered Markdown (GFM table, etc.), not as raw code-block text.
+section. `$tilde help COMMAND` shows only that public command. `$tilde help custom.NAME` must resolve configured
+data-layer policy before answering; `bin/help` can only provide the built-in public table. If `COMMAND` is unknown or
+internal, say so and then show the public command table. Prefer `bin/help --format markdown` when available for bare
+`$tilde` and `$tilde help`. Present the output as rendered Markdown (GFM table, etc.), not as raw code-block text.
 
 Use proposal-first behavior for writes, moves, removals, repository edits, package changes, home-entrypoint writes, state
 writes, and remote-host actions. Prefer structured confirmation and choice UI over raw prompts such as `[Y/n]`. In

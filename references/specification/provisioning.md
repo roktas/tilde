@@ -49,9 +49,10 @@ desired state and normal system package managers can both be brought current. `u
 - In fast `refresh`, run normal broad updates for active system package managers only.
 - In full `refresh`, also refresh managed non-system package declarations and selected `Update` sections.
 - In `repair`, retry `notok` modules at the same `HEAD`.
-- In `upgrade`, run full refresh first, then broad or aggressive package-manager updates only after explicit
-  confirmation.
-- Save deployment state.
+- In `upgrade`, run all full-refresh package and `Update` actions first, then broad or aggressive package-manager
+  updates only after explicit confirmation.
+- Save deployment state for `apply` and `repair`. `refresh` and `upgrade` update apply/plan caches but do not overwrite
+  deployment state.
 
 ### Ordering
 

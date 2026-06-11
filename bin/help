@@ -102,6 +102,13 @@ print_command_help() {
 	local action
 	local suffix
 
+	if [[ $name == custom.* ]]; then
+		printf 'Custom Tilde command help is resolved from configured data repositories: `%s`.\n\n' "$name"
+		printf 'This helper only lists built-in public commands; read the active `## Operations` policy for custom command details.\n\n'
+		print_help
+		return
+	fi
+
 	if ! action=$(action_for "$name"); then
 		printf 'No such public Tilde command: `%s`.\n\n' "$name"
 		print_help

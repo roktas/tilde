@@ -12,10 +12,11 @@ Bare `$tilde` means `help`. It is read-only and must behave like `$tilde help`.
 
 `$tilde help` is the read-only public command reference. Start the output by showing the general format,
 `$tilde <command> [<arguments>...]`. With no subject, it lists public commands with one-line action descriptions in a
-GitHub-flavored Markdown table with `Command` and `Action` columns. With one command subject, it shows detailed help for
-only that command. If the subject is a configured custom data-layer command, use the custom-help behavior below. If the
-subject is neither a public Tilde command nor a configured custom command, say that no such Tilde command exists, then
-behave like bare `$tilde help`. Agents should prefer the installed `bin/help --format markdown` helper when available.
+GitHub-flavored Markdown table with `Command` and `Action` columns. With one public command subject, it shows detailed
+help for only that command. If the subject is a configured custom data-layer command, use the custom-help behavior below.
+If the subject is neither a public Tilde command nor a configured custom command, say that no such Tilde command exists,
+then behave like bare `$tilde help`. Agents should prefer the installed `bin/help --format markdown` helper for built-in
+public help when available, but custom command help requires reading configured data-layer policy.
 
 Use this public action inventory for help output:
 
@@ -195,6 +196,6 @@ blast radius. For multi-choice decisions, present a short numbered or bulleted l
 there is a safe default. For destructive or preference-sensitive actions, make the opt-in explicit; do not rely on a
 single-letter default prompt.
 
-Commands are proposal-first when they may change files, repositories, packages, state, home-entrypoint files, or remote hosts. A
-proposal must describe the intended action and wait for confirmation before writes, moves, removals, package changes, or
-repository edits.
+Commands are proposal-first when they may change files, repositories, packages, state, home-entrypoint files, or remote
+hosts. A proposal must describe the intended action and wait for confirmation before writes, moves, removals, package
+changes, or repository edits.

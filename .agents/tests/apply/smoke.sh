@@ -28,6 +28,7 @@ write_repo() {
 	mkdir -p \
 		"$repo/aaa-link" \
 		"$repo/flatpak" \
+		"$repo/github" \
 		"$repo/manual" \
 		"$repo/pkg" \
 		"$repo/section"
@@ -65,6 +66,16 @@ all:
 ---
 
 # Flatpak
+EOF
+
+	cat >"$repo/github/README.md" <<'EOF'
+---
+all:
+  packages:
+    - github:owner/tool
+---
+
+# GitHub
 EOF
 
 	cat >"$repo/manual/README.md" <<'EOF'
@@ -165,6 +176,7 @@ main() {
 	local script_dir
 	local skill_root
 	local state
+	local state_before_refresh
 	local tmpdir
 
 	script_dir=$(cd -- "${BASH_SOURCE[0]%/*}" >/dev/null && pwd)
@@ -187,6 +199,7 @@ main() {
 	private_plan_json=$tmpdir/private-plan.json
 	refresh_apply_json=$tmpdir/refresh-apply.json
 	refresh_plan_json=$tmpdir/refresh-plan.json
+	state_before_refresh=$tmpdir/state-before-refresh.md
 	bad_plan=$tmpdir/bad-plan.json
 	bad_condition_plan=$tmpdir/bad-condition-plan.json
 	apply_json=$tmpdir/apply.json
@@ -220,6 +233,39 @@ EOF
 printf 'flatpak ran\n' > "$HOME"/flatpak-ran
 exit 0
 EOF
+	cat >"$fake_bin/gh" <<'EOF'
+#!/usr/bin/env bash
+printf 'gh %s\n' "$*" >> "$HOME"/package-log
+
+if [[ ${1:-} == release && ${2:-} == view ]]; then
+	printf '{"tagName":"v1.2.3","assets":[{"name":"tool_1.2.3_linux_amd64.deb"}]}\n'
+	exit 0
+fi
+
+if [[ ${1:-} == release && ${2:-} == download ]]; then
+	asset=
+	dir=
+	while [[ $# -gt 0 ]]; do
+		case $1 in
+		--dir)
+			shift
+			dir=${1:-}
+			;;
+		--pattern)
+			shift
+			asset=${1:-}
+			;;
+		esac
+		shift
+	done
+
+	[[ -n $asset && -n $dir ]] || exit 2
+	printf 'deb\n' > "$dir/$asset"
+	exit 0
+fi
+
+exit 1
+EOF
 	cat >"$fake_bin/sudo" <<'EOF'
 #!/usr/bin/env bash
 printf 'sudo %s\n' "$*" >> "$HOME"/package-log
@@ -234,7 +280,7 @@ if [[ ${1:-} == get-default ]]; then
 
 	exit 1
 EOF
-	chmod +x "$fake_bin/apt-get" "$fake_bin/brew"
+	chmod +x "$fake_bin/apt-get" "$fake_bin/brew" "$fake_bin/gh"
 	chmod +x "$fake_bin/flatpak" "$fake_bin/sudo" "$fake_bin/systemctl"
 
 	printf 'old link\n' >"$home/Dropbox/var/app/source-link.txt"
@@ -336,15 +382,22 @@ EOF
 		done = frontmatter.fetch("done")
 		abort "link module should be ok" unless done.fetch("public/aaa-link") == "ok"
 		abort "flatpak module should be ok" unless done.fetch("public/flatpak") == "ok"
+		abort "github module should be ok" unless done.fetch("public/github") == "ok"
 		abort "manual module should be notok" unless done.fetch("public/manual") == "notok"
 		abort "package module should be notok" unless done.fetch("public/pkg") == "notok"
 		abort "private module should be ok" unless done.fetch("private/zzz-private") == "ok"
 	'
 
+	grep -q '^gh release view --repo owner/tool --json tagName,assets$' "$home/package-log"
+	grep -q '^gh release download --repo owner/tool --pattern tool_1\.2\.3_linux_amd64\.deb --dir .*/tilde-github-.* --clobber$' "$home/package-log"
+	grep -q '^sudo apt-get install -y .*/tool_1\.2\.3_linux_amd64\.deb$' "$home/package-log"
+
+	cp "$state/tilde/hosts/$host/state.md" "$state_before_refresh"
 	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH "$plan" \
 		--repo "$repo" --mode refresh --platform linux --host "$host" >"$refresh_plan_json"
 	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH "$apply" \
 		--plan "$refresh_plan_json" >"$refresh_apply_json"
+	cmp -s "$state_before_refresh" "$state/tilde/hosts/$host/state.md"
 
 	grep -q '^brew update$' "$home/package-log"
 	grep -q '^brew upgrade$' "$home/package-log"

@@ -73,7 +73,9 @@ EOF
       "id": "public/app",
       "links_to_create": [{"target": "~/.config/app"}],
       "copies_to_create": [{"target": "~/.config/app/config"}],
-      "packages_to_install": [{"name": "app"}]
+      "packages_to_install": [{"name": "app"}],
+      "packages_to_refresh": [{"name": "*"}],
+      "packages_to_upgrade": [{"name": "*"}]
     }
   ]
 }
@@ -101,6 +103,8 @@ EOF
 		abort "wrong link count" unless plan.fetch("links") == 2
 		abort "wrong copy count" unless plan.fetch("copies") == 1
 		abort "wrong install package count" unless plan.fetch("install_packages") == 1
+		abort "wrong refresh package count" unless plan.fetch("refresh_packages") == 1
+		abort "wrong upgrade package count" unless plan.fetch("upgrade_packages") == 1
 		abort "wrong apply schema" unless apply.fetch("schema") == "tilde.apply/v1"
 		abort "apply should be complete" unless apply.fetch("completed")
 		abort "wrong apply result count" unless apply.fetch("result_count") == 1

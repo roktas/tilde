@@ -253,6 +253,8 @@ class Status
       puts("- Cached links: `#{last_plan[:links]}`")
       puts("- Cached copies: `#{last_plan[:copies]}`")
       puts("- Cached install packages: `#{last_plan[:install_packages]}`")
+      puts("- Cached refresh packages: `#{last_plan[:refresh_packages]}`")
+      puts("- Cached upgrade packages: `#{last_plan[:upgrade_packages]}`")
     else
       puts("- Cached surface unavailable. Fast status did not inspect module README files or live link targets.")
     end

@@ -82,7 +82,9 @@ EOF
 		data = JSON.parse(File.read(ENV.fetch("DOCTOR_JSON")))
 		abort "wrong schema" unless data.fetch("schema") == "tilde.doctor/v1"
 		findings = data.fetch("findings")
-		abort "wrong finding count" unless findings.length == 3
+		abort "wrong finding count" unless findings.length == 5
+		abort "missing config health finding" unless findings.any? { |item| item.fetch("kind") == "state" && item.fetch("problems") == ["missing config"] }
+		abort "missing host state health finding" unless findings.any? { |item| item.fetch("kind") == "state" && item.fetch("problems") == ["missing host state"] }
 		by_target = findings.to_h { |item| [item.fetch("target"), item] }
 		abort "active link should be host-absolute" unless by_target.fetch("~/Dropbox/allos/bin/tool").fetch("problems") == ["host-absolute"]
 		abort "active link should be active" unless by_target.fetch("~/Dropbox/allos/bin/tool").fetch("area") == "active"

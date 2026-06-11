@@ -11,6 +11,7 @@ require "rbconfig"
 require "socket"
 require "tempfile"
 require "time"
+require "tmpdir"
 require "yaml"
 
 class Apply
@@ -27,7 +28,7 @@ class Apply
   SUPPORTED_ACTIONS = %w[entrypoint package section link copy manual].freeze
   SUPPORTED_CONDITIONS = %w[graphical].freeze
   SUPPORTED_CONFLICTS = %w[backup none write-fallback-file].freeze
-  SUPPORTED_PACKAGE_TYPES = %w[brew cask deb egg flatpak gem npm scoop].freeze
+  SUPPORTED_PACKAGE_TYPES = %w[brew cask deb egg flatpak gem github npm scoop skill].freeze
   ACTION_HANDLERS = {
     "copy" => :execute_copy,
     "entrypoint" => :execute_entrypoint,
@@ -78,6 +79,20 @@ class Apply
     %w[upgrade npm] => ->(name) { ["bun", "update", "-g", name] },
     %w[upgrade scoop] => ->(name) { name == "*" ? %w[scoop update *] : ["scoop", "update", name] }
   }.freeze
+  GITHUB_PLATFORM_RULES = {
+    "linux" => {
+      positive: /(?:linux|\.deb\z)/,
+      negative: /(?:darwin|macos|osx|windows|win32|win64|\.exe\z|\.msi\z)/
+    },
+    "macos" => {
+      positive: /(?:darwin|macos|osx)/,
+      negative: /(?:linux|windows|win32|win64|\.deb\z|\.rpm\z|\.exe\z|\.msi\z)/
+    },
+    "windows" => {
+      positive: /(?:windows|win32|win64|\.exe\z|\.msi\z)/,
+      negative: /(?:linux|darwin|macos|osx|\.deb\z|\.rpm\z)/
+    }
+  }.freeze
 
   def initialize(options)
     @home = Pathname.new(ENV.fetch("HOME", Dir.home)).expand_path
@@ -92,7 +107,7 @@ class Apply
     prepare_state
     write_last_plan
     apply_actions
-    write_state
+    write_state if write_state?
     puts(JSON.pretty_generate(@apply))
   end
 
@@ -163,6 +178,13 @@ class Apply
     return unless commands
 
     commands.first.is_a?(Array) ? commands : [commands]
+  end
+
+  def command_available?(name)
+    ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).any? do |dir|
+      path = File.join(dir, name)
+      File.file?(path) && File.executable?(path)
+    end
   end
 
   def condition_met?(condition)
@@ -300,19 +322,80 @@ class Apply
       return action_result(action, "ignored", { "reason" => "condition not met: #{condition}" })
     end
 
+    return execute_github(action) if type == "github"
+    return execute_skill(action) if type == "skill"
+
     commands = commands_for(action)
     return action_result(action, "deferred", { "reason" => "unsupported package operation" }) unless commands
 
+    execute_commands(action, commands)
+  end
+
+  def execute_commands(action, commands, diagnostics = {})
     runs = []
     commands.each do |command|
       stdout, stderr, status = Open3.capture3(*command)
       run = { "command" => command, "stdout" => stdout, "stderr" => stderr, "exit" => status.exitstatus }
-      return action_result(action, "notok", { "commands" => runs + [run] }) unless status.success?
+      return action_result(action, "notok", diagnostics.merge("commands" => runs + [run])) unless status.success?
 
       runs << run
     end
 
-    action_result(action, "ok", { "commands" => runs })
+    action_result(action, "ok", diagnostics.merge("commands" => runs))
+  end
+
+  def execute_github(action)
+    repo = action.fetch("package").fetch("name")
+    unless repo.match?(%r{\A[^/]+/[^/]+\z})
+      return action_result(action, "notok", { "reason" => "github package must be owner/repo: #{repo}" })
+    end
+    return action_result(action, "notok", { "reason" => "missing gh command" }) unless command_available?("gh")
+
+    release = github_release(repo)
+    return action_result(action, "notok", release.fetch(:diagnostics)) unless release.fetch(:ok)
+
+    asset = github_asset(release.fetch(:assets))
+    return action_result(action, "notok", asset.fetch(:diagnostics)) unless asset.fetch(:ok)
+
+    Dir.mktmpdir("tilde-github-") do |dir|
+      download = github_download(repo, asset.fetch(:name), dir)
+      return action_result(action, "notok", download.fetch(:diagnostics)) unless download.fetch(:ok)
+
+      install_github_asset(action, repo, release.fetch(:tag), asset.fetch(:name), download.fetch(:path))
+    end
+  end
+
+  def execute_skill(action)
+    source = action.fetch("package").fetch("name")
+    target = skill_target(source)
+    return action_result(action, "notok", { "reason" => "unsupported skill source: #{source}" }) unless target
+
+    FileUtils.mkdir_p(target.dirname)
+    if target.exist?
+      unless target.join(".git").directory?
+        return action_result(action, "notok", { "reason" => "skill target is not a git checkout: #{target}" })
+      end
+
+      status = git_capture(target, "status", "--porcelain")
+      return action_result(action, "notok", status.fetch(:diagnostics)) unless status.fetch(:ok)
+      unless status.fetch(:stdout).strip.empty?
+        return action_result(action, "notok", { "reason" => "skill target is dirty: #{target}" })
+      end
+
+      upstream = skill_upstream(target)
+      return action_result(action, "notok", upstream.fetch(:diagnostics)) unless upstream.fetch(:ok)
+
+      execute_commands(
+        action,
+        [
+          ["git", "-C", target.to_s, "fetch", "--prune"],
+          ["git", "-C", target.to_s, "merge", "--ff-only", upstream.fetch(:ref)]
+        ],
+        { "target" => target.to_s }
+      )
+    else
+      execute_commands(action, [["git", "clone", skill_url(source), target.to_s]], { "target" => target.to_s })
+    end
   end
 
   def execute_section(action)
@@ -343,6 +426,206 @@ class Apply
     raise stderr.strip unless status.success?
 
     stdout.strip
+  end
+
+  def git_capture(repo, *args)
+    stdout, stderr, status = Open3.capture3("git", "-C", repo.to_s, *args)
+    {
+      ok: status.success?,
+      stdout:,
+      diagnostics: {
+        "command" => ["git", "-C", repo.to_s, *args],
+        "stdout" => stdout,
+        "stderr" => stderr,
+        "exit" => status.exitstatus
+      }
+    }
+  end
+
+  def github_asset(assets)
+    ranked = ranked_github_assets(assets)
+    return { ok: false, diagnostics: { "reason" => "no matching github release asset" } } if ranked.empty?
+
+    ambiguous = ambiguous_github_assets(ranked)
+    if ambiguous.any?
+      return { ok: false, diagnostics: { "reason" => "ambiguous github release asset", "assets" => ambiguous } }
+    end
+
+    { ok: true, name: ranked.first.last }
+  end
+
+  def ranked_github_assets(assets)
+    ranked = assets.filter_map do |asset|
+      name = asset["name"].to_s
+      score = github_asset_score(name)
+      [score, name] if score.positive?
+    end
+
+    ranked.sort_by { |score, name| [-score, name] }
+  end
+
+  def ambiguous_github_assets(ranked)
+    return [] if ranked.length < 2
+
+    best_score = ranked.first.first
+    return [] unless ranked[1].first == best_score
+
+    ranked.select { |score, _name| score == best_score }.map(&:last)
+  end
+
+  def github_asset_score(name)
+    text = name.downcase
+    return 0 if text.match?(/(?:sha256|checksums?|sbom|signature|\.sig|\.asc|\.pem|\.txt)\z/)
+    return 0 if text.match?(/(?:source|src)[-_]?(?:code)?/)
+
+    score = 0
+    score += github_platform_score(text)
+    score += github_arch_score(text)
+    score += 40 if detect_platform == "linux" && text.end_with?(".deb")
+    score += 10 if text.match?(/\.(?:tar\.gz|tgz|zip|gz|deb)\z/)
+    score
+  end
+
+  def github_arch_score(text)
+    arch = RbConfig::CONFIG.fetch("host_cpu").downcase
+    aliases =
+      case arch
+      when /x86_64|amd64/
+        %w[x86_64 amd64 x64]
+      when /aarch64|arm64/
+        %w[aarch64 arm64]
+      else
+        [arch]
+      end
+
+    return 20 if aliases.any? { |name| text.include?(name) }
+    return 5 if text.match?(/(?:universal|all)/)
+    return 3 unless text.match?(/(?:x86_64|amd64|x64|aarch64|arm64|armv?7)/)
+
+    0
+  end
+
+  def github_platform_score(text)
+    rules = GITHUB_PLATFORM_RULES[detect_platform]
+    return 0 unless rules
+    return 20 if text.match?(rules.fetch(:positive))
+    return 0 if text.match?(rules.fetch(:negative))
+
+    3
+  end
+
+  def github_download(repo, asset, dir)
+    command = ["gh", "release", "download", "--repo", repo, "--pattern", asset, "--dir", dir, "--clobber"]
+    stdout, stderr, status = Open3.capture3(*command)
+    path = Pathname.glob(Pathname.new(dir).join("*")).find(&:file?)
+    ok = status.success? && path
+    {
+      ok:,
+      path:,
+      diagnostics: {
+        "command" => command,
+        "stdout" => stdout,
+        "stderr" => stderr,
+        "exit" => status.exitstatus
+      }.merge(ok ? {} : { "reason" => "github release download failed" })
+    }
+  end
+
+  def github_release(repo)
+    command = ["gh", "release", "view", "--repo", repo, "--json", "tagName,assets"]
+    stdout, stderr, status = Open3.capture3(*command)
+    diagnostics = { "command" => command, "stdout" => stdout, "stderr" => stderr, "exit" => status.exitstatus }
+    unless status.success?
+      return { ok: false, diagnostics: diagnostics.merge("reason" => "github release metadata failed") }
+    end
+
+    data = JSON.parse(stdout)
+    { ok: true, tag: data["tagName"], assets: Array(data["assets"]) }
+  rescue JSON::ParserError => e
+    { ok: false, diagnostics: diagnostics.merge("reason" => "invalid github release metadata", "error" => e.message) }
+  end
+
+  def install_github_asset(action, repo, tag, asset, path)
+    diagnostics = { "repo" => repo, "tag" => tag, "asset" => asset, "path" => path.to_s }
+    if path.basename.to_s.downcase.end_with?(".deb")
+      return execute_commands(action, [["sudo", "apt-get", "install", "-y", path.to_s]], diagnostics)
+    end
+
+    executable = github_executable(path)
+    unless executable
+      return action_result(action, "notok", diagnostics.merge("reason" => "no unambiguous executable in github asset"))
+    end
+
+    target = @home.join(".local", "bin", executable.basename.to_s.sub(/\.exe\z/i, ""))
+    FileUtils.mkdir_p(target.dirname)
+    FileUtils.cp(executable.to_s, target.to_s)
+    FileUtils.chmod(0o755, target.to_s)
+    action_result(action, "ok", diagnostics.merge("target" => target.to_s))
+  end
+
+  def github_executable(path)
+    return path if github_direct_executable?(path)
+    return nil unless github_archive?(path)
+
+    Dir.mktmpdir("tilde-github-extract-") do |dir|
+      extracted = Pathname.new(dir)
+      return nil unless github_extract(path, extracted)
+
+      copy_github_executable(path, github_candidate(path, extracted))
+    end
+  end
+
+  def github_direct_executable?(path)
+    return false unless path.file?
+
+    name = path.basename.to_s.downcase
+    return false if github_archive?(path)
+    return false if name.match?(/\.(?:rpm|dmg|pkg|msi|gz|xz|bz2|sha256|sig|asc|pem|txt|json|ya?ml)\z/)
+
+    true
+  end
+
+  def github_archive?(path)
+    path.basename.to_s.downcase.match?(/\.(?:tar\.gz|tgz|tar|zip)\z/)
+  end
+
+  def github_candidate(path, extracted)
+    candidates = github_candidates(extracted)
+    preferred = candidates.select { |candidate| candidate.basename.to_s == path.basename.to_s.sub(/\..*\z/, "") }
+    return preferred.first if preferred.length == 1
+    return candidates.first if candidates.length == 1
+
+    nil
+  end
+
+  def github_candidates(extracted)
+    files = extracted.glob("**/*").select(&:file?)
+    executables = files.select(&:executable?)
+    executables.empty? ? files : executables
+  end
+
+  def copy_github_executable(path, selected)
+    return nil unless selected
+
+    copy = Pathname.new(path.dirname).join(selected.basename)
+    FileUtils.cp(selected.to_s, copy.to_s)
+    FileUtils.chmod(0o755, copy.to_s)
+    copy
+  end
+
+  def github_extract(path, dir)
+    name = path.basename.to_s.downcase
+    command =
+      if name.match?(/\.(?:tar\.gz|tgz|tar)\z/)
+        ["tar", "-xf", path.to_s, "-C", dir.to_s]
+      elsif name.end_with?(".zip")
+        ["unzip", "-q", path.to_s, "-d", dir.to_s]
+      else
+        return false
+      end
+
+    _stdout, _stderr, status = Open3.capture3(*command)
+    status.success?
   end
 
   def graphical?
@@ -451,6 +734,38 @@ class Apply
     nil
   end
 
+  def skill_name(source)
+    value = source.to_s.sub(/\.git\z/, "").split("/").last
+    value.empty? ? nil : value
+  end
+
+  def skill_target(source)
+    name = skill_name(source)
+    return nil unless name
+
+    @home.join(".agents", "skills", name)
+  end
+
+  def skill_upstream(target)
+    upstream = git_capture(target, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+    if upstream.fetch(:ok)
+      return { ok: true, ref: upstream.fetch(:stdout).strip, diagnostics: upstream.fetch(:diagnostics) }
+    end
+
+    origin = git_capture(target, "symbolic-ref", "refs/remotes/origin/HEAD", "--short")
+    return { ok: true, ref: origin.fetch(:stdout).strip, diagnostics: origin.fetch(:diagnostics) } if origin.fetch(:ok)
+
+    { ok: false, diagnostics: upstream.fetch(:diagnostics).merge("reason" => "skill checkout has no upstream") }
+  end
+
+  def skill_url(source)
+    text = source.to_s
+    return "https://#{text}.git" if text.match?(%r{\Agithub\.com/[^/]+/[^/]+/?\z})
+    return "https://github.com/#{text}.git" if text.match?(%r{\A[^/]+/[^/]+\z})
+
+    text
+  end
+
   def record(result)
     @apply.fetch(:results) << result
     write_last_apply
@@ -505,6 +820,10 @@ class Apply
 
   def target
     @target ||= @plans.first.fetch("target")
+  end
+
+  def write_state?
+    %w[apply repair].include?(target.fetch("mode"))
   end
 
   def validate!

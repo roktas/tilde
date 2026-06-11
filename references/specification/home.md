@@ -102,12 +102,11 @@ The linked `AGENTS.md` should start with a short scope sentence in neutral agent
 "Scope: this file applies to agent work in the user's home directory." It may include `## Layout` and `## Operations`
 sections for home policy and command customization.
 
-The old routing requirement is a discovery requirement, not a separate file kind. An agent that starts from `~` must be
-able to find user-wide instructions, the installed Tilde skill, and the configured public/private data repositories
-without recursively scanning the home directory. `~/AGENTS.md` satisfies that requirement as ordinary home-directory
-agent instructions: fallback copies may use `tilde.source` to identify the installed skill, while steady-state
-data-repository entrypoints can rely on local Tilde state, repository frontmatter, and the bounded discovery order
-below.
+An agent that starts from `~` must be able to find user-wide instructions, the installed Tilde skill, and the configured
+public/private data repositories without recursively scanning the home directory. `~/AGENTS.md` satisfies that
+requirement as ordinary home-directory agent instructions: fallback copies may use `tilde.source` to identify the
+installed skill, while steady-state data-repository entrypoints can rely on local Tilde state, repository frontmatter,
+and the bounded discovery order below.
 
 `assets/AGENTS.md` in the installed skill is only the canonical fallback home entrypoint template. Tilde may generate it
 at `~/AGENTS.md` during first-run or when no data-repository home entrypoint source exists yet. The fallback must be

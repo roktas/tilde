@@ -6,11 +6,9 @@
 deployment-specific apply scripts for normal Tilde provisioning.
 
 The executor is deliberately narrow. It does not discover repositories, regenerate plans, interpret prose, choose
-packages, repair declarations, select release assets, or invent fallbacks. Unexpected or unsupported conditions produce
+packages, repair declarations, or invent fallbacks. It may perform deterministic package-handler work described by the
+confirmed plan, including selecting an unambiguous `github:` release asset. Unexpected or unsupported conditions produce
 structured results for the agent or user to resolve.
-
-Until `bin/apply` exists and satisfies this specification, agent-orchestrated apply remains a fallback and must record
-deviations, failures, and manual follow-up in target deployment state.
 
 ## Interface
 
@@ -28,8 +26,7 @@ confirmed.
 
 ## Executable Plan
 
-An executable plan is immutable input, not a suggestion to rediscover desired state. Before implementing `bin/apply`,
-`bin/plan` must emit:
+An executable plan is immutable input, not a suggestion to rediscover desired state. `bin/plan` must emit:
 
 - a versioned plan schema;
 - repository protocol, role, path, branch, commit, and dirty-state facts;
@@ -66,7 +63,7 @@ Validation failure blocks the entire apply without changing managed targets or d
 
 ## Actions
 
-The first implementation should support these action kinds:
+The executor supports these action kinds:
 
 - `entrypoint`: write an approved fallback home entrypoint.
 - `package`: install or refresh one exact package declaration through a supported package handler.
@@ -138,9 +135,11 @@ different strategy.
 diagnostics, backups, and whether the run completed. An interrupted apply may resume only the exact same plan set and
 must skip only actions already recorded as `ok` or `unchanged`.
 
-Host `state.md` folds action results into repository-qualified module results. A module is `ok` only when all required
-actions are `ok`, `unchanged`, or `ignored`; `deferred` and `notok` make the module `notok` with details in the state
-body.
+For `apply` and `repair` plans, host `state.md` folds action results into repository-qualified module results. A module
+is `ok` only when all required actions are `ok`, `unchanged`, or `ignored`; `deferred` and `notok` make the module
+`notok` with details in the state body. `refresh` and `upgrade` plans update `last-plan.json` and `last-apply.json` but
+must not overwrite deployment `state.md`, because they are external-resource runs rather than desired-state deployment
+records.
 
 `last-plan.json` is a combined cache of the confirmed public/private input plans, not another input plan. Its schema
 must identify the cache format separately from the executable `tilde.plan/v1` plan schema. `last-apply.json` and host

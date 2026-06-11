@@ -673,11 +673,34 @@ class Plan
     actions
   end
 
+  def refresh_module_actions(mod)
+    return [] if mod.fetch(:skipped)
+
+    actions = []
+    actions.concat(package_plan_actions(mod, "refresh", mod.fetch(:packages_to_refresh)))
+    actions.concat(section_plan_actions(mod, %w[Update]))
+    actions
+  end
+
+  def upgrade_module_actions(mod)
+    return [] if mod.fetch(:skipped)
+
+    package_plan_actions(mod, "upgrade", mod.fetch(:packages_to_upgrade))
+  end
+
   def ordered_actions(plan)
     actions = plan.fetch(:core).fetch(:home_entrypoints_to_write).map { |entrypoint| entrypoint_action(entrypoint) }
     used = {}
+    modules = plan.fetch(:modules)
 
-    plan.fetch(:modules).flat_map { |mod| module_actions(mod) }.each do |action|
+    module_actions =
+      if upgrade?
+        modules.flat_map { |mod| refresh_module_actions(mod) } + modules.flat_map { |mod| upgrade_module_actions(mod) }
+      else
+        modules.flat_map { |mod| module_actions(mod) }
+      end
+
+    module_actions.each do |action|
       action[:id] = action_id(action.fetch(:id), used)
       actions << action
     end

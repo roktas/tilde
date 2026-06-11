@@ -468,6 +468,12 @@ EOF
 		neovim = plan.fetch("modules").find { |mod| mod.fetch("name") == "neovim" }
 		abort "missing neovim module" unless neovim
 		abort "upgrade should include update section" unless neovim.fetch("special_sections").key?("Update")
+		actions = plan.fetch("actions")
+		update_indexes = actions.each_index.select { |index| actions.fetch(index).fetch("name", nil) == "Update" }
+		upgrade_indexes = actions.each_index.select { |index| actions.fetch(index).fetch("operation", nil) == "upgrade" }
+		abort "upgrade should include update actions" if update_indexes.empty?
+		abort "upgrade should include package upgrade actions" if upgrade_indexes.empty?
+		abort "upgrade actions should run after full refresh" unless upgrade_indexes.min > update_indexes.max
 	'
 
 	NORMAL_PLAN_JSON=$normal_plan_json EXTRA_PLAN_JSON=$extra_plan_json MACOS_PLAN_JSON=$macos_plan_json PRIVATE_PLAN_JSON=$private_plan_json PRIVATE_MACOS_PLAN_JSON=$private_macos_plan_json REFRESH_PLAN_JSON=$refresh_plan_json FULL_REFRESH_PLAN_JSON=$full_refresh_plan_json UPGRADE_PLAN_JSON=$upgrade_plan_json ruby -rjson -ropen3 -e '
