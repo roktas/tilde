@@ -7,6 +7,7 @@ unset CDPATH
 
 readonly -a COMMANDS=(
 	'adopt|Adopt an app, config, package, or path into the public or private data repository.'
+	'align|Reconcile links and copies without bootstrap, packages, or module scripts.'
 	'clean|Propose conservative cleanup, including duplicate candidates when relevant.'
 	'create|Create public/private home repository skeletons.'
 	'deploy|Prepare a host and install desired state.'
@@ -61,6 +62,9 @@ usage_suffix_for() {
 	case $name in
 	adopt)
 		printf '%s\n' ' <app|config|package|path>'
+		;;
+	align)
+		printf '%s\n' ' [ssh:<host>] [dry-run|plan-only]'
 		;;
 	clean | organize)
 		printf '%s\n' ' [subject] [dry-run|plan-only]'

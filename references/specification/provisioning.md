@@ -13,6 +13,8 @@ action order from grouped summaries.
 
 - `apply`: apply repository desired state to the target host. This covers first provisioning and normal state/`HEAD`
   reconciliation, including new links, copies, packages, and selected special sections.
+- `align`: reconcile only managed links, copies, and the fallback home entrypoint. It does not run bootstrap, package
+  installs, package refreshes, or module special sections.
 - `refresh`: update external resources using an explicit scope. Fast scope is the default for plain `update`; it runs
   normal updates for active system package managers after the public `update` flow has reconciled desired state. Full
   scope is selected by `update full`; it also refreshes managed non-system package types and selected `README.md`
@@ -22,7 +24,8 @@ action order from grouped summaries.
   package-manager-wide or aggressive upgrade actions. It may affect packages outside the managed set and runs only on
   explicit user request after scope is described.
 
-`apply` and `repair` are deployment-state/`HEAD` driven. `refresh` and `upgrade` are external-resource/time driven.
+`apply` and `repair` are deployment-state/`HEAD` driven. `align` is filesystem desired-state driven and deliberately
+lower side-effect than `apply`. `refresh` and `upgrade` are external-resource/time driven.
 The user-facing `update` command runs the `apply` and fast `refresh` phases in that order, after confirmation, so new
 desired state and normal system package managers can both be brought current. `update full` uses full refresh scope.
 `upgrade` is a superset of `update full`.
@@ -46,13 +49,14 @@ desired state and normal system package managers can both be brought current. `u
 - Interpret `HEAD`/deployment-state differences to produce the active provisioning set. Added packages, added links,
   removed links, and added copies matter. Removed packages and removed copies are not automatic removal actions.
 - In `apply`, run install and file/link phases.
+- In `align`, run only file/link phases and skip packages and special sections.
 - In fast `refresh`, run normal broad updates for active system package managers only.
 - In full `refresh`, also refresh managed non-system package declarations and selected `Update` sections.
 - In `repair`, retry `notok` modules at the same `HEAD`.
 - In `upgrade`, run all full-refresh package and `Update` actions first, then broad or aggressive package-manager
   updates only after explicit confirmation.
-- Save deployment state for `apply` and `repair`. `refresh` and `upgrade` update mode-specific apply/plan caches but do
-  not overwrite deployment state or deployment surface caches.
+- Save deployment state for `apply` and `repair`. `align`, `refresh`, and `upgrade` update mode-specific apply/plan
+  caches but do not overwrite deployment state or deployment surface caches.
 
 ### Ordering
 

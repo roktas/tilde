@@ -395,11 +395,24 @@ install_apt_base() {
 }
 
 install_homebrew() {
+	local platform=$1
+
 	if find_homebrew >/dev/null; then
 		return
 	fi
 
-	bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+	case $platform in
+	linux)
+		if [[ ! -t 0 && ! -w /home && ! -w /home/linuxbrew && ! -w /home/linuxbrew/.linuxbrew ]]; then
+			require_sudo "Homebrew Linux prefix"
+		fi
+		;;
+	macos)
+		[[ -t 0 ]] || require_sudo "Homebrew installation"
+		;;
+	esac
+
+	NONINTERACTIVE=1 bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 	find_homebrew >/dev/null || abort "Homebrew installer completed but brew was not found"
 }
 
@@ -527,7 +540,7 @@ main() {
 		;;
 	esac
 
-	install_homebrew
+	install_homebrew "$platform"
 	load_homebrew
 	persist_homebrew "$platform"
 

@@ -59,6 +59,7 @@ equivalent. If only text is available, present explicit choices with target, eff
 
 ## Commands
 
+- `align`: reconcile links and copies without running bootstrap, packages, or module scripts.
 - `help`: show public commands or one public command's usage.
 - `create`: create public/private home repository skeletons.
 - `init`: register existing public/private repositories on this host.
@@ -128,6 +129,8 @@ user explicitly asks for a bootstrap check. Cleaning deployment state is not a r
 Run `bin/preflight` before planning; it starts with `bin/bootstrap --check --record` so compatible bootstrap state uses
 the fast path and missing or stale bootstrap state is probed before deployment continues. For normal apply/update
 preflight, missing or incomplete bootstrap baseline is recoverable: preflight runs idempotent bootstrap and re-checks.
+If bootstrap needs credentials or another external action but the existing runtime can still run plan/apply, continue
+with a warning instead of blocking desired-state reconciliation.
 For Dropbox-internal symlinks, the plan must carry a relative link value even when source and target spell the Dropbox
 root differently, such as direct `~/Dropbox` paths versus macOS File Provider paths under
 `~/Library/CloudStorage/Dropbox`.

@@ -26,7 +26,7 @@ class Plan
     "normal" => 5,
     "extra" => 10
   }.freeze
-  MODES = %w[apply refresh repair upgrade].freeze
+  MODES = %w[align apply refresh repair upgrade].freeze
 
   FULL_REFRESH_PACKAGE_TYPES = %w[egg flatpak gem github npm skill].freeze
   PACKAGE_TYPES = %w[brew cask deb npm gem egg flatpak scoop github skill].freeze
@@ -126,7 +126,9 @@ class Plan
     packages
   end
 
-  def apply_like? = apply? || repair?
+  def align? = @mode == "align"
+
+  def apply_like? = align? || apply? || repair?
 
   def actions_skipped?(skipped) = skipped || !apply_like?
 
@@ -638,7 +640,7 @@ class Plan
       level:,
       home_entrypoint:,
       packages:,
-      packages_to_install: package_actions(packages, "apply", skipped),
+      packages_to_install: align? ? [] : package_actions(packages, "apply", skipped),
       packages_to_refresh: [],
       packages_to_upgrade: [],
       links_to_create: links,
@@ -665,6 +667,13 @@ class Plan
     normalize_map(config["links"]).any? do |_source, targets|
       (targets.is_a?(Array) ? targets : [targets]).any? { |target| target.to_s == HOME_ENTRYPOINT_TARGET }
     end
+  end
+
+  def align_module_actions(mod)
+    return [] if mod.fetch(:skipped)
+
+    mod.fetch(:links_to_create).map { |link| link_plan_action(mod, link) } +
+      mod.fetch(:copies_to_create).map { |copy| copy_action(mod, copy) }
   end
 
   def module_actions(mod)
@@ -703,7 +712,9 @@ class Plan
     modules = plan.fetch(:modules)
 
     module_actions =
-      if upgrade?
+      if align?
+        modules.flat_map { |mod| align_module_actions(mod) }
+      elsif upgrade?
         modules.flat_map { |mod| refresh_module_actions(mod) } + modules.flat_map { |mod| upgrade_module_actions(mod) }
       else
         modules.flat_map { |mod| module_actions(mod) }
@@ -868,6 +879,8 @@ class Plan
   end
 
   def section_actions(body, skipped)
+    return {} if align?
+
     skipped ? {} : selected_special_sections(body)
   end
 
@@ -900,6 +913,7 @@ class Plan
   end
 
   def skip_status(module_name)
+    return [false, nil] if align?
     return [false, nil] if refresh? || upgrade?
     return repair_skip_status(module_name) if repair?
     return [false, nil] unless @previous_state
@@ -1091,7 +1105,7 @@ def main(argv)
       parser.on("--format FORMAT", "Output format: json or markdown") { |value| options[:format] = value }
       parser.on("--host HOST", "Host short name") { |value| options[:host] = value }
       parser.on("--level LEVEL", "Level: minimal, normal, extra") { |value| options[:level] = value }
-      parser.on("--mode MODE", "Mode: apply, refresh, repair, upgrade") { |value| options[:mode] = value }
+      parser.on("--mode MODE", "Mode: align, apply, refresh, repair, upgrade") { |value| options[:mode] = value }
       parser.on("--platform PLATFORM", "Platform: linux, macos, windows") { |value| options[:platform] = value }
       parser.on("--repo PATH", "Repository root") { |value| options[:repo] = value }
       parser.on("--scope SCOPE", "Refresh scope: fast or full") { |value| options[:scope] = value }

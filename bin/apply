@@ -332,18 +332,30 @@ class Apply
     execute_commands(action, commands)
   end
 
-  def execute_commands(action, commands, diagnostics = {})
-    runs = []
-    commands.each do |command|
-      stdout, stderr, status = Open3.capture3(*command)
-      run = { "command" => command, "stdout" => stdout, "stderr" => stderr, "exit" => status.exitstatus }
-      return action_result(action, "notok", diagnostics.merge("commands" => runs + [run])) unless status.success?
+	def execute_commands(action, commands, diagnostics = {})
+		runs = []
+		commands.each do |command|
+			stdout, stderr, status = capture_command(command)
+			unless status
+				run = { "command" => command, "stdout" => stdout, "stderr" => stderr, "exit" => nil }
+				return action_result(action, "deferred", diagnostics.merge("commands" => runs + [run], "reason" => "missing command"))
+			end
 
-      runs << run
-    end
+			run = { "command" => command, "stdout" => stdout, "stderr" => stderr, "exit" => status.exitstatus }
+			return action_result(action, "notok", diagnostics.merge("commands" => runs + [run])) unless status.success?
 
-    action_result(action, "ok", diagnostics.merge("commands" => runs))
-  end
+			runs << run
+		end
+
+		action_result(action, "ok", diagnostics.merge("commands" => runs))
+	end
+
+	def capture_command(command)
+		stdout, stderr, status = Open3.capture3(*command)
+		[stdout, stderr, status]
+	rescue Errno::ENOENT => e
+		["", e.message, nil]
+	end
 
   def execute_github(action)
     repo = action.fetch("package").fetch("name")

@@ -143,6 +143,10 @@ Plain `update` reconciles desired state, refreshes links, and runs the fast upda
 managers. It is equivalent to the public returning-user flow of `internal.install` followed by
 `internal.refresh(scope=fast)`, after confirmation.
 
+When the host already has enough runtime to read repositories and run the planner but bootstrap or package managers are
+not available, use `align` to reconcile only links and copies. This keeps environment files and other managed symlinks
+current without running bootstrap, Homebrew, apt, casks, GitHub release installers, or module scripts.
+
 Use `update full` when the user wants full managed refresh: fast update plus managed non-system package declarations and
 module `Update` sections. Use `upgrade` when the user wants the widest update: `update full` plus broad or aggressive
 package-manager upgrades that may affect packages not declared by Tilde.
@@ -229,10 +233,12 @@ Preflight starts with a bootstrap check. If compatible bootstrap state is alread
 check returns through the fast path without probing the system. If that state is missing, stale, or incompatible, the
 check probes the bootstrap baseline and records an `ok` result in the host state when the probe succeeds. For normal
 apply/update preflight, a failed probe is recoverable: preflight runs idempotent bootstrap, then re-runs
-`bin/bootstrap --check --record`. Use `bin/preflight --bootstrap check` for check-only flows such as dry-run contexts
-that must not install anything, and `--bootstrap skip` only when a caller has already handled bootstrap. If bootstrap
-needs an interactive platform installer or noninteractive `sudo` is unavailable, preflight stops with a concrete reason
-instead of hanging or continuing with an unknown baseline.
+`bin/bootstrap --check --record`. If bootstrap still needs credentials, an interactive platform installer, network, or
+another external action but the existing `git`, `ruby`, and `curl` runtime can run plan/apply, preflight reports the
+deferred bootstrap and continues so desired-state reconciliation is not blocked. If bootstrap remains incomplete and the
+required runtime is missing, preflight blocks. Use `bin/preflight --bootstrap check` for check-only flows such as
+dry-run contexts that must not install anything, `--bootstrap require` when the caller needs a complete baseline before
+continuing, and `--bootstrap skip` only when a caller has already handled bootstrap.
 
 On macOS, File Provider status such as an active download, a checkout not marked keep downloaded, or a checkout not
 marked recursively downloaded is advisory. Report those flags, but let required-file and Git traversal checks decide
@@ -300,7 +306,9 @@ On apt-based Linux, bootstrap installs the small base needed for Homebrew, such 
 `curl`, `file`, `git`, and `procps`, only when those prerequisites are not already present. It then installs Homebrew
 and installs `curl`, `git`, and `ruby` through Homebrew. Bootstrap apt commands run non-interactively during remote or
 scripted execution: use `sudo -n`, fail with a clear `sudo` reason when credentials are required, and avoid prompting in
-the background. Before running apt, bootstrap checks apt/dpkg lock owners when the target has `fuser`; by default it
+the background. The official Linux Homebrew installer uses the supported `/home/linuxbrew/.linuxbrew` prefix and may
+require sudo to create it; detect that noninteractive sudo need before starting the installer so preflight can defer
+bootstrap cleanly. Before running apt, bootstrap checks apt/dpkg lock owners when the target has `fuser`; by default it
 waits briefly and reports the owning processes. If unattended apt maintenance is stuck and the user approves stopping
 it, rerun bootstrap with `TILDE_BOOTSTRAP_APT_LOCK=stop` so bootstrap stops `apt-daily`, `apt-daily-upgrade`, and
 `unattended-upgrades` before retrying.

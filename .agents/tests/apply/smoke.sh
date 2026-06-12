@@ -30,6 +30,7 @@ write_repo() {
 		"$repo/flatpak" \
 		"$repo/github" \
 		"$repo/manual" \
+		"$repo/missing-command" \
 		"$repo/pkg" \
 		"$repo/section"
 
@@ -89,6 +90,19 @@ Review this instruction before running the command.
 printf 'manual\n' > "$HOME"/manual-ran
 ```
 EOF
+
+	cat >"$repo/missing-command/README.md" <<'EOF'
+---
+all:
+  packages:
+    - scoop:missing
+  links:
+    configured.txt: ~/.config/missing-command/configured.txt
+---
+
+# Missing Command
+EOF
+	printf 'configured\n' >"$repo/missing-command/configured.txt"
 
 	cat >"$repo/pkg/README.md" <<'EOF'
 ---
@@ -156,6 +170,10 @@ EOF
 # ------------------------------------------------------------------------------------------------------------------------
 
 main() {
+	local align_apply_json
+	local align_home
+	local align_plan_json
+	local align_state
 	local apply
 	local apply_before_refresh
 	local apply_json
@@ -194,6 +212,8 @@ main() {
 	trap cleanup EXIT HUP INT QUIT TERM
 
 	host=$(host_name)
+	align_home=$tmpdir/align-home
+	align_state=$tmpdir/align-state
 	home=$tmpdir/home
 	state=$tmpdir/state
 	repo=$home/Dropbox/src/home
@@ -201,6 +221,8 @@ main() {
 	bad_repo=$tmpdir/bad-home
 	fake_bin=$tmpdir/bin
 	apply_before_refresh=$tmpdir/apply-before-refresh.json
+	align_apply_json=$tmpdir/align-apply.json
+	align_plan_json=$tmpdir/align-plan.json
 	plan_json=$tmpdir/plan.json
 	plan_before_refresh=$tmpdir/plan-before-refresh.json
 	private_plan_json=$tmpdir/private-plan.json
@@ -217,11 +239,13 @@ main() {
 	bad_condition_err=$tmpdir/bad-condition.err
 
 	mkdir -p \
+		"$align_home" \
 		"$fake_bin" \
 		"$home/Dropbox/var/app" \
 		"$home/.config/sample" \
 		"$private_repo" \
 		"$repo" \
+		"$align_state/tilde" \
 		"$state/tilde"
 
 	cat >"$fake_bin/brew" <<'EOF'
@@ -311,6 +335,22 @@ EOF
 
 	HOME=$home XDG_STATE_HOME=$state "$plan" --repo "$repo" --platform linux --host "$host" >"$plan_json"
 	HOME=$home XDG_STATE_HOME=$state "$plan" --repo "$private_repo" --platform linux --host "$host" >"$private_plan_json"
+	HOME=$align_home XDG_STATE_HOME=$align_state "$plan" --repo "$repo" --mode align --platform linux --host "$host" >"$align_plan_json"
+	HOME=$align_home XDG_STATE_HOME=$align_state PATH=/usr/bin:/bin "$apply" --plan "$align_plan_json" >"$align_apply_json"
+	[[ -L $align_home/Dropbox/var/app/source-link.txt ]]
+	grep -q '^copy$' "$align_home/.config/sample/copy.txt"
+	grep -q '^configured$' "$align_home/.config/missing-command/configured.txt"
+	[[ -f $align_state/tilde/hosts/$host/last-align-plan.json ]]
+	[[ -f $align_state/tilde/hosts/$host/last-align-apply.json ]]
+	[[ ! -f $align_state/tilde/hosts/$host/state.md ]]
+
+	ALIGN_APPLY_JSON=$align_apply_json ruby -rjson -e '
+		apply = JSON.parse(File.read(ENV.fetch("ALIGN_APPLY_JSON")))
+		abort "align apply should complete" unless apply.fetch("completed")
+		abort "wrong align mode" unless apply.fetch("mode") == "align"
+		abort "align should not run packages" if apply.fetch("results").any? { |result| result.fetch("kind") == "package" }
+		abort "align should not run sections" if apply.fetch("results").any? { |result| %w[section manual].include?(result.fetch("kind")) }
+	'
 
 	PLAN_JSON=$plan_json BAD_CONDITION_PLAN=$bad_condition_plan ruby -rjson -rdigest -e '
 		def canonicalize(value)
@@ -371,6 +411,7 @@ EOF
 	grep -q '^copy$' "$home/.config/sample/copy.txt"
 	grep -q '^old copy$' "$state"/tilde/hosts/"$host"/backups/*/.config/sample/copy.txt
 	grep -q '^section$' "$home/section/created.txt"
+	grep -q '^configured$' "$home/.config/missing-command/configured.txt"
 	grep -q '^private$' "$home/.config/private/private.txt"
 	grep -q '^flatpak ran$' "$home/flatpak-ran"
 	[[ ! -e $home/manual-ran ]]
@@ -390,6 +431,7 @@ EOF
 		results = apply.fetch("results")
 		abort "missing resumed action" unless results.any? { |result| result.fetch("diagnostics", {})["resumed"] }
 		abort "flatpak should run after ignored partial result" unless results.any? { |result| result.fetch("module_id") == "public/flatpak" && result.fetch("status") == "ok" }
+		abort "missing command package should defer" unless results.any? { |result| result.fetch("module_id") == "public/missing-command" && result.fetch("status") == "deferred" }
 		abort "missing package failure" unless results.any? { |result| result.fetch("module_id") == "public/pkg" && result.fetch("status") == "notok" }
 		abort "missing manual deferred result" unless results.any? { |result| result.fetch("module_id") == "public/manual" && result.fetch("status") == "deferred" }
 		state, = File.read(ENV.fetch("STATE_FILE")).split(/^---\s*$/, 3)[1, 2]
@@ -402,6 +444,7 @@ EOF
 		abort "flatpak module should be ok" unless done.fetch("public/flatpak") == "ok"
 		abort "github module should be ok" unless done.fetch("public/github") == "ok"
 		abort "manual module should be notok" unless done.fetch("public/manual") == "notok"
+		abort "missing command module should be notok" unless done.fetch("public/missing-command") == "notok"
 		abort "package module should be notok" unless done.fetch("public/pkg") == "notok"
 		abort "private module should be ok" unless done.fetch("private/zzz-private") == "ok"
 	'

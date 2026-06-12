@@ -23,6 +23,7 @@ Use this public action inventory for help output:
 | Command | Action |
 | --- | --- |
 | `adopt` | Adopt an app, config, package, or path into the public or private data repository. |
+| `align` | Reconcile links and copies without bootstrap, packages, or module scripts. |
 | `clean` | Propose conservative cleanup, including duplicate candidates when relevant. |
 | `create` | Create public/private home repository skeletons. |
 | `deploy` | Prepare a host and install desired state. |
@@ -45,8 +46,9 @@ representative of common local deployment, remote deployment, Git-backed VPS dep
 flows.
 
 `apply`, `bootstrap`, `install`, `links`, `plan`, `refresh`, `archive`, and `dedupe` are not public prompt commands. Do
-not show internal commands in ordinary help. Treat `plan`, `dry-run`, and `plan-only` as qualifiers on public commands
-when the user asks to see the proposal without applying it.
+not show internal commands in ordinary help. Use `align` when the user wants only managed links and copies reconciled
+without package/bootstrap side effects. Treat `plan`, `dry-run`, and `plan-only` as qualifiers on public commands when
+the user asks to see the proposal without applying it.
 
 Custom data-layer commands such as `custom.sync-host` are also excluded from ordinary `$tilde help`. If a user asks for
 `$tilde help custom.NAME`, resolve that custom command from configured data-repository `## Operations` sections. If it
@@ -63,6 +65,9 @@ Public command semantics:
 - `deploy`: the main first-run and new-host journey command. It may orchestrate `create`, `init`,
   `internal.bootstrap`/preflight, planning, and `internal.install`, while preserving proposal-first behavior for each
   phase.
+- `align`: reconcile managed links and copies from public/private repositories without bootstrap, package installs,
+  package refreshes, or module special sections. It is the low-side-effect path for hosts that already have enough
+  runtime to plan/apply but lack package managers such as Homebrew.
 - `update`: run the returning-user maintenance flow after confirmation. Plain `update` means
   `internal.install`, then `internal.refresh` with fast scope. `update full` means `internal.install`, then
   `internal.refresh` with full managed scope.
@@ -96,9 +101,10 @@ conservative proposals or suggest creating home-scope policy; do not infer aggre
 the public repository root instructions.
 
 If a user asks for `dedupe`, interpret it as a `clean` request focused on duplicate candidates. If a user asks for
-`archive`, interpret it as an `organize` request focused on archive moves. If a user asks for `links`, use `status` for
-a read-only managed-surface summary or `doctor` for broken/stale/conflicting link diagnostics. If a user asks for
-`plan`, use the nearest public command with a `dry-run` or `plan-only` qualifier.
+`archive`, interpret it as an `organize` request focused on archive moves. If a user asks for `links`, use `align` when
+they want to apply managed links/copies, `status` for a read-only managed-surface summary, or `doctor` for
+broken/stale/conflicting link diagnostics. If a user asks for `plan`, use the nearest public command with a `dry-run` or
+`plan-only` qualifier.
 
 `private` is not a built-in command. Natural-language requests such as "adopt this into private" or "check the private
 repo" are valid qualifiers on other commands.
@@ -143,6 +149,7 @@ Internal commands:
 - `internal.bootstrap` or `.bootstrap`: run or plan the fresh-host bootstrap prelude.
 - `internal.plan` or `.plan`: generate a provisioning plan.
 - `internal.apply` or `.apply`: apply a provisioning plan.
+- `internal.align` or `.align`: reconcile managed links and copies only.
 - `internal.install` or `.install`: install desired state from public/private data repositories.
 - `internal.refresh` or `.refresh`: refresh external resources with an explicit scope. Fast scope runs after
   desired-state link reconciliation and updates normal system package managers; full scope also refreshes managed
@@ -156,6 +163,7 @@ the same workflow, unless the user is developing Tilde itself.
 
 ```text
 deploy = init + internal.bootstrap/preflight + internal.install
+align = internal.align
 update = internal.install + internal.refresh(scope=fast)
 update full = internal.install + internal.refresh(scope=full)
 upgrade = update full + broad package-manager upgrade

@@ -85,6 +85,10 @@ Actions that require an interactive terminal or user decision are marked `manual
 attempted in a non-interactive remote apply. A `manual` action records a `deferred` result with the original instruction
 and reason.
 
+If a package handler command is missing, record that package action as `deferred` instead of aborting apply. Deferred
+package actions do not fail the module, so later deterministic link/copy actions in the same module can still reconcile
+desired state. A present package command that exits nonzero remains `notok`.
+
 Package actions may include supported conditions. When a condition is not met, the executor records the action as
 `ignored` and does not run the package command. The `graphical` condition is always true on macOS, true on Linux only
 when `systemctl get-default` is `graphical.target`, and false elsewhere.
@@ -144,16 +148,16 @@ For `apply` and `repair` plans, host `state.md` folds action results into reposi
 is `ok` only when all required actions are `ok`, `unchanged`, or `ignored`; `deferred` and `notok` make the module
 `notok` with details in the state body. When an `apply` or `repair` plan skips modules because the current deployment
 state already covers them, state writing must preserve the previous module results for those skipped modules. An
-actionless apply must not collapse a populated `done` map to `{}`. `refresh` and `upgrade` plans write
-mode-specific `last-refresh-*` or `last-upgrade-*` caches but must not overwrite deployment `state.md` or deployment
-`last-plan.json`/`last-apply.json`, because they are external-resource runs rather than desired-state deployment
-records.
+actionless apply must not collapse a populated `done` map to `{}`. `align`, `refresh`, and `upgrade` plans write
+mode-specific `last-align-*`, `last-refresh-*`, or `last-upgrade-*` caches but must not overwrite deployment `state.md`
+or deployment `last-plan.json`/`last-apply.json`. `align` is a partial filesystem reconciliation, while refresh and
+upgrade are external-resource runs; none of them is a full desired-state deployment record.
 
 `last-plan.json` is a combined cache of the confirmed public/private input plans, not another input plan. Its schema
 must identify the cache format separately from the executable `tilde.plan/v1` plan schema. `last-apply.json` and host
 state represent the same combined public/private deployment. Independent public and private writes must not overwrite
-each other's cached plan or apply results. External-resource caches use the same cache schema and are kept in
-mode-specific files such as `last-refresh-plan.json` and `last-refresh-apply.json`.
+each other's cached plan or apply results. Partial or external-resource caches use the same cache schema and are kept in
+mode-specific files such as `last-align-plan.json`, `last-refresh-plan.json`, and `last-refresh-apply.json`.
 
 When writing host deployment state, apply preserves the previous `bootstrap` frontmatter entry if one exists. Desired
 state deployment must not erase the bootstrap baseline cache.

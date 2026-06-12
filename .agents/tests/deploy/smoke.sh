@@ -68,6 +68,7 @@ main() {
 	local bootstrap_out
 	local cold_bin
 	local cold_home
+	local defer_home
 	local err
 	local fake_bin
 	local object
@@ -91,6 +92,7 @@ main() {
 	auto_home=$tmpdir/auto-home
 	cold_bin=$tmpdir/cold-bin
 	cold_home=$tmpdir/cold-home
+	defer_home=$tmpdir/defer-home
 	fake_bin=$tmpdir/bin
 	repo=$tmpdir/repo
 	bootstrap_bin=$tmpdir/bootstrap-bin
@@ -105,6 +107,7 @@ main() {
 		"$bootstrap_home/.linuxbrew/opt/ruby/bin" \
 		"$cold_bin" \
 		"$cold_home" \
+		"$defer_home" \
 		"$fake_bin" \
 		"$repo"
 	printf '# Smoke\n' >"$repo/README.md"
@@ -300,6 +303,41 @@ EOF
 	HOME=$auto_home PATH=$bootstrap_bin:/usr/bin:/bin "$preflight" --require README.md "$repo" >/dev/null 2>"$err"
 	grep -q "bootstrap check failed; running bootstrap" "$err"
 	grep -q "bootstrap:" "$auto_home/.local/state/tilde/hosts/$(host_name)/state.md"
+
+	mkdir -p \
+		"$defer_home/.linuxbrew/bin" \
+		"$defer_home/.linuxbrew/opt/curl/bin" \
+		"$defer_home/.linuxbrew/opt/git/bin" \
+		"$defer_home/.linuxbrew/opt/ruby/bin"
+	cat >"$defer_home/.linuxbrew/bin/brew" <<'EOF'
+#!/usr/bin/env bash
+case ${1:-} in
+--prefix)
+	if (($# == 1)); then
+		printf '%s\n' "$HOME/.linuxbrew"
+	else
+		printf '%s/opt/%s\n' "$HOME/.linuxbrew" "$2"
+	fi
+	;;
+shellenv)
+	printf 'export PATH="%s/bin:$PATH"\n' "$HOME/.linuxbrew"
+	;;
+*)
+	exit 1
+	;;
+esac
+EOF
+	printf '#!/usr/bin/env bash\nexit 1\n' >"$defer_home/.linuxbrew/opt/curl/bin/curl"
+	printf '#!/usr/bin/env bash\nexit 1\n' >"$defer_home/.linuxbrew/opt/git/bin/git"
+	printf '#!/usr/bin/env bash\nexit 1\n' >"$defer_home/.linuxbrew/opt/ruby/bin/ruby"
+	chmod +x \
+		"$defer_home/.linuxbrew/bin/brew" \
+		"$defer_home/.linuxbrew/opt/curl/bin/curl" \
+		"$defer_home/.linuxbrew/opt/git/bin/git" \
+		"$defer_home/.linuxbrew/opt/ruby/bin/ruby"
+	HOME=$defer_home PATH=$bootstrap_bin:/usr/bin:/bin "$preflight" --require README.md "$repo" >/dev/null 2>"$err"
+	grep -q "bootstrap check failed; running bootstrap" "$err"
+	grep -q "bootstrap remains incomplete; continuing with existing runtime" "$err"
 
 	tree=$(git -C "$repo" rev-parse 'HEAD^{tree}')
 	object=$repo/.git/objects/${tree:0:2}/${tree:2}

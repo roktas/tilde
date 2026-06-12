@@ -34,10 +34,28 @@ check_bootstrap() {
 		fi
 
 		warn "W: bootstrap check failed; running bootstrap"
-		"$root/bin/bootstrap"
-		"$root/bin/bootstrap" --check --record
+		if "$root/bin/bootstrap" && "$root/bin/bootstrap" --check --record; then
+			return
+		fi
+
+		if runtime_ready; then
+			warn "W: bootstrap remains incomplete; continuing with existing runtime"
+			return
+		fi
+
+		warn "E: bootstrap remains incomplete and required runtime is missing"
+		return 1
 		;;
 	check)
+		"$root/bin/bootstrap" --check --record
+		;;
+	require)
+		if "$root/bin/bootstrap" --check --record; then
+			return
+		fi
+
+		warn "W: bootstrap check failed; running bootstrap"
+		"$root/bin/bootstrap"
 		"$root/bin/bootstrap" --check --record
 		;;
 	skip)
@@ -47,6 +65,12 @@ check_bootstrap() {
 		return 2
 		;;
 	esac
+}
+
+runtime_ready() {
+	command -v curl >/dev/null &&
+		command -v git >/dev/null &&
+		command -v ruby >/dev/null
 }
 
 check_repo() {
@@ -96,7 +120,7 @@ warn() {
 
 usage() {
 	cat <<-EOF
-		Usage: preflight [--bootstrap auto|check|skip] [--require PATH] REPO...
+		Usage: preflight [--bootstrap auto|check|require|skip] [--require PATH] REPO...
 	EOF
 }
 

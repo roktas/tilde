@@ -26,6 +26,8 @@ cleanup() {
 # ------------------------------------------------------------------------------------------------------------------------
 
 main() {
+	local align_plan_json
+	local align_state_plan_json
 	local dirty_module
 	local dirty_plan_err
 	local extra_module
@@ -80,6 +82,8 @@ main() {
 	tmpdir=$(mktemp -d)
 	cleanup_tmpdir=$tmpdir
 	export XDG_STATE_HOME=$tmpdir/state
+	align_plan_json=$tmpdir/align-plan.json
+	align_state_plan_json=$tmpdir/align-state-plan.json
 	dirty_plan_err=$tmpdir/dirty-plan.err
 	extra_plan_json=$tmpdir/extra-plan.json
 	file_provider_plan_json=$tmpdir/file-provider-plan.json
@@ -206,8 +210,9 @@ done:
 EOF
 
 	"$plan" --repo "$repo" --allow-dirty --platform linux --host smoke >"$state_skip_plan_json"
+	"$plan" --repo "$repo" --allow-dirty --mode align --platform linux --host smoke >"$align_state_plan_json"
 
-	STATE_SKIP_PLAN_JSON=$state_skip_plan_json ruby -rjson -e '
+	STATE_SKIP_PLAN_JSON=$state_skip_plan_json ALIGN_STATE_PLAN_JSON=$align_state_plan_json ruby -rjson -e '
 		plan = JSON.parse(File.read(ENV.fetch("STATE_SKIP_PLAN_JSON")))
 		linux = plan.fetch("modules").find { |mod| mod.fetch("name") == "linux" }
 		abort "missing linux module" unless linux
@@ -221,6 +226,11 @@ EOF
 		mc = plan.fetch("modules").find { |mod| mod.fetch("name") == "mc" }
 		abort "missing mc module" unless mc
 		abort "legacy mc state should still skip module" unless mc.fetch("skipped")
+		align = JSON.parse(File.read(ENV.fetch("ALIGN_STATE_PLAN_JSON")))
+		align_git = align.fetch("modules").find { |mod| mod.fetch("name") == "git" }
+		abort "missing align git module" unless align_git
+		abort "align should ignore ok state skip" if align_git.fetch("skipped")
+		abort "align should keep git links" if align_git.fetch("links_to_create").empty?
 	'
 	rm -f "$XDG_STATE_HOME/tilde/hosts/smoke/state.md"
 
@@ -514,9 +524,21 @@ EOF
 
 	rm -rf "$platform_module"
 
+	"$plan" --repo "$repo" --allow-dirty --mode align --platform linux --host smoke >"$align_plan_json"
 	"$plan" --repo "$repo" --mode refresh --platform linux --host smoke >"$refresh_plan_json"
 	"$plan" --repo "$repo" --mode refresh --scope full --platform linux --host smoke >"$full_refresh_plan_json"
 	"$plan" --repo "$repo" --mode upgrade --platform linux --host smoke >"$upgrade_plan_json"
+
+	ALIGN_PLAN_JSON=$align_plan_json ruby -rjson -e '
+		plan = JSON.parse(File.read(ENV.fetch("ALIGN_PLAN_JSON")))
+		abort "wrong align mode" unless plan.fetch("mode") == "align"
+		abort "align should not have scope" unless plan["scope"].nil?
+		abort "align should not include package actions" if plan.fetch("actions").any? { |action| action.fetch("kind") == "package" }
+		abort "align should not include section actions" if plan.fetch("actions").any? { |action| %w[section manual].include?(action.fetch("kind")) }
+		abort "align should include link actions" unless plan.fetch("actions").any? { |action| action.fetch("kind") == "link" }
+		abort "align modules should not install packages" if plan.fetch("modules").any? { |mod| mod.fetch("packages_to_install").any? }
+		abort "align modules should not keep special sections" if plan.fetch("modules").any? { |mod| mod.fetch("special_sections").any? }
+	'
 
 	REFRESH_PLAN_JSON=$refresh_plan_json ruby -rjson -e '
 		plan = JSON.parse(File.read(ENV.fetch("REFRESH_PLAN_JSON")))
@@ -569,13 +591,14 @@ EOF
 		abort "upgrade actions should run after full refresh" unless upgrade_indexes.min > update_indexes.max
 	'
 
-	NORMAL_PLAN_JSON=$normal_plan_json EXTRA_PLAN_JSON=$extra_plan_json MACOS_PLAN_JSON=$macos_plan_json PRIVATE_PLAN_JSON=$private_plan_json PRIVATE_MACOS_PLAN_JSON=$private_macos_plan_json REFRESH_PLAN_JSON=$refresh_plan_json FULL_REFRESH_PLAN_JSON=$full_refresh_plan_json UPGRADE_PLAN_JSON=$upgrade_plan_json ruby -rjson -ropen3 -e '
+	NORMAL_PLAN_JSON=$normal_plan_json EXTRA_PLAN_JSON=$extra_plan_json MACOS_PLAN_JSON=$macos_plan_json PRIVATE_PLAN_JSON=$private_plan_json PRIVATE_MACOS_PLAN_JSON=$private_macos_plan_json ALIGN_PLAN_JSON=$align_plan_json REFRESH_PLAN_JSON=$refresh_plan_json FULL_REFRESH_PLAN_JSON=$full_refresh_plan_json UPGRADE_PLAN_JSON=$upgrade_plan_json ruby -rjson -ropen3 -e '
 		%w[
 			NORMAL_PLAN_JSON
 			EXTRA_PLAN_JSON
 			MACOS_PLAN_JSON
 			PRIVATE_PLAN_JSON
 			PRIVATE_MACOS_PLAN_JSON
+			ALIGN_PLAN_JSON
 			REFRESH_PLAN_JSON
 			FULL_REFRESH_PLAN_JSON
 			UPGRADE_PLAN_JSON
