@@ -234,8 +234,8 @@ EOF
 			abort "missing private codex module" unless codex
 			abort "missing linux codex-switcher package" unless codex.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "github:Lampese/codex-switcher" }
 			abort "linux codex should not install codex cask" if codex.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "cask:codex" }
-			abort "codex cli wrapper should be removed" if codex.fetch("links_to_create").any? { |link| link.fetch("source") == "bin/codex" || link.fetch("target") == "~/Dropbox/allos/bin/codex" }
-			abort "codex-switcher wrapper should remain" unless codex.fetch("links_to_create").any? { |link| link.fetch("source") == "bin/codex-switcher" && link.fetch("target") == "~/Dropbox/allos/bin/codex-switcher" }
+			abort "codex wrappers should be removed" if codex.fetch("links_to_create").any? { |link| link.fetch("source") == "bin/codex" || link.fetch("target") == "~/Dropbox/allos/bin/codex" || link.fetch("source") == "bin/codex-switcher" || link.fetch("target") == "~/Dropbox/allos/bin/codex-switcher" }
+			abort "codex should export CODEX_HOME through environment.d" unless codex.fetch("links_to_create").any? { |link| link.fetch("source") == "environment.d/codex.conf" && link.fetch("target") == "~/.config/environment.d/codex.conf" }
 			abort "codex should link hooks into shared codex state" unless codex.fetch("links_to_create").any? { |link| link.fetch("source") == "hooks/shellcheck" && link.fetch("target") == "~/Dropbox/allos/var/codex/hooks/shellcheck" && link.fetch("fan_in") == true }
 			hook_action = linux.fetch("actions").find { |action| action.fetch("kind") == "link" && action.fetch("target") == "~/Dropbox/allos/var/codex/hooks/shellcheck" }
 			abort "missing codex hook action" unless hook_action
@@ -248,6 +248,7 @@ EOF
 			abort "missing linux copilot module" unless copilot
 			abort "missing linux copilot-cli cask" unless copilot.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "cask:copilot-cli" }
 			abort "linux copilot wrapper should be removed" if copilot.fetch("links_to_create").any? { |link| link.fetch("source") == "bin/copilot" || link.fetch("target") == "~/Dropbox/allos/bin/copilot" }
+			abort "copilot should export COPILOT_HOME through environment.d" unless copilot.fetch("links_to_create").any? { |link| link.fetch("source") == "environment.d/copilot.conf" && link.fetch("target") == "~/.config/environment.d/copilot.conf" }
 			abort "dropignore module should be removed" if linux.fetch("modules").any? { |mod| mod.fetch("name") == "dropignore" }
 			opencode = linux.fetch("modules").find { |mod| mod.fetch("name") == "opencode" }
 			abort "missing private opencode module" unless opencode
