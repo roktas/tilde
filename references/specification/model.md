@@ -71,7 +71,8 @@
 - A root directory is a module only when it contains `README.md`.
 - Provisioning decisions are made after host deployment state is loaded.
 - On fresh or underprovisioned hosts, run `bin/bootstrap` explicitly before normal provisioning when
-  baseline tools are missing. Bootstrap is state-free and idempotent.
+  baseline tools are missing. Bootstrap is idempotent, remains outside normal module state, and may record bootstrap
+  baseline cache in host runtime state.
 - Deployment uses provisioning modes internally. User-facing commands may say `deploy`, while lower-level module
   execution may use `apply`, `refresh`, `repair`, or `upgrade`.
 - Normal plans process the active platform module first, the active platform variant second, and all other active root

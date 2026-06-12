@@ -199,6 +199,13 @@ EOF
 	rm -f "$bootstrap_home/.local/state/tilde/hosts/$(host_name)/state.md"
 	HOME=$bootstrap_home PATH=$bootstrap_bin:/usr/bin:/bin "$preflight" --require README.md "$repo" >/dev/null
 	grep -q "bootstrap:" "$bootstrap_home/.local/state/tilde/hosts/$(host_name)/state.md"
+	cat >"$bootstrap_home/.local/state/tilde/hosts/$(host_name)/state.md" <<'EOF'
+---
+[
+---
+EOF
+	HOME=$bootstrap_home PATH=$bootstrap_bin:/usr/bin:/bin "$preflight" --require README.md "$repo" >/dev/null
+	grep -q "bootstrap:" "$bootstrap_home/.local/state/tilde/hosts/$(host_name)/state.md"
 
 	tree=$(git -C "$repo" rev-parse 'HEAD^{tree}')
 	object=$repo/.git/objects/${tree:0:2}/${tree:2}

@@ -349,6 +349,13 @@ EOF
 	fi
 	grep -q "unsupported condition: headless" "$bad_condition_err"
 
+	mkdir -p "$state/tilde/hosts/$host"
+	cat >"$state/tilde/hosts/$host/state.md" <<'EOF'
+---
+not a mapping
+---
+EOF
+
 	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH TILDE_APPLY_STOP_AFTER=3 "$apply" \
 		--plan "$private_plan_json" --plan "$plan_json" >"$tmpdir/partial.out"
 	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH TILDE_FAKE_SYSTEMCTL=graphical.target "$apply" \
@@ -385,6 +392,7 @@ EOF
 		frontmatter = YAML.safe_load(state)
 		abort "state should include public metadata" unless frontmatter.fetch("public").fetch("role") == "public"
 		abort "state should include private metadata" unless frontmatter.fetch("private").fetch("role") == "private"
+		abort "state should not invent bootstrap" if frontmatter.key?("bootstrap")
 		done = frontmatter.fetch("done")
 		abort "link module should be ok" unless done.fetch("public/aaa-link") == "ok"
 		abort "flatpak module should be ok" unless done.fetch("public/flatpak") == "ok"

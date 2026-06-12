@@ -770,8 +770,9 @@ class Apply
     return {} unless text.start_with?("---\n")
 
     _head, yaml, _body = text.split(/^---\s*$\n?/, 3)
-    YAML.safe_load(yaml, aliases: true, permitted_classes: [Date, Time]) || {}
-  rescue Psych::SyntaxError
+    frontmatter = YAML.safe_load(yaml, aliases: true, permitted_classes: [Date, Time])
+    frontmatter.is_a?(Hash) ? frontmatter : {}
+  rescue Psych::Exception
     {}
   end
 
