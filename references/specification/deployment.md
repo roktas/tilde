@@ -225,10 +225,14 @@ checkout-relative paths with `--require`; for example, require `AGENTS.md` for a
 or Git tree that cannot be traversed blocks deployment. Do not use an unbounded full-object `git fsck` during ordinary
 preflight; reserve deeper repository diagnosis for doctor flows.
 
-Preflight first runs `bin/bootstrap --check --record`. If compatible bootstrap state is already recorded in the target
-host state, the check returns through the fast path without probing the system. If that state is missing, stale, or
-incompatible, the check probes the bootstrap baseline and records an `ok` result in the host state when the probe
-succeeds. If the probe fails, preflight blocks normal deployment and the agent should propose running bootstrap.
+Preflight starts with a bootstrap check. If compatible bootstrap state is already recorded in the target host state, the
+check returns through the fast path without probing the system. If that state is missing, stale, or incompatible, the
+check probes the bootstrap baseline and records an `ok` result in the host state when the probe succeeds. For normal
+apply/update preflight, a failed probe is recoverable: preflight runs idempotent bootstrap, then re-runs
+`bin/bootstrap --check --record`. Use `bin/preflight --bootstrap check` for check-only flows such as dry-run contexts
+that must not install anything, and `--bootstrap skip` only when a caller has already handled bootstrap. If bootstrap
+needs an interactive platform installer or noninteractive `sudo` is unavailable, preflight stops with a concrete reason
+instead of hanging or continuing with an unknown baseline.
 
 On macOS, File Provider status such as an active download, a checkout not marked keep downloaded, or a checkout not
 marked recursively downloaded is advisory. Report those flags, but let required-file and Git traversal checks decide
@@ -264,8 +268,10 @@ planner and executor should behave like a fresh desired-state apply; it does not
 
 `bin/bootstrap --check` checks the bootstrap baseline without installing packages. It reads the target host state first:
 a compatible `bootstrap: {status: ok}` entry is a fast-path success. If `--probe` is given, or if compatible state is
-missing, it probes the system for the baseline tools. `--record` records a successful probe into the existing host
-`state.md` frontmatter. Normal bootstrap records the same `bootstrap` state after a successful install.
+missing, stale, or incompatible, it probes the system for the baseline tools. Failed checks must report the missing or
+broken baseline part, such as stale state, missing Homebrew, missing Xcode Command Line Tools, a broken Homebrew tool,
+or unavailable noninteractive `sudo`. `--record` records a successful probe into the existing host `state.md`
+frontmatter. Normal bootstrap records the same `bootstrap` state after a successful install.
 
 When bootstrapping a remote target that does not have the installed skill yet, deliver the script over SSH:
 
@@ -291,11 +297,13 @@ A public or fork-based install may also fetch the same script from official rele
 transport must be documented separately and should prefer immutable or trusted references when possible.
 
 On apt-based Linux, bootstrap installs the small base needed for Homebrew, such as `build-essential`, `ca-certificates`,
-`curl`, `file`, `git`, and `procps`, then installs Homebrew and installs `curl`, `git`, and `ruby` through Homebrew.
-Bootstrap apt commands run non-interactively. Before running apt, bootstrap checks apt/dpkg lock owners when the target
-has `fuser`; by default it waits briefly and reports the owning processes. If unattended apt maintenance is stuck and
-the user approves stopping it, rerun bootstrap with `TILDE_BOOTSTRAP_APT_LOCK=stop` so bootstrap stops
-`apt-daily`, `apt-daily-upgrade`, and `unattended-upgrades` before retrying.
+`curl`, `file`, `git`, and `procps`, only when those prerequisites are not already present. It then installs Homebrew
+and installs `curl`, `git`, and `ruby` through Homebrew. Bootstrap apt commands run non-interactively during remote or
+scripted execution: use `sudo -n`, fail with a clear `sudo` reason when credentials are required, and avoid prompting in
+the background. Before running apt, bootstrap checks apt/dpkg lock owners when the target has `fuser`; by default it
+waits briefly and reports the owning processes. If unattended apt maintenance is stuck and the user approves stopping
+it, rerun bootstrap with `TILDE_BOOTSTRAP_APT_LOCK=stop` so bootstrap stops `apt-daily`, `apt-daily-upgrade`, and
+`unattended-upgrades` before retrying.
 
 On macOS, bootstrap checks for Xcode Command Line Tools first, installs Homebrew, and installs `curl`, `git`, and
 `ruby` through Homebrew. If Command Line Tools installation is started, bootstrap stops and the user reruns it after the

@@ -8,6 +8,7 @@ readonly BOOTSTRAP_REQUIREMENTS="sha256:18ed5cbd4623dd0e94850f4d911130f93b5eff62
 readonly BOOTSTRAP_SCHEMA="tilde.bootstrap/v1"
 
 BOOTSTRAP_TOOL_BREW=
+BOOTSTRAP_CHECK_REASON=
 BOOTSTRAP_TOOL_CURL=
 BOOTSTRAP_TOOL_GIT=
 BOOTSTRAP_TOOL_RUBY=
@@ -15,6 +16,11 @@ BOOTSTRAP_TOOL_RUBY=
 abort() {
 	warn "E: $*"
 	exit 1
+}
+
+check_fail() {
+	BOOTSTRAP_CHECK_REASON=$1
+	return 1
 }
 
 warn() {
@@ -34,7 +40,7 @@ apt_lock_pids() {
 
 	command -v fuser >/dev/null || return 0
 
-	{ sudo fuser "${locks[@]}" 2>/dev/null || true; } | tr ' ' '\n' | sed '/^$/d' | sort -u
+	{ sudo_run fuser "${locks[@]}" 2>/dev/null || true; } | tr ' ' '\n' | sed '/^$/d' | sort -u
 }
 
 bootstrap_state_value() {
@@ -77,10 +83,28 @@ bootstrap_state_value() {
 bootstrap_state_ok() {
 	local platform=$1
 
-	[[ $(bootstrap_state_value status 2>/dev/null || true) == ok ]] || return 1
-	[[ $(bootstrap_state_value schema 2>/dev/null || true) == "$BOOTSTRAP_SCHEMA" ]] || return 1
-	[[ $(bootstrap_state_value platform 2>/dev/null || true) == "$platform" ]] || return 1
-	[[ $(bootstrap_state_value requirements 2>/dev/null || true) == "$BOOTSTRAP_REQUIREMENTS" ]] || return 1
+	local actual
+
+	actual=$(bootstrap_state_value status 2>/dev/null || true)
+	[[ $actual == ok ]] || {
+		check_fail "state-status:${actual:-missing}"
+		return
+	}
+	actual=$(bootstrap_state_value schema 2>/dev/null || true)
+	[[ $actual == "$BOOTSTRAP_SCHEMA" ]] || {
+		check_fail "state-schema:${actual:-missing}"
+		return
+	}
+	actual=$(bootstrap_state_value platform 2>/dev/null || true)
+	[[ $actual == "$platform" ]] || {
+		check_fail "state-platform:${actual:-missing}"
+		return
+	}
+	actual=$(bootstrap_state_value requirements 2>/dev/null || true)
+	[[ $actual == "$BOOTSTRAP_REQUIREMENTS" ]] || {
+		check_fail "state-requirements:${actual:-missing}"
+		return
+	}
 }
 
 detect_platform() {
@@ -155,24 +179,59 @@ host_name() {
 
 probe_bootstrap() {
 	local platform=$1
+	local shellenv
 
 	case $platform in
 	macos)
-		xcode-select -p >/dev/null 2>&1 || return 1
+		xcode-select -p >/dev/null 2>&1 || {
+			check_fail "xcode-command-line-tools-missing"
+			return
+		}
 		;;
 	esac
 
-	BOOTSTRAP_TOOL_BREW=$(find_homebrew) || return 1
-	eval "$("$BOOTSTRAP_TOOL_BREW" shellenv)"
+	BOOTSTRAP_TOOL_BREW=$(find_homebrew) || {
+		check_fail "homebrew-missing"
+		return
+	}
+	shellenv=$("$BOOTSTRAP_TOOL_BREW" shellenv) || {
+		check_fail "homebrew-shellenv-failed"
+		return
+	}
+	eval "$shellenv" || {
+		check_fail "homebrew-shellenv-failed"
+		return
+	}
 
-	BOOTSTRAP_TOOL_CURL=$(find_tool curl curl) || return 1
-	BOOTSTRAP_TOOL_GIT=$(find_tool git git) || return 1
-	BOOTSTRAP_TOOL_RUBY=$(find_tool ruby ruby) || return 1
+	BOOTSTRAP_TOOL_CURL=$(find_tool curl curl) || {
+		check_fail "curl-missing"
+		return
+	}
+	BOOTSTRAP_TOOL_GIT=$(find_tool git git) || {
+		check_fail "git-missing"
+		return
+	}
+	BOOTSTRAP_TOOL_RUBY=$(find_tool ruby ruby) || {
+		check_fail "ruby-missing"
+		return
+	}
 
-	"$BOOTSTRAP_TOOL_BREW" --prefix >/dev/null
-	"$BOOTSTRAP_TOOL_CURL" --version >/dev/null
-	"$BOOTSTRAP_TOOL_GIT" --version >/dev/null
-	"$BOOTSTRAP_TOOL_RUBY" --version >/dev/null
+	"$BOOTSTRAP_TOOL_BREW" --prefix >/dev/null || {
+		check_fail "homebrew-broken"
+		return
+	}
+	"$BOOTSTRAP_TOOL_CURL" --version >/dev/null || {
+		check_fail "curl-broken"
+		return
+	}
+	"$BOOTSTRAP_TOOL_GIT" --version >/dev/null || {
+		check_fail "git-broken"
+		return
+	}
+	"$BOOTSTRAP_TOOL_RUBY" --version >/dev/null || {
+		check_fail "ruby-broken"
+		return
+	}
 }
 
 record_bootstrap_state() {
@@ -236,7 +295,23 @@ record_bootstrap_state() {
 }
 
 run_apt() {
-	sudo env DEBIAN_FRONTEND=noninteractive apt-get "$@"
+	sudo_run env DEBIAN_FRONTEND=noninteractive apt-get "$@"
+}
+
+sudo_run() {
+	if [[ -t 0 ]]; then
+		sudo "$@"
+	else
+		sudo -n "$@"
+	fi
+}
+
+require_sudo() {
+	local reason=$1
+
+	command -v sudo >/dev/null || abort "sudo is required for $reason"
+	[[ ! -t 0 ]] || return
+	sudo -n true >/dev/null 2>&1 || abort "sudo is required for $reason; rerun bootstrap interactively or configure passwordless sudo"
 }
 
 state_path() {
@@ -251,8 +326,8 @@ state_path() {
 stop_apt_maintenance() {
 	command -v systemctl >/dev/null || return 0
 
-	sudo systemctl stop apt-daily.timer apt-daily-upgrade.timer || true
-	sudo systemctl stop apt-daily.service apt-daily-upgrade.service unattended-upgrades.service || true
+	sudo_run systemctl stop apt-daily.timer apt-daily-upgrade.timer || true
+	sudo_run systemctl stop apt-daily.service apt-daily-upgrade.service unattended-upgrades.service || true
 }
 
 wait_for_apt_locks() {
@@ -300,9 +375,20 @@ ensure_command_line_tools() {
 	abort "Xcode Command Line Tools installation started; rerun bootstrap after it finishes"
 }
 
+apt_base_ready() {
+	command -v curl >/dev/null &&
+		command -v file >/dev/null &&
+		command -v gcc >/dev/null &&
+		command -v git >/dev/null &&
+		command -v make >/dev/null &&
+		command -v ps >/dev/null
+}
+
 install_apt_base() {
 	command -v apt-get >/dev/null || return
+	apt_base_ready && return
 
+	require_sudo "apt base packages"
 	wait_for_apt_locks
 	run_apt update
 	run_apt install -y --no-install-recommends build-essential ca-certificates curl file git procps
@@ -314,7 +400,7 @@ install_homebrew() {
 	fi
 
 	bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-	abort "Homebrew was installed; rerun bootstrap"
+	find_homebrew >/dev/null || abort "Homebrew installer completed but brew was not found"
 }
 
 load_homebrew() {
@@ -423,7 +509,7 @@ main() {
 			return
 		fi
 
-		probe_bootstrap "$platform" || abort "bootstrap baseline is missing or incomplete"
+		probe_bootstrap "$platform" || abort "bootstrap baseline is missing or incomplete: ${BOOTSTRAP_CHECK_REASON:-unknown}"
 		((!record)) || record_bootstrap_state "$platform"
 		printf 'OK: bootstrap probe\n'
 		return

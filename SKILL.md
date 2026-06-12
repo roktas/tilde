@@ -126,7 +126,8 @@ For real local deployment or `remote-git`, require a clean worktree and pushed t
 controller. Run `bin/bootstrap` only when the target is missing the bootstrap baseline, the baseline is suspect, or the
 user explicitly asks for a bootstrap check. Cleaning deployment state is not a reason to rerun bootstrap.
 Run `bin/preflight` before planning; it starts with `bin/bootstrap --check --record` so compatible bootstrap state uses
-the fast path and missing or stale bootstrap state is probed before deployment continues.
+the fast path and missing or stale bootstrap state is probed before deployment continues. For normal apply/update
+preflight, missing or incomplete bootstrap baseline is recoverable: preflight runs idempotent bootstrap and re-checks.
 For Dropbox-internal symlinks, the plan must carry a relative link value even when source and target spell the Dropbox
 root differently, such as direct `~/Dropbox` paths versus macOS File Provider paths under
 `~/Library/CloudStorage/Dropbox`.

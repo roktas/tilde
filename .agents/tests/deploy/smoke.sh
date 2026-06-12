@@ -61,10 +61,13 @@ EOF
 # ------------------------------------------------------------------------------------------------------------------------
 
 main() {
+	local auto_home
 	local bootstrap
 	local bootstrap_bin
 	local bootstrap_home
 	local bootstrap_out
+	local cold_bin
+	local cold_home
 	local err
 	local fake_bin
 	local object
@@ -85,6 +88,9 @@ main() {
 	trap cleanup EXIT HUP INT QUIT TERM
 
 	err=$tmpdir/preflight.err
+	auto_home=$tmpdir/auto-home
+	cold_bin=$tmpdir/cold-bin
+	cold_home=$tmpdir/cold-home
 	fake_bin=$tmpdir/bin
 	repo=$tmpdir/repo
 	bootstrap_bin=$tmpdir/bootstrap-bin
@@ -92,10 +98,13 @@ main() {
 	bootstrap_out=$tmpdir/bootstrap.out
 
 	mkdir -p \
+		"$auto_home" \
 		"$bootstrap_bin" \
 		"$bootstrap_home/.linuxbrew/bin" \
 		"$bootstrap_home/.linuxbrew/opt/curl/bin" \
 		"$bootstrap_home/.linuxbrew/opt/ruby/bin" \
+		"$cold_bin" \
+		"$cold_home" \
 		"$fake_bin" \
 		"$repo"
 	printf '# Smoke\n' >"$repo/README.md"
@@ -107,6 +116,17 @@ main() {
 
 	write_bootstrap_state "$bootstrap_home" "$(platform_name)"
 	HOME=$bootstrap_home "$preflight" --require README.md "$repo" >/dev/null
+
+	cat >"$cold_bin/xcode-select" <<'EOF'
+#!/usr/bin/env bash
+exit 1
+EOF
+	chmod +x "$cold_bin/xcode-select"
+	if HOME=$cold_home PATH=$cold_bin:/usr/bin:/bin "$bootstrap" --check macos >/dev/null 2>"$err"; then
+		echo "expected bootstrap check detail to fail" >&2
+		exit 1
+	fi
+	grep -q "xcode-command-line-tools-missing" "$err"
 
 	if HOME=$bootstrap_home "$preflight" --require missing "$repo" >/dev/null 2>"$err"; then
 		echo "expected missing required path to fail" >&2
@@ -206,6 +226,80 @@ EOF
 EOF
 	HOME=$bootstrap_home PATH=$bootstrap_bin:/usr/bin:/bin "$preflight" --require README.md "$repo" >/dev/null
 	grep -q "bootstrap:" "$bootstrap_home/.local/state/tilde/hosts/$(host_name)/state.md"
+
+	mkdir -p \
+		"$auto_home/.linuxbrew/bin" \
+		"$auto_home/.linuxbrew/opt/curl/bin" \
+		"$auto_home/.linuxbrew/opt/git/bin" \
+		"$auto_home/.linuxbrew/opt/ruby/bin"
+	cat >"$auto_home/.linuxbrew/bin/brew" <<'EOF'
+#!/usr/bin/env bash
+write_tool() {
+	local formula=$1
+	local name=$2
+
+	mkdir -p "$HOME/.linuxbrew/opt/$formula/bin"
+	case $formula in
+	ruby)
+		cat >"$HOME/.linuxbrew/opt/$formula/bin/$name" <<'TOOL'
+#!/usr/bin/env bash
+if [[ ${1:-} == -ryaml ]]; then
+	shift
+	exec /usr/bin/ruby -ryaml -rdate "$@"
+fi
+
+printf 'ruby fake-homebrew\n'
+TOOL
+		;;
+	*)
+		cat >"$HOME/.linuxbrew/opt/$formula/bin/$name" <<'TOOL'
+#!/usr/bin/env bash
+printf '%s fake-homebrew\n' "$(basename "$0")"
+TOOL
+		;;
+	esac
+	chmod +x "$HOME/.linuxbrew/opt/$formula/bin/$name"
+}
+
+case ${1:-} in
+--prefix)
+	if (($# == 1)); then
+		printf '%s\n' "$HOME/.linuxbrew"
+	else
+		printf '%s/opt/%s\n' "$HOME/.linuxbrew" "$2"
+	fi
+	;;
+install)
+	shift
+	for formula; do
+		case $formula in
+		curl | git | ruby)
+			write_tool "$formula" "$formula"
+			;;
+		esac
+	done
+	;;
+update)
+	;;
+shellenv)
+	printf 'export PATH="%s/bin:$PATH"\n' "$HOME/.linuxbrew"
+	;;
+*)
+	exit 1
+	;;
+esac
+EOF
+	printf '#!/usr/bin/env bash\nexit 1\n' >"$auto_home/.linuxbrew/opt/curl/bin/curl"
+	printf '#!/usr/bin/env bash\nexit 1\n' >"$auto_home/.linuxbrew/opt/git/bin/git"
+	printf '#!/usr/bin/env bash\nexit 1\n' >"$auto_home/.linuxbrew/opt/ruby/bin/ruby"
+	chmod +x \
+		"$auto_home/.linuxbrew/bin/brew" \
+		"$auto_home/.linuxbrew/opt/curl/bin/curl" \
+		"$auto_home/.linuxbrew/opt/git/bin/git" \
+		"$auto_home/.linuxbrew/opt/ruby/bin/ruby"
+	HOME=$auto_home PATH=$bootstrap_bin:/usr/bin:/bin "$preflight" --require README.md "$repo" >/dev/null 2>"$err"
+	grep -q "bootstrap check failed; running bootstrap" "$err"
+	grep -q "bootstrap:" "$auto_home/.local/state/tilde/hosts/$(host_name)/state.md"
 
 	tree=$(git -C "$repo" rev-parse 'HEAD^{tree}')
 	object=$repo/.git/objects/${tree:0:2}/${tree:2}

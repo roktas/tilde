@@ -22,10 +22,31 @@ check_file_provider() {
 }
 
 check_bootstrap() {
+	local mode=$1
 	local root
 
 	root=$(cd -- "${BASH_SOURCE[0]%/*}/.." >/dev/null && pwd)
-	"$root/bin/bootstrap" --check --record
+
+	case $mode in
+	auto)
+		if "$root/bin/bootstrap" --check --record; then
+			return
+		fi
+
+		warn "W: bootstrap check failed; running bootstrap"
+		"$root/bin/bootstrap"
+		"$root/bin/bootstrap" --check --record
+		;;
+	check)
+		"$root/bin/bootstrap" --check --record
+		;;
+	skip)
+		;;
+	*)
+		warn "E: unsupported bootstrap mode: $mode"
+		return 2
+		;;
+	esac
 }
 
 check_repo() {
@@ -75,11 +96,12 @@ warn() {
 
 usage() {
 	cat <<-EOF
-		Usage: preflight [--require PATH] REPO...
+		Usage: preflight [--bootstrap auto|check|skip] [--require PATH] REPO...
 	EOF
 }
 
 main() {
+	local bootstrap=auto
 	local failed=0
 	local repo
 	local -a repos=()
@@ -90,6 +112,18 @@ main() {
 		--help)
 			usage
 			return
+			;;
+		--bootstrap)
+			(($# > 1)) || {
+				warn "E: --bootstrap needs a mode"
+				return 2
+			}
+			bootstrap=$2
+			shift 2
+			;;
+		--bootstrap=*)
+			bootstrap=${1#*=}
+			shift
 			;;
 		--require)
 			(($# > 1)) || {
@@ -121,7 +155,7 @@ main() {
 		return 2
 	fi
 
-	check_bootstrap || return 1
+	check_bootstrap "$bootstrap" || return 1
 
 	for repo in "${repos[@]}"; do
 		check_repo "$repo" "${required[@]}" || failed=1
