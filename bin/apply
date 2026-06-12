@@ -645,6 +645,10 @@ class Apply
     Socket.gethostname.split(".").first
   end
 
+  def input_plan_cache?
+    %w[apply repair].include?(target.fetch("mode"))
+  end
+
   def init_apply
     {
       schema: APPLY_SCHEMA,
@@ -689,11 +693,57 @@ class Apply
     @modules ||= @plans.flat_map { |plan| plan.fetch("modules", []) }
   end
 
+  def cache_actions(actions, modules, previous_actions)
+    skipped_ids = modules.select { |mod| mod["skipped"] }.map { |mod| mod.fetch("id") }
+    current_ids = actions.map { |action| action.fetch("module_id") }
+    preserved = Array(previous_actions).select do |action|
+      skipped_ids.include?(action["module_id"]) && !current_ids.include?(action["module_id"])
+    end
+
+    preserved + actions
+  end
+
+  def cache_core(cache, previous)
+    core = cache.fetch(:core)
+    previous_core = previous["core"]
+    return core unless previous_core.is_a?(Hash)
+
+    entrypoints = core["home_entrypoints_to_write"]
+    links = core["links_to_create"]
+    {
+      "home_entrypoints_to_write" =>
+        Array(entrypoints).empty? ? previous_core["home_entrypoints_to_write"] : entrypoints,
+      "links_to_create" =>
+        Array(links).empty? ? previous_core["links_to_create"] : links
+    }
+  end
+
+  def cache_modules(modules, previous_modules)
+    previous = previous_modules.to_h { |mod| [mod["id"], mod] }
+    modules.map do |mod|
+      mod["skipped"] ? previous.fetch(mod.fetch("id"), mod) : mod
+    end
+  end
+
   def cache_name(kind)
     mode = target.fetch("mode")
     return "last-#{kind}.json" if %w[apply repair].include?(mode)
 
     "last-#{mode}-#{kind}.json"
+  end
+
+  def cache_plan(cache)
+    return cache unless input_plan_cache?
+
+    previous = read_json(@last_plan_path)
+    return cache unless previous["schema"] == CACHE_SCHEMA
+
+    modules = cache_modules(cache.fetch(:modules), Array(previous["modules"]))
+    cache.merge(
+      core: cache_core(cache, previous),
+      modules:,
+      actions: cache_actions(cache.fetch(:actions), cache.fetch(:modules), previous["actions"])
+    )
   end
 
   def path_inside?(path, root)
@@ -749,6 +799,14 @@ class Apply
     data
   rescue JSON::ParserError
     nil
+  end
+
+  def read_json(path)
+    return {} unless path.file?
+
+    JSON.parse(path.read)
+  rescue JSON::ParserError
+    {}
   end
 
   def previous_done
@@ -1050,7 +1108,7 @@ class Apply
       actions:
     }
 
-    write_json(@last_plan_path, cache)
+    write_json(@last_plan_path, cache_plan(cache))
   end
 
   def write_state

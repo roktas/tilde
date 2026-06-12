@@ -463,10 +463,13 @@ EOF
 	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH "$apply" \
 		--plan "$skip_private_plan_json" --plan "$skip_plan_json" >"$skip_apply_json"
 
-	SKIP_APPLY_JSON=$skip_apply_json STATE_FILE=$state/tilde/hosts/$host/state.md ruby -rjson -ryaml -e '
+	SKIP_APPLY_JSON=$skip_apply_json LAST_PLAN=$state/tilde/hosts/$host/last-plan.json STATE_FILE=$state/tilde/hosts/$host/state.md ruby -rjson -ryaml -e '
 		apply = JSON.parse(File.read(ENV.fetch("SKIP_APPLY_JSON")))
+		last_plan = JSON.parse(File.read(ENV.fetch("LAST_PLAN")))
 		abort "skip apply should complete" unless apply.fetch("completed")
 		abort "skip apply should have no action results" unless apply.fetch("results").empty?
+		abort "skip apply should preserve cached link actions" unless last_plan.fetch("actions").any? { |action| action.fetch("kind") == "link" }
+		abort "skip apply should preserve cached module links" unless last_plan.fetch("modules").any? { |mod| mod.fetch("links_to_create", []).any? }
 		state, = File.read(ENV.fetch("STATE_FILE")).split(/^---\s*$/, 3)[1, 2]
 		frontmatter = YAML.safe_load(state)
 		done = frontmatter.fetch("done")
