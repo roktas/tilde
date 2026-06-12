@@ -249,6 +249,10 @@ EOF
 			abort "missing linux copilot-cli cask" unless copilot.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "cask:copilot-cli" }
 			abort "linux copilot wrapper should be removed" if copilot.fetch("links_to_create").any? { |link| link.fetch("source") == "bin/copilot" || link.fetch("target") == "~/Dropbox/allos/bin/copilot" }
 			abort "copilot should export COPILOT_HOME through environment.d" unless copilot.fetch("links_to_create").any? { |link| link.fetch("source") == "environment.d/copilot.conf" && link.fetch("target") == "~/.config/environment.d/copilot.conf" }
+			environment = linux.fetch("modules").find { |mod| mod.fetch("name") == "environment" }
+			abort "missing linux environment module" unless environment
+			abort "environment should link linux session.conf" unless environment.fetch("links_to_create").any? { |link| link.fetch("source") == "environment.d/session.linux.conf" && link.fetch("target") == "~/.config/environment.d/session.conf" }
+			abort "environment should not link legacy variables" if environment.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.config/environment/variables" || link.fetch("target") == "~/.config/environment.d/00-base.conf" }
 			abort "dropignore module should be removed" if linux.fetch("modules").any? { |mod| mod.fetch("name") == "dropignore" }
 			opencode = linux.fetch("modules").find { |mod| mod.fetch("name") == "opencode" }
 			abort "missing private opencode module" unless opencode
@@ -263,6 +267,10 @@ EOF
 			abort "missing macos codex cask" unless macos_codex.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "cask:codex" }
 			abort "macos codex should not install codex-switcher release" if macos_codex.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "github:Lampese/codex-switcher" }
 			abort "macos codex should use Dropbox File Provider ignore attributes" unless macos_codex.fetch("special_sections").dig("Postinstall", "body").include?("com.apple.fileprovider.ignore#P")
+			macos_environment = macos.fetch("modules").find { |mod| mod.fetch("name") == "environment" }
+			abort "missing macos environment module" unless macos_environment
+			abort "environment should link macos session.conf" unless macos_environment.fetch("links_to_create").any? { |link| link.fetch("source") == "environment.d/session.macos.conf" && link.fetch("target") == "~/.config/environment.d/session.conf" }
+			abort "macos environment should not link legacy variables" if macos_environment.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.config/environment/variables" || link.fetch("target") == "~/.config/environment.d/00-base.conf" }
 			copilot = macos.fetch("modules").find { |mod| mod.fetch("name") == "copilot" }
 			abort "missing macos copilot module" unless copilot
 			abort "missing macos copilot-cli cask" unless copilot.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "cask:copilot-cli" }
