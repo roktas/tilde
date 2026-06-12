@@ -40,6 +40,8 @@ class Status
       schema: data["schema"],
       started_at: data["started_at"],
       completed: data["completed"],
+      mode: data["mode"],
+      scope: data["scope"],
       result_count: Array(data["results"]).length
     }
   end
@@ -67,6 +69,8 @@ class Status
       path: display_path(path),
       schema: data["schema"],
       generated_at: data["generated_at"],
+      mode: data["mode"] || data.dig("plans", 0, "mode"),
+      scope: data["scope"] || data.dig("plans", 0, "scope"),
       repo: data["repo"],
       head: data["head"],
       module_count: modules.length,
@@ -103,7 +107,11 @@ class Status
     host_dir = @state_dir.join("hosts", @host)
     {
       last_plan: plan_surface(host_dir.join("last-plan.json")),
-      last_apply: apply_surface(host_dir.join("last-apply.json"))
+      last_apply: apply_surface(host_dir.join("last-apply.json")),
+      last_refresh_plan: plan_surface(host_dir.join("last-refresh-plan.json")),
+      last_refresh_apply: apply_surface(host_dir.join("last-refresh-apply.json")),
+      last_upgrade_plan: plan_surface(host_dir.join("last-upgrade-plan.json")),
+      last_upgrade_apply: apply_surface(host_dir.join("last-upgrade-apply.json"))
     }
   end
 
@@ -213,7 +221,7 @@ class Status
   def partial?(status)
     !status.dig(:config, :present) ||
       !status.dig(:host_state, :present) ||
-      !status.dig(:caches, :last_plan, :present)
+      !surface_plan(status)&.dig(:present)
   end
 
   def presence_line(present, path)
@@ -224,14 +232,24 @@ class Status
     host_state = status.fetch(:host_state)
     plan_cache = presence_line(status.dig(:caches, :last_plan, :present), status.dig(:caches, :last_plan, :path))
     apply_cache = presence_line(status.dig(:caches, :last_apply, :present), status.dig(:caches, :last_apply, :path))
+    refresh_cache = presence_line(
+      status.dig(:caches, :last_refresh_plan, :present),
+      status.dig(:caches, :last_refresh_plan, :path)
+    )
+    upgrade_cache = presence_line(
+      status.dig(:caches, :last_upgrade_plan, :present),
+      status.dig(:caches, :last_upgrade_plan, :path)
+    )
 
     puts("## Deployment")
     puts("- Config: #{presence_line(status.dig(:config, :present), status.dig(:config, :path))}")
     puts("- Host state: #{presence_line(host_state[:present], host_state[:path])}")
     puts("- Last apply date: `#{host_state[:date] || 'unknown'}`") if host_state[:present]
     puts("- Recorded modules: `#{host_state[:done_count]}`") if host_state[:present]
-    puts("- Last plan cache: #{plan_cache}")
-    puts("- Last apply cache: #{apply_cache}")
+    puts("- Last deployment plan cache: #{plan_cache}")
+    puts("- Last deployment apply cache: #{apply_cache}")
+    puts("- Last refresh plan cache: #{refresh_cache}")
+    puts("- Last upgrade plan cache: #{upgrade_cache}")
     puts
   end
 
@@ -244,17 +262,19 @@ class Status
   end
 
   def puts_managed_surface(status)
-    last_plan = status.dig(:caches, :last_plan)
+    last_plan = surface_plan(status)
+    refresh_plan = status.dig(:caches, :last_refresh_plan)
+    upgrade_plan = status.dig(:caches, :last_upgrade_plan)
 
     puts("## Managed Surface")
-    if last_plan[:present] && !last_plan[:error]
+    if last_plan&.dig(:present) && !last_plan[:error]
       puts("- Cached modules: `#{last_plan[:module_count]}`")
       puts("- Cached home entrypoints: `#{last_plan[:home_entrypoints] || 0}`")
       puts("- Cached links: `#{last_plan[:links]}`")
       puts("- Cached copies: `#{last_plan[:copies]}`")
       puts("- Cached install packages: `#{last_plan[:install_packages]}`")
-      puts("- Cached refresh packages: `#{last_plan[:refresh_packages]}`")
-      puts("- Cached upgrade packages: `#{last_plan[:upgrade_packages]}`")
+      puts("- Cached refresh packages: `#{refresh_plan_count(refresh_plan)}`")
+      puts("- Cached upgrade packages: `#{upgrade_plan_count(upgrade_plan)}`")
     else
       puts("- Cached surface unavailable. Fast status did not inspect module README files or live link targets.")
     end
@@ -361,11 +381,30 @@ class Status
     summary.merge(error: e.message)
   end
 
+  def refresh_plan_count(plan)
+    return 0 unless plan&.dig(:present) && !plan[:error]
+
+    plan[:refresh_packages]
+  end
+
   def repository_summary(config)
     {
       public: repo_summary("public", configured_path(@public, config && config["public"])),
       private: repo_summary("private", configured_path(@private, config && config["private"]))
     }
+  end
+
+  def surface_plan(status)
+    plan = status.dig(:caches, :last_plan)
+    return plan if plan&.dig(:present) && !%w[refresh upgrade].include?(plan[:mode])
+
+    nil
+  end
+
+  def upgrade_plan_count(plan)
+    return 0 unless plan&.dig(:present) && !plan[:error]
+
+    plan[:upgrade_packages]
   end
 
   def home_entrypoint_status
@@ -410,9 +449,9 @@ class Status
     end
 
     warnings << "No host deployment state was found for `#{@host}`." unless status.dig(:host_state, :present)
-    unless status.dig(:caches, :last_plan, :present)
+    unless surface_plan(status)&.dig(:present)
       warnings <<
-        "No cached plan was found; managed-surface counts require explicit " \
+        "No cached deployment plan was found; managed-surface counts require explicit " \
         "`$tilde status discover` or `$tilde doctor`."
     end
 

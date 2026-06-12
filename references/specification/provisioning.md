@@ -51,8 +51,8 @@ desired state and normal system package managers can both be brought current. `u
 - In `repair`, retry `notok` modules at the same `HEAD`.
 - In `upgrade`, run all full-refresh package and `Update` actions first, then broad or aggressive package-manager
   updates only after explicit confirmation.
-- Save deployment state for `apply` and `repair`. `refresh` and `upgrade` update apply/plan caches but do not overwrite
-  deployment state.
+- Save deployment state for `apply` and `repair`. `refresh` and `upgrade` update mode-specific apply/plan caches but do
+  not overwrite deployment state or deployment surface caches.
 
 ### Ordering
 

@@ -113,6 +113,10 @@ Suggested structure:
       state.md
       last-plan.json
       last-apply.json
+      last-refresh-plan.json
+      last-refresh-apply.json
+      last-upgrade-plan.json
+      last-upgrade-apply.json
   remotes/
     HOST/
       state.md
@@ -148,10 +152,11 @@ The `bootstrap` frontmatter entry records the last known bootstrap baseline resu
 path cache for bootstrap checks, not desired state. If it is missing, stale, or incompatible with current bootstrap
 requirements, `bin/bootstrap --check` must perform a live probe.
 
-`last-plan.json` and `last-apply.json` are read-only status caches after provisioning. `status` may summarize managed
-module, link, copy, and package counts from these files without regenerating a plan or checking live targets. If these
-cache files are missing, `status` must say that managed-surface counts are unavailable instead of silently performing a
-longer discovery pass.
+`last-plan.json` and `last-apply.json` are read-only deployment caches for the last `apply` or `repair` run. `status`
+may summarize managed module, link, copy, and install-package counts from these files without regenerating a plan or
+checking live targets. `last-refresh-*` and `last-upgrade-*` files record external-resource runs separately so a fast
+refresh does not erase the deployment surface cache. If the deployment cache files are missing, `status` must say that
+managed-surface counts are unavailable instead of silently performing a longer discovery pass.
 
 For remote deployments, the target host's state under its own `~/.local/state/tilde` is authoritative. The controller
 machine may keep a read-only mirror for status and history under `~/.local/state/tilde/remotes/HOST/`, but remote state

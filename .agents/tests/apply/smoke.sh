@@ -157,6 +157,7 @@ EOF
 
 main() {
 	local apply
+	local apply_before_refresh
 	local apply_json
 	local bad_err
 	local bad_condition_err
@@ -167,6 +168,7 @@ main() {
 	local home
 	local host
 	local plan
+	local plan_before_refresh
 	local plan_json
 	local private_plan_json
 	local private_repo
@@ -198,7 +200,9 @@ main() {
 	private_repo=$home/Dropbox/src/home-
 	bad_repo=$tmpdir/bad-home
 	fake_bin=$tmpdir/bin
+	apply_before_refresh=$tmpdir/apply-before-refresh.json
 	plan_json=$tmpdir/plan.json
+	plan_before_refresh=$tmpdir/plan-before-refresh.json
 	private_plan_json=$tmpdir/private-plan.json
 	refresh_apply_json=$tmpdir/refresh-apply.json
 	refresh_plan_json=$tmpdir/refresh-plan.json
@@ -473,20 +477,31 @@ EOF
 	'
 
 	cp "$state/tilde/hosts/$host/state.md" "$state_before_refresh"
+	cp "$state/tilde/hosts/$host/last-plan.json" "$plan_before_refresh"
+	cp "$state/tilde/hosts/$host/last-apply.json" "$apply_before_refresh"
 	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH "$plan" \
 		--repo "$repo" --mode refresh --platform linux --host "$host" >"$refresh_plan_json"
 	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH "$apply" \
 		--plan "$refresh_plan_json" >"$refresh_apply_json"
 	cmp -s "$state_before_refresh" "$state/tilde/hosts/$host/state.md"
+	cmp -s "$plan_before_refresh" "$state/tilde/hosts/$host/last-plan.json"
+	cmp -s "$apply_before_refresh" "$state/tilde/hosts/$host/last-apply.json"
+	[[ -f $state/tilde/hosts/$host/last-refresh-plan.json ]]
+	[[ -f $state/tilde/hosts/$host/last-refresh-apply.json ]]
 
 	grep -q '^brew update$' "$home/package-log"
 	grep -q '^brew upgrade$' "$home/package-log"
 	grep -q '^sudo apt-get update$' "$home/package-log"
 	grep -q '^sudo apt-get upgrade -y$' "$home/package-log"
 
-	REFRESH_APPLY_JSON=$refresh_apply_json ruby -rjson -e '
+	REFRESH_APPLY_JSON=$refresh_apply_json REFRESH_APPLY_CACHE=$state/tilde/hosts/$host/last-refresh-apply.json REFRESH_PLAN_CACHE=$state/tilde/hosts/$host/last-refresh-plan.json ruby -rjson -e '
 		apply = JSON.parse(File.read(ENV.fetch("REFRESH_APPLY_JSON")))
+		apply_cache = JSON.parse(File.read(ENV.fetch("REFRESH_APPLY_CACHE")))
+		plan_cache = JSON.parse(File.read(ENV.fetch("REFRESH_PLAN_CACHE")))
 		abort "refresh apply should complete" unless apply.fetch("completed")
+		abort "refresh apply cache should complete" unless apply_cache.fetch("completed")
+		abort "wrong refresh apply mode" unless apply_cache.fetch("mode") == "refresh"
+		abort "wrong refresh plan mode" unless plan_cache.fetch("mode") == "refresh"
 		commands = apply.fetch("results").flat_map { |result| result.fetch("diagnostics", {}).fetch("commands", []) }
 		abort "missing brew update diagnostics" unless commands.any? { |run| run.fetch("command") == %w[brew update] }
 		abort "missing brew upgrade diagnostics" unless commands.any? { |run| run.fetch("command") == %w[brew upgrade] }

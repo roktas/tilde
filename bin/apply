@@ -651,6 +651,8 @@ class Apply
       started_at: @started_at,
       completed: false,
       input_id:,
+      mode: target.fetch("mode"),
+      scope: target.fetch("scope"),
       plans: @plans.map { |plan| plan_metadata(plan) },
       results: []
     }
@@ -687,6 +689,13 @@ class Apply
     @modules ||= @plans.flat_map { |plan| plan.fetch("modules", []) }
   end
 
+  def cache_name(kind)
+    mode = target.fetch("mode")
+    return "last-#{kind}.json" if %w[apply repair].include?(mode)
+
+    "last-#{mode}-#{kind}.json"
+  end
+
   def path_inside?(path, root)
     path = path.expand_path
     root = root.expand_path
@@ -715,8 +724,8 @@ class Apply
     target = @plans.first.fetch("target")
     @state_root = Pathname.new(target.fetch("state_root")).expand_path
     @host_dir = @state_root.join("hosts", target.fetch("host"))
-    @last_apply_path = @host_dir.join("last-apply.json")
-    @last_plan_path = @host_dir.join("last-plan.json")
+    @last_apply_path = @host_dir.join(cache_name("apply"))
+    @last_plan_path = @host_dir.join(cache_name("plan"))
     @state_path = @host_dir.join("state.md")
     FileUtils.mkdir_p(@host_dir)
     @resume = read_resume
@@ -1030,6 +1039,8 @@ class Apply
       schema: CACHE_SCHEMA,
       generated_at: Time.now.iso8601,
       input_id:,
+      mode: target.fetch("mode"),
+      scope: target.fetch("scope"),
       plans: @plans,
       core: {
         "home_entrypoints_to_write" => core_entrypoints,

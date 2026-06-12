@@ -142,14 +142,16 @@ For `apply` and `repair` plans, host `state.md` folds action results into reposi
 is `ok` only when all required actions are `ok`, `unchanged`, or `ignored`; `deferred` and `notok` make the module
 `notok` with details in the state body. When an `apply` or `repair` plan skips modules because the current deployment
 state already covers them, state writing must preserve the previous module results for those skipped modules. An
-actionless apply must not collapse a populated `done` map to `{}`. `refresh` and `upgrade` plans update `last-plan.json`
-and `last-apply.json` but must not overwrite deployment `state.md`, because they are external-resource runs rather than
-desired-state deployment records.
+actionless apply must not collapse a populated `done` map to `{}`. `refresh` and `upgrade` plans write
+mode-specific `last-refresh-*` or `last-upgrade-*` caches but must not overwrite deployment `state.md` or deployment
+`last-plan.json`/`last-apply.json`, because they are external-resource runs rather than desired-state deployment
+records.
 
 `last-plan.json` is a combined cache of the confirmed public/private input plans, not another input plan. Its schema
 must identify the cache format separately from the executable `tilde.plan/v1` plan schema. `last-apply.json` and host
 state represent the same combined public/private deployment. Independent public and private writes must not overwrite
-each other's cached plan or apply results.
+each other's cached plan or apply results. External-resource caches use the same cache schema and are kept in
+mode-specific files such as `last-refresh-plan.json` and `last-refresh-apply.json`.
 
 When writing host deployment state, apply preserves the previous `bootstrap` frontmatter entry if one exists. Desired
 state deployment must not erase the bootstrap baseline cache.

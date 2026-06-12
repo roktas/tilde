@@ -113,7 +113,8 @@ command semantics and do not bypass proposal-first confirmation.
 
 - local Tilde config at `~/.local/state/tilde/config.yml`;
 - host deployment state at `~/.local/state/tilde/hosts/HOST/state.md`;
-- cached `last-plan.json` and `last-apply.json` when present;
+- cached deployment `last-plan.json` and `last-apply.json` when present;
+- cached refresh or upgrade plan/apply files when present;
 - configured public/private repository summaries;
 - home-entrypoint file and installed-skill facts.
 
