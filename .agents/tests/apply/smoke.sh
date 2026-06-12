@@ -398,6 +398,20 @@ EOF
 	grep -q '^gh release download --repo owner/tool --pattern tool_1\.2\.3_linux_amd64\.deb --dir .*/tilde-github-.* --clobber$' "$home/package-log"
 	grep -q '^sudo apt-get install -y .*/tool_1\.2\.3_linux_amd64\.deb$' "$home/package-log"
 
+	STATE_FILE=$state/tilde/hosts/$host/state.md ruby -ryaml -rdate -e '
+		path = ENV.fetch("STATE_FILE")
+		_head, yaml, body = File.read(path).split(/^---\s*$\n?/, 3)
+		frontmatter = YAML.safe_load(yaml, aliases: true, permitted_classes: [Date, Time])
+		frontmatter["bootstrap"] = {
+			"status" => "ok",
+			"schema" => "tilde.bootstrap/v1",
+			"platform" => "linux",
+			"requirements" => "sha256:test",
+			"checked_at" => "2026-01-01T00:00:00Z"
+		}
+		File.write(path, "---\n#{YAML.dump(frontmatter).delete_prefix("---\n")}---\n#{body}")
+	'
+
 	PLAN_JSON=$plan_json PRIVATE_PLAN_JSON=$private_plan_json SKIP_PLAN_JSON=$skip_plan_json SKIP_PRIVATE_PLAN_JSON=$skip_private_plan_json ruby -rjson -rdigest -e '
 		def canonicalize(value)
 			case value
@@ -444,6 +458,7 @@ EOF
 		state, = File.read(ENV.fetch("STATE_FILE")).split(/^---\s*$/, 3)[1, 2]
 		frontmatter = YAML.safe_load(state)
 		done = frontmatter.fetch("done")
+		abort "bootstrap state should be preserved" unless frontmatter.fetch("bootstrap").fetch("status") == "ok"
 		abort "skipped public ok module should be preserved" unless done.fetch("public/aaa-link") == "ok"
 		abort "skipped public notok module should be preserved" unless done.fetch("public/pkg") == "notok"
 		abort "skipped private module should be preserved" unless done.fetch("private/zzz-private") == "ok"

@@ -225,6 +225,11 @@ checkout-relative paths with `--require`; for example, require `AGENTS.md` for a
 or Git tree that cannot be traversed blocks deployment. Do not use an unbounded full-object `git fsck` during ordinary
 preflight; reserve deeper repository diagnosis for doctor flows.
 
+Preflight first runs `bin/bootstrap --check --record`. If compatible bootstrap state is already recorded in the target
+host state, the check returns through the fast path without probing the system. If that state is missing, stale, or
+incompatible, the check probes the bootstrap baseline and records an `ok` result in the host state when the probe
+succeeds. If the probe fails, preflight blocks normal deployment and the agent should propose running bootstrap.
+
 On macOS, File Provider status such as an active download, a checkout not marked keep downloaded, or a checkout not
 marked recursively downloaded is advisory. Report those flags, but let required-file and Git traversal checks decide
 whether the checkout is usable.
@@ -256,6 +261,11 @@ bin/bootstrap
 
 Do not rerun bootstrap merely because deployment state was cleaned or a host is being redeployed. Clean state means the
 planner and executor should behave like a fresh desired-state apply; it does not reset the target's bootstrap baseline.
+
+`bin/bootstrap --check` checks the bootstrap baseline without installing packages. It reads the target host state first:
+a compatible `bootstrap: {status: ok}` entry is a fast-path success. If `--probe` is given, or if compatible state is
+missing, it probes the system for the baseline tools. `--record` records a successful probe into the existing host
+`state.md` frontmatter. Normal bootstrap records the same `bootstrap` state after a successful install.
 
 When bootstrapping a remote target that does not have the installed skill yet, deliver the script over SSH:
 

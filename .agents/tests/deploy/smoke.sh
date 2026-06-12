@@ -14,6 +14,48 @@ cleanup() {
 	[[ -z $cleanup_tmpdir ]] || rm -rf "$cleanup_tmpdir"
 }
 
+host_name() {
+	local host
+
+	host=$(hostname -f 2>/dev/null || hostname)
+	host=${host%%.*}
+	printf '%s\n' "$host"
+}
+
+platform_name() {
+	case $(uname -s) in
+	Darwin)
+		printf 'macos\n'
+		;;
+	Linux)
+		printf 'linux\n'
+		;;
+	*)
+		printf 'unknown\n'
+		;;
+	esac
+}
+
+write_bootstrap_state() {
+	local home=$1
+	local platform=$2
+
+	local host
+
+	host=$(host_name)
+	mkdir -p "$home/.local/state/tilde/hosts/$host"
+	cat >"$home/.local/state/tilde/hosts/$host/state.md" <<EOF
+---
+host: $host
+bootstrap:
+  status: ok
+  schema: tilde.bootstrap/v1
+  platform: $platform
+  requirements: sha256:18ed5cbd4623dd0e94850f4d911130f93b5eff6286fd1d47815738832cc7b992
+---
+EOF
+}
+
 # ------------------------------------------------------------------------------------------------------------------------
 # Main
 # ------------------------------------------------------------------------------------------------------------------------
@@ -63,9 +105,10 @@ main() {
 	git -C "$repo" add README.md
 	git -C "$repo" commit -q -m init
 
-	"$preflight" --require README.md "$repo" >/dev/null
+	write_bootstrap_state "$bootstrap_home" "$(platform_name)"
+	HOME=$bootstrap_home "$preflight" --require README.md "$repo" >/dev/null
 
-	if "$preflight" --require missing "$repo" >/dev/null 2>"$err"; then
+	if HOME=$bootstrap_home "$preflight" --require missing "$repo" >/dev/null 2>"$err"; then
 		echo "expected missing required path to fail" >&2
 		exit 1
 	fi
@@ -85,7 +128,8 @@ STATUS
 EOF
 	chmod +x "$fake_bin/fileproviderctl" "$fake_bin/uname"
 
-	PATH=$fake_bin:$PATH "$preflight" "$repo" >/dev/null 2>"$err"
+	write_bootstrap_state "$bootstrap_home" macos
+	HOME=$bootstrap_home PATH=$fake_bin:$PATH "$preflight" "$repo" >/dev/null 2>"$err"
 	grep -q "checkout is downloading" "$err"
 	grep -q "checkout is not marked keep downloaded" "$err"
 	grep -q "checkout is not recursively downloaded" "$err"
@@ -122,8 +166,18 @@ EOF
 #!/usr/bin/env bash
 printf 'curl fake-homebrew\n'
 EOF
+	mkdir -p "$bootstrap_home/.linuxbrew/opt/git/bin"
+	cat >"$bootstrap_home/.linuxbrew/opt/git/bin/git" <<'EOF'
+#!/usr/bin/env bash
+printf 'git fake-homebrew\n'
+EOF
 	cat >"$bootstrap_home/.linuxbrew/opt/ruby/bin/ruby" <<'EOF'
 #!/usr/bin/env bash
+if [[ ${1:-} == -ryaml ]]; then
+	shift
+	exec /usr/bin/ruby -ryaml -rdate "$@"
+fi
+
 printf 'ruby fake-homebrew\n'
 EOF
 	chmod +x \
@@ -131,18 +185,27 @@ EOF
 		"$bootstrap_bin/sudo" \
 		"$bootstrap_home/.linuxbrew/bin/brew" \
 		"$bootstrap_home/.linuxbrew/opt/curl/bin/curl" \
+		"$bootstrap_home/.linuxbrew/opt/git/bin/git" \
 		"$bootstrap_home/.linuxbrew/opt/ruby/bin/ruby"
 
 	HOME=$bootstrap_home PATH=$bootstrap_bin:/usr/bin:/bin "$bootstrap" linux >"$bootstrap_out"
 	grep -q "ruby fake-homebrew" "$bootstrap_out"
+	grep -q "git fake-homebrew" "$bootstrap_out"
 	grep -q "curl fake-homebrew" "$bootstrap_out"
 	grep -Fq "$bootstrap_home/.linuxbrew/bin/brew shellenv" "$bootstrap_home/.profile"
+	grep -q "bootstrap:" "$bootstrap_home/.local/state/tilde/hosts/$(host_name)/state.md"
+	HOME=$bootstrap_home PATH=$bootstrap_bin:/usr/bin:/bin "$bootstrap" --check linux >"$bootstrap_out"
+	grep -q "OK: bootstrap state" "$bootstrap_out"
+	rm -f "$bootstrap_home/.local/state/tilde/hosts/$(host_name)/state.md"
+	HOME=$bootstrap_home PATH=$bootstrap_bin:/usr/bin:/bin "$preflight" --require README.md "$repo" >/dev/null
+	grep -q "bootstrap:" "$bootstrap_home/.local/state/tilde/hosts/$(host_name)/state.md"
 
 	tree=$(git -C "$repo" rev-parse 'HEAD^{tree}')
 	object=$repo/.git/objects/${tree:0:2}/${tree:2}
 	rm -f "$object"
 
-	if "$preflight" "$repo" >/dev/null 2>"$err"; then
+	write_bootstrap_state "$bootstrap_home" "$(platform_name)"
+	if HOME=$bootstrap_home "$preflight" "$repo" >/dev/null 2>"$err"; then
 		echo "expected missing Git tree object to fail" >&2
 		exit 1
 	fi

@@ -21,6 +21,13 @@ check_file_provider() {
 	[[ $status != *'isRecursivelyDownloaded = 0;'* ]] || warn "W: checkout is not recursively downloaded: $repo"
 }
 
+check_bootstrap() {
+	local root
+
+	root=$(cd -- "${BASH_SOURCE[0]%/*}/.." >/dev/null && pwd)
+	"$root/bin/bootstrap" --check --record
+}
+
 check_repo() {
 	local repo=$1
 	shift
@@ -113,6 +120,8 @@ main() {
 		usage >&2
 		return 2
 	fi
+
+	check_bootstrap || return 1
 
 	for repo in "${repos[@]}"; do
 		check_repo "$repo" "${required[@]}" || failed=1

@@ -4,6 +4,14 @@ set -Eeuo pipefail
 [[ -z ${TRACE:-} ]] || set -x
 unset CDPATH
 
+readonly BOOTSTRAP_REQUIREMENTS="sha256:18ed5cbd4623dd0e94850f4d911130f93b5eff6286fd1d47815738832cc7b992"
+readonly BOOTSTRAP_SCHEMA="tilde.bootstrap/v1"
+
+BOOTSTRAP_TOOL_BREW=
+BOOTSTRAP_TOOL_CURL=
+BOOTSTRAP_TOOL_GIT=
+BOOTSTRAP_TOOL_RUBY=
+
 abort() {
 	warn "E: $*"
 	exit 1
@@ -29,6 +37,52 @@ apt_lock_pids() {
 	{ sudo fuser "${locks[@]}" 2>/dev/null || true; } | tr ' ' '\n' | sed '/^$/d' | sort -u
 }
 
+bootstrap_state_value() {
+	local key=$1
+
+	local state
+
+	state=$(state_path)
+	[[ -f $state ]] || return 1
+
+	awk -v key="$key" '
+		/^---[[:space:]]*$/ {
+			if (!front) {
+				front = 1
+				next
+			}
+			exit
+		}
+		front && /^bootstrap:[[:space:]]*$/ {
+			inside = 1
+			next
+		}
+		front && inside && /^[^[:space:]]/ {
+			inside = 0
+		}
+		front && inside {
+			line = $0
+			sub(/^[[:space:]]+/, "", line)
+			if (line ~ "^" key ":") {
+				sub(/^[^:]*:[[:space:]]*/, "", line)
+				gsub(/^'\''|'\''$/, "", line)
+				gsub(/^"|"$/, "", line)
+				print line
+				exit
+			}
+		}
+	' "$state"
+}
+
+bootstrap_state_ok() {
+	local platform=$1
+
+	[[ $(bootstrap_state_value status 2>/dev/null || true) == ok ]] || return 1
+	[[ $(bootstrap_state_value schema 2>/dev/null || true) == "$BOOTSTRAP_SCHEMA" ]] || return 1
+	[[ $(bootstrap_state_value platform 2>/dev/null || true) == "$platform" ]] || return 1
+	[[ $(bootstrap_state_value requirements 2>/dev/null || true) == "$BOOTSTRAP_REQUIREMENTS" ]] || return 1
+}
+
 detect_platform() {
 	case $(uname -s) in
 	Darwin)
@@ -41,6 +95,30 @@ detect_platform() {
 		abort "unsupported bootstrap platform: $(uname -s)"
 		;;
 	esac
+}
+
+find_tool() {
+	local formula=$1
+	local name=$2
+
+	local found
+	local path
+	local prefix
+
+	if prefix=$(brew --prefix "$formula" 2>/dev/null); then
+		path=$prefix/bin/$name
+		if [[ -x $path ]]; then
+			printf '%s\n' "$path"
+			return
+		fi
+	fi
+
+	if found=$(command -v "$name" 2>/dev/null); then
+		printf '%s\n' "$found"
+		return
+	fi
+
+	return 1
 }
 
 find_homebrew() {
@@ -67,8 +145,102 @@ find_homebrew() {
 	return 1
 }
 
+host_name() {
+	local host
+
+	host=$(hostname -f 2>/dev/null || hostname)
+	host=${host%%.*}
+	printf '%s\n' "$host"
+}
+
+probe_bootstrap() {
+	local platform=$1
+
+	case $platform in
+	macos)
+		xcode-select -p >/dev/null 2>&1 || return 1
+		;;
+	esac
+
+	BOOTSTRAP_TOOL_BREW=$(find_homebrew) || return 1
+	eval "$("$BOOTSTRAP_TOOL_BREW" shellenv)"
+
+	BOOTSTRAP_TOOL_CURL=$(find_tool curl curl) || return 1
+	BOOTSTRAP_TOOL_GIT=$(find_tool git git) || return 1
+	BOOTSTRAP_TOOL_RUBY=$(find_tool ruby ruby) || return 1
+
+	"$BOOTSTRAP_TOOL_BREW" --prefix >/dev/null
+	"$BOOTSTRAP_TOOL_CURL" --version >/dev/null
+	"$BOOTSTRAP_TOOL_GIT" --version >/dev/null
+	"$BOOTSTRAP_TOOL_RUBY" --version >/dev/null
+}
+
+record_bootstrap_state() {
+	local platform=$1
+
+	local state
+
+	state=$(state_path)
+	mkdir -p "${state%/*}"
+
+	# shellcheck disable=SC2016
+	TILDE_BOOTSTRAP_CHECKED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ") \
+	TILDE_BOOTSTRAP_CURL=$BOOTSTRAP_TOOL_CURL \
+	TILDE_BOOTSTRAP_GIT=$BOOTSTRAP_TOOL_GIT \
+	TILDE_BOOTSTRAP_BREW=$BOOTSTRAP_TOOL_BREW \
+	TILDE_BOOTSTRAP_HOST=$(host_name) \
+	TILDE_BOOTSTRAP_PLATFORM=$platform \
+	TILDE_BOOTSTRAP_REQUIREMENTS=$BOOTSTRAP_REQUIREMENTS \
+	TILDE_BOOTSTRAP_RUBY=$BOOTSTRAP_TOOL_RUBY \
+	TILDE_BOOTSTRAP_SCHEMA=$BOOTSTRAP_SCHEMA \
+	TILDE_BOOTSTRAP_STATE=$state \
+		"$BOOTSTRAP_TOOL_RUBY" -ryaml -rdate -e '
+		path = ENV.fetch("TILDE_BOOTSTRAP_STATE")
+		text = File.file?(path) ? File.read(path) : ""
+		frontmatter = {}
+		body = ""
+
+		if text.start_with?("---\n")
+			_head, yaml, body = text.split(/^---\s*$\n?/, 3)
+			frontmatter = YAML.safe_load(yaml, aliases: true, permitted_classes: [Date, Time]) || {}
+			body ||= ""
+		else
+			body = text
+		end
+
+		frontmatter["host"] ||= ENV.fetch("TILDE_BOOTSTRAP_HOST")
+		frontmatter["date"] ||= ENV.fetch("TILDE_BOOTSTRAP_CHECKED_AT")
+		frontmatter["bootstrap"] = {
+			"status" => "ok",
+			"schema" => ENV.fetch("TILDE_BOOTSTRAP_SCHEMA"),
+			"platform" => ENV.fetch("TILDE_BOOTSTRAP_PLATFORM"),
+			"requirements" => ENV.fetch("TILDE_BOOTSTRAP_REQUIREMENTS"),
+			"checked_at" => ENV.fetch("TILDE_BOOTSTRAP_CHECKED_AT"),
+			"tools" => {
+				"brew" => ENV.fetch("TILDE_BOOTSTRAP_BREW"),
+				"curl" => ENV.fetch("TILDE_BOOTSTRAP_CURL"),
+				"git" => ENV.fetch("TILDE_BOOTSTRAP_GIT"),
+				"ruby" => ENV.fetch("TILDE_BOOTSTRAP_RUBY")
+			}
+		}
+
+		temp = "#{path}.tmp-#{$PROCESS_ID}"
+		File.write(temp, "---\n#{YAML.dump(frontmatter).delete_prefix("---\n")}---\n#{body}")
+		File.rename(temp, path)
+	'
+}
+
 run_apt() {
 	sudo env DEBIAN_FRONTEND=noninteractive apt-get "$@"
+}
+
+state_path() {
+	local host
+	local root
+
+	host=$(host_name)
+	root=${XDG_STATE_HOME:-"$HOME/.local/state"}
+	printf '%s\n' "$root/tilde/hosts/$host/state.md"
 }
 
 stop_apt_maintenance() {
@@ -151,7 +323,7 @@ load_homebrew_tools() {
 	local formula
 	local prefix
 
-	for formula in curl ruby; do
+	for formula in curl git ruby; do
 		prefix=$(brew --prefix "$formula")
 		PATH=$prefix/bin:$PATH
 	done
@@ -192,22 +364,64 @@ persist_homebrew() {
 
 usage() {
 	cat <<-EOF
-		Usage: bootstrap [linux|macos]
+		Usage: bootstrap [--check] [--probe] [--record] [linux|macos]
 	EOF
 }
 
 main() {
-	if (($# > 1)); then
-		usage
-		exit 2
+	local check=0
+	local platform
+	local probe=0
+	local record=0
+
+	while (($# > 0)); do
+		case $1 in
+		--check)
+			check=1
+			shift
+			;;
+		--help)
+			usage
+			return
+			;;
+		--probe)
+			probe=1
+			shift
+			;;
+		--record)
+			record=1
+			shift
+			;;
+		linux | macos)
+			[[ -z ${platform:-} ]] || {
+				usage >&2
+				return 2
+			}
+			platform=$1
+			shift
+			;;
+		*)
+			warn "E: unknown option or platform: $1"
+			usage >&2
+			return 2
+			;;
+		esac
+	done
+
+	if [[ -z ${platform:-} ]]; then
+		platform=$(detect_platform)
 	fi
 
-	local platform
+	if ((check)); then
+		if ((!probe)) && bootstrap_state_ok "$platform"; then
+			printf 'OK: bootstrap state\n'
+			return
+		fi
 
-	if (($# == 0)); then
-		platform=$(detect_platform)
-	else
-		platform=$1
+		probe_bootstrap "$platform" || abort "bootstrap baseline is missing or incomplete"
+		((!record)) || record_bootstrap_state "$platform"
+		printf 'OK: bootstrap probe\n'
+		return
 	fi
 
 	case $platform in
@@ -233,6 +447,11 @@ main() {
 	ruby --version
 	git --version
 	curl --version | head -n 1
+	BOOTSTRAP_TOOL_BREW=$(find_homebrew)
+	BOOTSTRAP_TOOL_CURL=$(find_tool curl curl)
+	BOOTSTRAP_TOOL_GIT=$(find_tool git git)
+	BOOTSTRAP_TOOL_RUBY=$(find_tool ruby ruby)
+	record_bootstrap_state "$platform"
 }
 
 main "$@"

@@ -132,6 +132,7 @@ Host state frontmatter records enough provenance to explain what was applied:
 
 - `host`: short host name.
 - `date`: provisioning time.
+- `bootstrap`: bootstrap baseline status when it has been checked or installed.
 - `skill`: installed skill path or version.
 - `head`: public repository `HEAD` at provisioning time, retained for compatibility with current plan helpers.
 - `public`: public repository path and commit.
@@ -139,6 +140,12 @@ Host state frontmatter records enough provenance to explain what was applied:
 - `done`: ordered map of provisioned module directories. Values are `ok`, `notok`, or `ignored`.
 
 The deployment state body is optional. Use it for details that may help resolve future `notok` modules.
+
+The `bootstrap` frontmatter entry records the last known bootstrap baseline result for the host. It uses schema
+`tilde.bootstrap/v1`, has a `status` such as `ok`, records the platform and requirements hash used by
+`bin/bootstrap --check`, and may record resolved tool paths for `brew`, `ruby`, `git`, and `curl`. This entry is a fast
+path cache for bootstrap checks, not desired state. If it is missing, stale, or incompatible with current bootstrap
+requirements, `bin/bootstrap --check` must perform a live probe.
 
 `last-plan.json` and `last-apply.json` are read-only status caches after provisioning. `status` may summarize managed
 module, link, copy, and package counts from these files without regenerating a plan or checking live targets. If these

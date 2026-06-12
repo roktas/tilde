@@ -748,20 +748,29 @@ class Apply
     @previous_done = read_state_done
   end
 
+  def previous_bootstrap
+    return @previous_bootstrap if defined?(@previous_bootstrap)
+
+    @previous_bootstrap = read_state_frontmatter.fetch("bootstrap", nil)
+  end
+
   def previous_module_status(mod)
     previous_done[mod.fetch("id")] || previous_done[mod.fetch("name")]
   end
 
   def read_state_done
+    done = read_state_frontmatter["done"]
+    done.is_a?(Hash) ? done : {}
+  end
+
+  def read_state_frontmatter
     return {} unless @state_path.file?
 
     text = @state_path.read
     return {} unless text.start_with?("---\n")
 
     _head, yaml, _body = text.split(/^---\s*$\n?/, 3)
-    frontmatter = YAML.safe_load(yaml, aliases: true, permitted_classes: [Date, Time]) || {}
-    done = frontmatter["done"]
-    done.is_a?(Hash) ? done : {}
+    YAML.safe_load(yaml, aliases: true, permitted_classes: [Date, Time]) || {}
   rescue Psych::SyntaxError
     {}
   end
@@ -1052,6 +1061,7 @@ class Apply
     frontmatter = {
       "host" => target.fetch("host"),
       "date" => Time.now.iso8601,
+      "bootstrap" => previous_bootstrap,
       "public" => role_repository("public"),
       "private" => role_repository("private"),
       "done" => module_results

@@ -151,6 +151,9 @@ must identify the cache format separately from the executable `tilde.plan/v1` pl
 state represent the same combined public/private deployment. Independent public and private writes must not overwrite
 each other's cached plan or apply results.
 
+When writing host deployment state, apply preserves the previous `bootstrap` frontmatter entry if one exists. Desired
+state deployment must not erase the bootstrap baseline cache.
+
 ## Non-Goals
 
 The first executor does not:
