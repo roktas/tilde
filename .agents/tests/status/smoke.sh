@@ -142,6 +142,7 @@ EOF
 		abort "wrong plan schema" unless plan.fetch("schema") == "tilde.cache/v1"
 		abort "wrong plan mode" unless plan.fetch("mode") == "apply"
 		abort "wrong module count" unless plan.fetch("module_count") == 1
+		abort "deployment fixture should not be partial" if plan.fetch("partial_surface")
 		abort "wrong link count" unless plan.fetch("links") == 2
 		abort "wrong copy count" unless plan.fetch("copies") == 1
 		abort "wrong install package count" unless plan.fetch("install_packages") == 1

@@ -74,6 +74,7 @@ class Status
       repo: data["repo"],
       head: data["head"],
       module_count: modules.length,
+      partial_surface: modules.any? { |mod| mod["skipped"] },
       links: Array(data.dig("core", "links_to_create")).length + action_count(modules, "links_to_create"),
       home_entrypoints: Array(data.dig("core", "home_entrypoints_to_write")).length,
       copies: action_count(modules, "copies_to_create"),
@@ -269,10 +270,17 @@ class Status
     puts("## Managed Surface")
     if last_plan&.dig(:present) && !last_plan[:error]
       puts("- Cached modules: `#{last_plan[:module_count]}`")
-      puts("- Cached home entrypoints: `#{last_plan[:home_entrypoints] || 0}`")
-      puts("- Cached links: `#{last_plan[:links]}`")
-      puts("- Cached copies: `#{last_plan[:copies]}`")
-      puts("- Cached install packages: `#{last_plan[:install_packages]}`")
+      if last_plan[:partial_surface]
+        puts("- Cached home entrypoints: unavailable from partial deployment cache")
+        puts("- Cached links: unavailable from partial deployment cache")
+        puts("- Cached copies: unavailable from partial deployment cache")
+        puts("- Cached install packages: unavailable from partial deployment cache")
+      else
+        puts("- Cached home entrypoints: `#{last_plan[:home_entrypoints] || 0}`")
+        puts("- Cached links: `#{last_plan[:links]}`")
+        puts("- Cached copies: `#{last_plan[:copies]}`")
+        puts("- Cached install packages: `#{last_plan[:install_packages]}`")
+      end
       puts("- Cached refresh packages: `#{refresh_plan_count(refresh_plan)}`")
       puts("- Cached upgrade packages: `#{upgrade_plan_count(upgrade_plan)}`")
     else
