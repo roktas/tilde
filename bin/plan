@@ -535,19 +535,28 @@ class Plan
   end
 
   def link_value(source_path, target)
-    source = Pathname.new(source_path)
+    source = Pathname.new(source_path).expand_path
     target_path = target_path(target)
-    dropbox = Pathname.new(Dir.home).join("Dropbox").expand_path
+    source_dropbox = dropbox_path(source)
+    target_dropbox = dropbox_path(target_path)
 
-    return source_path unless path_inside?(source, dropbox) && path_inside?(target_path, dropbox)
+    return source_path unless source_dropbox && target_dropbox
 
-    source.relative_path_from(target_path.dirname).to_s
+    source_dropbox.relative_path_from(target_dropbox.dirname).to_s
   end
 
   def path_inside?(path, root)
     path = path.expand_path
     root = root.expand_path
     path.to_s == root.to_s || path.to_s.start_with?("#{root}/")
+  end
+
+  def dropbox_path(path)
+    names = path.expand_path.each_filename.to_a
+    index = names.rindex("Dropbox")
+    return nil unless index
+
+    Pathname.new(File.join("/", "Dropbox", *names[(index + 1)..]))
   end
 
   def target_path(target)

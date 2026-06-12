@@ -30,6 +30,8 @@ main() {
 	local dirty_plan_err
 	local extra_module
 	local extra_plan_json
+	local file_provider_plan_json
+	local file_provider_repo
 	local full_refresh_plan_json
 	local head
 	local invalid_plan_err
@@ -80,6 +82,7 @@ main() {
 	export XDG_STATE_HOME=$tmpdir/state
 	dirty_plan_err=$tmpdir/dirty-plan.err
 	extra_plan_json=$tmpdir/extra-plan.json
+	file_provider_plan_json=$tmpdir/file-provider-plan.json
 	full_refresh_plan_json=$tmpdir/full-refresh-plan.json
 	invalid_plan_err=$tmpdir/invalid-package-plan.err
 	invalid_plan_json=$tmpdir/invalid-package-plan.json
@@ -266,6 +269,51 @@ EOF
 			abort "macos dropignore module should be removed" if macos.fetch("modules").any? { |mod| mod.fetch("name") == "dropignore" }
 		'
 	fi
+
+	file_provider_repo=$tmpdir/file-provider/Library/CloudStorage/Dropbox/home-
+	mkdir -p "$file_provider_repo/codex/bin" "$file_provider_repo/codex/hooks"
+	cat >"$file_provider_repo/AGENTS.md" <<'EOF'
+---
+tilde:
+  protocol: tilde/v1
+  role: private
+---
+
+# Private File Provider Smoke
+EOF
+	cat >"$file_provider_repo/codex/README.md" <<'EOF'
+---
+all:
+  links:
+    bin/codex-switcher: ~/Dropbox/allos/bin/codex-switcher
+    hooks/: ~/Dropbox/allos/var/codex/hooks
+---
+
+# Codex
+EOF
+	touch "$file_provider_repo/codex/bin/codex-switcher" "$file_provider_repo/codex/hooks/shellcheck"
+
+	git -C "$file_provider_repo" init -q
+	git -C "$file_provider_repo" config user.email smoke@example.invalid
+	git -C "$file_provider_repo" config user.name Smoke
+	git -C "$file_provider_repo" add AGENTS.md codex
+	git -C "$file_provider_repo" commit -q -m init
+
+	HOME=$tmpdir/file-provider "$plan" --repo "$file_provider_repo" --platform macos --host smoke >"$file_provider_plan_json"
+
+	FILE_PROVIDER_PLAN_JSON=$file_provider_plan_json ruby -rjson -e '
+		plan = JSON.parse(File.read(ENV.fetch("FILE_PROVIDER_PLAN_JSON")))
+		dropbox_actions = plan.fetch("actions").select { |action| action.fetch("kind") == "link" && action.fetch("target").start_with?("~/Dropbox/") }
+		abort "missing Dropbox actions" if dropbox_actions.empty?
+		absolute = dropbox_actions.find { |action| action.fetch("link_value").start_with?("/") }
+		abort "Dropbox action should not use host-absolute link value: #{absolute.fetch("id")}" if absolute
+		wrapper = dropbox_actions.find { |action| action.fetch("target") == "~/Dropbox/allos/bin/codex-switcher" }
+		abort "missing file-provider wrapper link" unless wrapper
+		abort "wrapper should use logical Dropbox-relative value" unless wrapper.fetch("link_value") == "../../home-/codex/bin/codex-switcher"
+		hook = dropbox_actions.find { |action| action.fetch("target") == "~/Dropbox/allos/var/codex/hooks/shellcheck" }
+		abort "missing file-provider hook link" unless hook
+		abort "hook should use logical Dropbox-relative value" unless hook.fetch("link_value") == "../../../../home-/codex/hooks/shellcheck"
+	'
 
 	rm -rf "$target_module"
 	mkdir -p "$target_module/bin"

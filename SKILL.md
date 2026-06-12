@@ -127,6 +127,9 @@ controller. Run `bin/bootstrap` only when the target is missing the bootstrap ba
 user explicitly asks for a bootstrap check. Cleaning deployment state is not a reason to rerun bootstrap.
 Run `bin/preflight` before planning; it starts with `bin/bootstrap --check --record` so compatible bootstrap state uses
 the fast path and missing or stale bootstrap state is probed before deployment continues.
+For Dropbox-internal symlinks, the plan must carry a relative link value even when source and target spell the Dropbox
+root differently, such as direct `~/Dropbox` paths versus macOS File Provider paths under
+`~/Library/CloudStorage/Dropbox`.
 
 For remote SSH orchestration, do not rely on the target login shell. The canonical multi-command form is a POSIX
 `sh -s` heredoc; use this shape for remote dry-run, update, deploy, status, and doctor snippets:

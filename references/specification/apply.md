@@ -109,7 +109,9 @@ Examples:
 
 A link action includes the exact symbolic-link value to write. When source and target are both inside the same
 Dropbox-synced tree, the planner must emit an equivalent relative link value so the link remains valid across Linux and
-macOS home prefixes. The executor writes that value exactly and never expands it back to a host-specific absolute path.
+macOS home prefixes. This comparison is by logical Dropbox-relative path, not by literal host path prefix; direct
+`~/Dropbox` paths and macOS File Provider paths such as `~/Library/CloudStorage/Dropbox` can refer to the same synced
+tree. The executor writes that value exactly and never expands it back to a host-specific absolute path.
 
 If the target is already the desired link or copy, the result is `unchanged`.
 
