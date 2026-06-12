@@ -17,6 +17,18 @@ warn() {
 # Helpers
 # ------------------------------------------------------------------------------------------------------------------------
 
+apt_lock_pids() {
+	local -a locks=(
+		/var/lib/apt/lists/lock
+		/var/lib/dpkg/lock
+		/var/lib/dpkg/lock-frontend
+	)
+
+	command -v fuser >/dev/null || return 0
+
+	{ sudo fuser "${locks[@]}" 2>/dev/null || true; } | tr ' ' '\n' | sed '/^$/d' | sort -u
+}
+
 detect_platform() {
 	case $(uname -s) in
 	Darwin)
@@ -55,6 +67,49 @@ find_homebrew() {
 	return 1
 }
 
+run_apt() {
+	sudo env DEBIAN_FRONTEND=noninteractive apt-get "$@"
+}
+
+stop_apt_maintenance() {
+	command -v systemctl >/dev/null || return 0
+
+	sudo systemctl stop apt-daily.timer apt-daily-upgrade.timer || true
+	sudo systemctl stop apt-daily.service apt-daily-upgrade.service unattended-upgrades.service || true
+}
+
+wait_for_apt_locks() {
+	local deadline=$((SECONDS + ${TILDE_BOOTSTRAP_APT_LOCK_WAIT:-120}))
+	local mode=${TILDE_BOOTSTRAP_APT_LOCK:-wait}
+	local -a pids
+
+	while true; do
+		mapfile -t pids < <(apt_lock_pids)
+		((${#pids[@]} == 0)) && return
+
+		warn "apt/dpkg lock is held by:"
+		ps -fp "${pids[@]}" >&2 || true
+
+		case $mode in
+		fail)
+			abort "apt/dpkg lock is busy"
+			;;
+		stop)
+			stop_apt_maintenance
+			mode="wait"
+			;;
+		wait)
+			;;
+		*)
+			abort "unsupported TILDE_BOOTSTRAP_APT_LOCK: $mode"
+			;;
+		esac
+
+		((SECONDS < deadline)) || abort "apt/dpkg lock did not clear; rerun with TILDE_BOOTSTRAP_APT_LOCK=stop to stop apt maintenance"
+		sleep 5
+	done
+}
+
 # ------------------------------------------------------------------------------------------------------------------------
 # Commands
 # ------------------------------------------------------------------------------------------------------------------------
@@ -71,8 +126,9 @@ ensure_command_line_tools() {
 install_apt_base() {
 	command -v apt-get >/dev/null || return
 
-	sudo apt-get update
-	sudo apt-get install -y --no-install-recommends build-essential ca-certificates curl file git procps
+	wait_for_apt_locks
+	run_apt update
+	run_apt install -y --no-install-recommends build-essential ca-certificates curl file git procps
 }
 
 install_homebrew() {

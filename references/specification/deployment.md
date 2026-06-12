@@ -120,6 +120,11 @@ This flow identifies public/private repositories, validates repository roles, wr
 confirmation, writes or updates the home entrypoint after confirmation, runs bootstrap/preflight when needed, generates
 a provisioning plan, and applies only after explicit confirmation.
 
+After repository paths are resolved for a local or remote deployment, write the target's
+`~/.local/state/tilde/config.yml` before final status. The config records the target-local installed skill path and
+target-local public/private repository paths. For remote deployment, controller-side paths are never written into the
+target config.
+
 After a host has already been deployed, the normal returning-user flow is:
 
 ```text
@@ -273,6 +278,10 @@ transport must be documented separately and should prefer immutable or trusted r
 
 On apt-based Linux, bootstrap installs the small base needed for Homebrew, such as `build-essential`, `ca-certificates`,
 `curl`, `file`, `git`, and `procps`, then installs Homebrew and installs `curl`, `git`, and `ruby` through Homebrew.
+Bootstrap apt commands run non-interactively. Before running apt, bootstrap checks apt/dpkg lock owners when the target
+has `fuser`; by default it waits briefly and reports the owning processes. If unattended apt maintenance is stuck and
+the user approves stopping it, rerun bootstrap with `TILDE_BOOTSTRAP_APT_LOCK=stop` so bootstrap stops
+`apt-daily`, `apt-daily-upgrade`, and `unattended-upgrades` before retrying.
 
 On macOS, bootstrap checks for Xcode Command Line Tools first, installs Homebrew, and installs `curl`, `git`, and
 `ruby` through Homebrew. If Command Line Tools installation is started, bootstrap stops and the user reruns it after the
@@ -286,7 +295,11 @@ load the target Homebrew environment and Ruby formula path explicitly.
 - `remote-git`: deterministic default for SSH provisioning when the target does not have a Dropbox-backed public data
   checkout. Prepare the target public repository by cloning or fetching it, usually under `~/.local/src/<repo-name>`.
   Prepare the private repository the same way only when it is configured or explicitly requested. Use `main` and the
-  latest pushed commit unless instructed otherwise. Require a clean local worktree and a pushed commit.
+  latest pushed commit unless instructed otherwise. Require a clean local worktree and a pushed commit. If the target
+  can read the public repository but cannot authenticate to a private Git remote, the agent may use a controller-side
+  `git bundle` as an explicit private transport after confirmation. Bundle transport must preserve branch and commit
+  identity, write only temporary bundle files on the target, clone or fetch into the normal target-local repository
+  path, and remove the transferred bundle before closeout.
 - `remote-dropbox`: use the target public/private repositories that already exist under Dropbox. Local and target Git
   `HEAD` do not need to match, but repository identity and public/private roles must match. Runtime state stays under
   `~/.local/state/tilde` on the target.

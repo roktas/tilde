@@ -130,7 +130,7 @@ EOF
 		abort "action ids should be unique" unless ids.uniq == ids
 		abort "actions should use role-qualified module ids" unless actions.all? { |action| action.fetch("module_id") == "core" || action.fetch("module_id").include?("/") }
 		abort "legacy home-entrypoint action kind leaked" if actions.any? { |action| action.fetch("kind") == "home-entrypoint" }
-		abort "missing manual linux install action" unless actions.any? { |action| action.fetch("kind") == "manual" && action.fetch("module_id") == "public/linux" && action.fetch("name") == "Install" }
+		abort "missing linux install section action" unless actions.any? { |action| action.fetch("kind") == "section" && action.fetch("module_id") == "public/linux" && action.fetch("name") == "Install" && action.fetch("bash_only") == true }
 		abort "missing agents link action" unless actions.any? { |action| action.fetch("kind") == "link" && action.fetch("module_id") == "public/agents" && action.fetch("target") == "~/.agents/AGENTS.md" && action.fetch("link_value").end_with?("/agents/AGENTS.md") }
 		abort "wrong mode" unless plan.fetch("mode") == "apply"
 		abort "wrong level" unless plan.fetch("level") == "normal"
@@ -151,10 +151,10 @@ EOF
 		abort "wrong linux module id" unless linux.fetch("id") == "public/linux"
 		abort "linux platform module should be first" unless plan.fetch("modules").first.fetch("name") == "linux"
 		abort "missing linux install section" unless linux.fetch("special_sections").key?("Install")
+		abort "linux platform module should install shared shell tools" unless linux.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "brew:zoxide" }
 		misc = plan.fetch("modules").find { |mod| mod.fetch("name") == "misc" }
 		abort "missing misc module" unless misc
 		abort "misc module should run alphabetically" unless plan.fetch("modules").map { |mod| mod.fetch("name") }.index("misc") > plan.fetch("modules").map { |mod| mod.fetch("name") }.index("markdown")
-		abort "misc module should install shared tools" unless misc.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "brew:zoxide" }
 		chrome = plan.fetch("modules").find { |mod| mod.fetch("name") == "chrome" }
 		abort "missing chrome module" unless chrome
 		abort "missing chrome linux install section" unless chrome.fetch("special_sections").dig("Install", "body").include?("google-chrome-beta")
