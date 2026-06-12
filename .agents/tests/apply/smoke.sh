@@ -218,7 +218,7 @@ main() {
 		"$home/.config/sample" \
 		"$private_repo" \
 		"$repo" \
-		"$state/tilde/hosts/$host"
+		"$state/tilde"
 
 	cat >"$fake_bin/brew" <<'EOF'
 #!/usr/bin/env bash

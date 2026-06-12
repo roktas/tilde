@@ -718,6 +718,7 @@ class Apply
     @last_apply_path = @host_dir.join("last-apply.json")
     @last_plan_path = @host_dir.join("last-plan.json")
     @state_path = @host_dir.join("state.md")
+    FileUtils.mkdir_p(@host_dir)
     @resume = read_resume
     @apply = init_apply
   end
@@ -940,9 +941,9 @@ class Apply
   end
 
   def validate_host_dir!(first_target)
-    host_dir = Pathname.new(first_target.fetch("state_root")).expand_path.join("hosts", first_target.fetch("host"))
-    raise "state host directory must exist: #{host_dir}" unless host_dir.directory?
-    raise "state host directory is not writable: #{host_dir}" unless host_dir.writable?
+    state_root = Pathname.new(first_target.fetch("state_root")).expand_path
+    raise "state root must exist: #{state_root}" unless state_root.directory?
+    raise "state root is not writable: #{state_root}" unless state_root.writable?
   end
 
   def validate_repositories!

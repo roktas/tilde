@@ -123,7 +123,8 @@ files and Git traversal failures as blockers, and macOS File Provider flags as a
 
 For real local deployment or `remote-git`, require a clean worktree and pushed target commit. Generate plans with
 `bin/plan`; it never applies changes. Write deployment state on the target first and optionally mirror it back to the
-controller. Run `bin/bootstrap` only as the explicit state-free bootstrap prelude.
+controller. Run `bin/bootstrap` only when the target is missing the bootstrap baseline, the baseline is suspect, or the
+user explicitly asks for a bootstrap check. Cleaning deployment state is not a reason to rerun bootstrap.
 
 For remote SSH orchestration, do not rely on the target login shell. The canonical multi-command form is a POSIX
 `sh -s` heredoc; use this shape for remote dry-run, update, deploy, status, and doctor snippets:

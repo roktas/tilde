@@ -57,9 +57,12 @@ The executor validates the complete plan set before the first write:
 - every action kind, package type, conflict strategy, and result policy is supported;
 - every action and package condition is supported, and mirrored condition values agree;
 - action dependencies refer to known earlier actions;
-- state and backup parent paths are valid and writable without creating or changing them.
+- state root paths are valid and writable before cache or deployment state writes.
 
 Validation failure blocks the entire apply without changing managed targets or deployment state.
+
+Before reading resume state or writing caches, the executor creates the target host state directory under the validated
+state root when it does not already exist. A clean state root with no `hosts/HOST` directory is valid first-apply input.
 
 ## Actions
 

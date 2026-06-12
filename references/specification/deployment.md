@@ -191,10 +191,10 @@ special provisioning semantics by itself; it only changes the likelihood that Dr
 
 | Kind | When | Bootstrap | Repository copy | Deployment state handling | Default flow |
 | --- | --- | --- | --- | --- | --- |
-| `dropbox` | Target has a synced Dropbox copy of the public data repository. This is typical for personal physical machines when Dropbox quota and device limits allow it. | Run the installed skill bootstrap or the bootstrap helper available in the target context. | Use the target's Dropbox-backed public checkout and configured private checkout. | Target state under `~/.local/state/tilde` is authoritative; Dropbox may sync repository files, not runtime state. | local install or `remote-dropbox` |
-| `git` | Target does not use Dropbox for the public data repository. This covers VPS hosts and personal machines where Dropbox is unavailable or undesired. | Deliver bootstrap before cloning, usually over SSH or the public bootstrap URL when available. | Clone or fetch into `~/.local/src/<repo-name>`. | Write state on the target, then optionally mirror it under the controller's `~/.local/state/tilde/remotes/HOST/`. | `remote-git` or local git-backed install |
-| `self` | A user clones the public data repository or a fork and applies it on the same machine. | Prefer the public bootstrap URL when available; otherwise use the installed skill bootstrap after cloning. | User-chosen checkout, usually `~/.local/src/<repo-name>`. | Local deployment state stays under `~/.local/state/tilde`. Private data repository behavior is optional. | local install |
-| `any` | The target has an existing repository path whose branch, `HEAD`, or dirty state is intentionally accepted. | Use the installed skill bootstrap unless the target lacks the skill, then deliver bootstrap first. | Use the provided path as-is. | Write state on the target and mirror it only when requested or useful for orchestration. | `remote-any` |
+| `dropbox` | Target has a synced Dropbox copy of the public data repository. This is typical for personal physical machines when Dropbox quota and device limits allow it. | Run the installed skill bootstrap only when the baseline is missing or suspect. | Use the target's Dropbox-backed public checkout and configured private checkout. | Target state under `~/.local/state/tilde` is authoritative; Dropbox may sync repository files, not runtime state. | local install or `remote-dropbox` |
+| `git` | Target does not use Dropbox for the public data repository. This covers VPS hosts and personal machines where Dropbox is unavailable or undesired. | Deliver bootstrap before cloning only when the target lacks the baseline needed to clone and plan. | Clone or fetch into `~/.local/src/<repo-name>`. | Write state on the target, then optionally mirror it under the controller's `~/.local/state/tilde/remotes/HOST/`. | `remote-git` or local git-backed install |
+| `self` | A user clones the public data repository or a fork and applies it on the same machine. | Prefer the public bootstrap URL only when baseline tools are missing; otherwise use the existing checkout and tools. | User-chosen checkout, usually `~/.local/src/<repo-name>`. | Local deployment state stays under `~/.local/state/tilde`. Private data repository behavior is optional. | local install |
+| `any` | The target has an existing repository path whose branch, `HEAD`, or dirty state is intentionally accepted. | Use the installed skill bootstrap only when baseline tools are missing or suspect. | Use the provided path as-is. | Write state on the target and mirror it only when requested or useful for orchestration. | `remote-any` |
 
 Dropbox mode is valid only when the target machine's repository copy syncs through Dropbox. If a personal physical
 machine cannot or should not use Dropbox, treat it as `git`.
@@ -247,11 +247,15 @@ Bootstrap has two separate concerns:
 - **Delivery**: get the bootstrap script onto the target when the installed skill is not there yet.
 - **Preparation**: run the bootstrap script so the target can clone or operate repositories and run the planner.
 
-When the installed skill is already present on the target, run bootstrap from the installed skill:
+When the installed skill is already present on the target but the bootstrap baseline is missing or suspect, run
+bootstrap from the installed skill:
 
 ```bash
 bin/bootstrap
 ```
+
+Do not rerun bootstrap merely because deployment state was cleaned or a host is being redeployed. Clean state means the
+planner and executor should behave like a fresh desired-state apply; it does not reset the target's bootstrap baseline.
 
 When bootstrapping a remote target that does not have the installed skill yet, deliver the script over SSH:
 
