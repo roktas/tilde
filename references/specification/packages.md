@@ -22,8 +22,9 @@ Installation commands:
 
 - `brew:<name>`: `brew install <name>`
 - `cask:<name>`: `brew install --cask <name>`
-- `deb:<name>`: `sudo apt install -y <name>`; run `sudo apt update` first when the package index may be stale. In
-  non-interactive scripts, prefer `sudo apt-get install -y <name>`.
+- `deb:<name>`: `sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y <name>`; run
+  `sudo -n env DEBIAN_FRONTEND=noninteractive apt-get update` first when the package index may be stale. Report the
+  action as `deferred` when sudo policy or authentication prevents non-interactive execution.
 - `npm:<name>`: `bun install -g <name>`
 - `gem:<name>`: `gem install --user-install --no-document <name>` unless local RubyGems config already routes installs
   to a user-writable gem home. Do not use `sudo gem install`.
@@ -75,7 +76,8 @@ Fast system package-manager updates:
 - Homebrew is active when `brew` is available on the target or the active plan contains `brew:<name>` or `cask:<name>`.
   Run `brew update`, then `brew upgrade`. Do not use `--greedy` in plain `update` or `update full`.
 - Apt is active on Linux when `apt-get` is available, even if no `deb:<name>` package declaration is present. Run
-  `sudo apt-get update`, then `sudo apt-get upgrade -y`.
+  `sudo -n env DEBIAN_FRONTEND=noninteractive apt-get update`, then
+  `sudo -n env DEBIAN_FRONTEND=noninteractive apt-get upgrade -y`.
 - Scoop is active on Windows when `scoop` is available or the active plan contains `scoop:<name>`. Run `scoop update`,
   then `scoop update *`.
 
@@ -102,8 +104,8 @@ Broad or aggressive `upgrade` examples:
 
 - Homebrew casks that normal `brew upgrade` skips may use `brew upgrade --cask --greedy` only after the proposal calls
   out the wider cask scope.
-- Apt may use `sudo apt-get full-upgrade -y` only after the proposal calls out that packages may be installed, removed,
-  or held differently than a normal upgrade.
+- Apt may use `sudo -n env DEBIAN_FRONTEND=noninteractive apt-get full-upgrade -y` only after the proposal calls out
+  that packages may be installed, removed, or held differently than a normal upgrade.
 - Flatpak may run `flatpak update -y --user` for all per-user Flatpaks only when the graphical condition is met and the
   proposal calls out that unmanaged apps may be affected.
 - Scoop may use package-manager-wide update behavior beyond the active Tilde declarations after the proposal calls out

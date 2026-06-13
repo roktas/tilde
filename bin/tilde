@@ -1,0 +1,170 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+[[ -z ${TRACE:-} ]] || set -x
+unset CDPATH
+
+readonly -a AGENT_COMMANDS=(
+	adopt
+	align
+	clean
+	create
+	deploy
+	init
+	organize
+	repair
+	update
+	upgrade
+)
+
+readonly -a ROUTES=(
+	apply
+	bootstrap
+	checkout
+	doctor
+	help
+	plan
+	preflight
+	smoke
+	status
+)
+
+abort() {
+	warn "E: $*"
+	exit 2
+}
+
+warn() {
+	printf '%s\n' "$*" >&2
+}
+
+# ------------------------------------------------------------------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------------------------------------------------------------------
+
+is_agent_command() {
+	local name=$1
+
+	local item
+	for item in "${AGENT_COMMANDS[@]}"; do
+		[[ $item != "$name" ]] || return 0
+	done
+
+	return 1
+}
+
+is_implemented_route() {
+	local name=$1
+
+	local item
+	for item in "${ROUTES[@]}"; do
+		[[ $item != "$name" ]] || return 0
+	done
+
+	return 1
+}
+
+resolve_route() {
+	local name=$1
+
+	case $name in
+	.bootstrap | internal.bootstrap | boot)
+		printf '%s\n' bootstrap
+		;;
+	.apply | internal.apply)
+		printf '%s\n' apply
+		;;
+	.checkout | internal.checkout)
+		printf '%s\n' checkout
+		;;
+	.doctor | internal.doctor)
+		printf '%s\n' doctor
+		;;
+	.help | internal.help)
+		printf '%s\n' help
+		;;
+	.plan | internal.plan)
+		printf '%s\n' plan
+		;;
+	.preflight | internal.preflight)
+		printf '%s\n' preflight
+		;;
+	.smoke | internal.smoke)
+		printf '%s\n' smoke
+		;;
+	.status | internal.status)
+		printf '%s\n' status
+		;;
+	*)
+		printf '%s\n' "$name"
+		;;
+	esac
+}
+
+route_path() {
+	local route=$1
+
+	if [[ -x $TILDE_ROOT/libexec/$route ]]; then
+		printf '%s\n' "$TILDE_ROOT/libexec/$route"
+		return
+	fi
+	if [[ -x $TILDE_ROOT/bin/$route ]]; then
+		printf '%s\n' "$TILDE_ROOT/bin/$route"
+		return
+	fi
+
+	return 1
+}
+
+script_root() {
+	cd -- "${BASH_SOURCE[0]%/*}/.." >/dev/null && pwd
+}
+
+# ------------------------------------------------------------------------------------------------------------------------
+# Main
+# ------------------------------------------------------------------------------------------------------------------------
+
+dispatch() {
+	local command=$1
+	shift
+
+	local helper
+	local route
+
+	route=$(resolve_route "$command")
+
+	if is_implemented_route "$route"; then
+		helper=$(route_path "$route") || abort "route is registered but missing: $route"
+		exec "$helper" "$@"
+	fi
+
+	if is_agent_command "$route"; then
+		abort "\`$route\` is an agent-orchestrated Tilde prompt command; no direct runtime route is defined"
+	fi
+
+	abort "unknown Tilde runtime route: $command"
+}
+
+main() {
+	local command=${1:-help}
+
+	TILDE_ROOT=$(script_root)
+	readonly TILDE_ROOT
+	export TILDE_ROOT
+	export PATH=$TILDE_ROOT/bin:$PATH
+
+	case $command in
+	-h | --help)
+		dispatch help
+		;;
+	--version)
+		printf 'tilde %s\n' "$(git -C "$TILDE_ROOT" rev-parse --short HEAD 2>/dev/null || printf unknown)"
+		;;
+	*)
+		[[ $# -eq 0 ]] || shift
+		dispatch "$command" "$@"
+		;;
+	esac
+}
+
+main "$@"

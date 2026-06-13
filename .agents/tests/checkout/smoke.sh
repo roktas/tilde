@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+[[ -z ${TRACE:-} ]] || set -x
+unset CDPATH
+
+cleanup_tmpdir=
+
+# ------------------------------------------------------------------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------------------------------------------------------------------
+
+cleanup() {
+	[[ -z $cleanup_tmpdir ]] || rm -rf "$cleanup_tmpdir"
+}
+
+commit_all() {
+	local repo=$1
+	local message=$2
+
+	git -C "$repo" add .
+	git -C "$repo" commit -q -m "$message"
+}
+
+pack() {
+	local checkout=$1
+	local repo=$2
+	local bundle=$3
+	shift 3
+
+	rm -f "$bundle"
+	"$checkout" pack --repo "$repo" --bundle "$bundle" "$@"
+}
+
+write_private_repo() {
+	local repo=$1
+
+	mkdir -p "$repo"
+	git -C "$repo" init -q
+	git -C "$repo" checkout -q -B main
+	git -C "$repo" config user.email smoke@example.invalid
+	git -C "$repo" config user.name Smoke
+	cat >"$repo/AGENTS.md" <<'EOF'
+---
+tilde:
+  protocol: tilde/v1
+  role: private
+---
+
+# Private
+EOF
+	printf 'one\n' >"$repo/value.txt"
+	commit_all "$repo" init
+}
+
+# ------------------------------------------------------------------------------------------------------------------------
+# Main
+# ------------------------------------------------------------------------------------------------------------------------
+
+main() {
+	local bare
+	local bundle
+	local checkout
+	local err
+	local script_dir
+	local source
+	local target
+	local tmpdir
+
+	script_dir=$(cd -- "${BASH_SOURCE[0]%/*}" >/dev/null && pwd)
+	checkout=$(cd -- "$script_dir/../../.." >/dev/null && pwd)/bin/checkout
+
+	tmpdir=$(mktemp -d)
+	cleanup_tmpdir=$tmpdir
+	trap cleanup EXIT HUP INT QUIT TERM
+
+	bare=$tmpdir/home-.git
+	bundle=$tmpdir/home-.bundle
+	err=$tmpdir/checkout.err
+	source=$tmpdir/source/home-
+	target=$tmpdir/target/home-
+
+	write_private_repo "$source"
+	git init -q --bare "$bare"
+	git -C "$bare" symbolic-ref HEAD refs/heads/main
+	git -C "$source" remote add origin "$bare"
+	git -C "$source" push -q -u origin main
+
+	pack "$checkout" "$source" "$bundle"
+	"$checkout" receive --repo "$target" --bundle "$bundle" --origin "$bare"
+	grep -qx one "$target/value.txt"
+	git -C "$target" rev-parse --abbrev-ref --symbolic-full-name '@{u}' | grep -qx origin/main
+
+	printf 'two\n' >"$source/value.txt"
+	commit_all "$source" update
+	git -C "$source" push -q origin main
+	pack "$checkout" "$source" "$bundle"
+	"$checkout" receive --repo "$target" --bundle "$bundle" --origin "$bare"
+	grep -qx two "$target/value.txt"
+
+	printf 'dirty\n' >"$target/dirty.txt"
+	if "$checkout" receive --repo "$target" --bundle "$bundle" --origin "$bare" >/dev/null 2>"$err"; then
+		echo "expected dirty target to fail" >&2
+		exit 1
+	fi
+	grep -q "dirty repository" "$err"
+	rm -f "$target/dirty.txt"
+
+	printf 'three\n' >"$source/value.txt"
+	commit_all "$source" unpushed
+	if pack "$checkout" "$source" "$bundle" >/dev/null 2>"$err"; then
+		echo "expected unpushed source to fail" >&2
+		exit 1
+	fi
+	grep -q "branch is not at upstream" "$err"
+
+	pack "$checkout" "$source" "$bundle" --allow-unpushed
+	"$checkout" receive --repo "$target" --bundle "$bundle" --origin "$bare"
+	grep -qx three "$target/value.txt"
+}
+
+main "$@"

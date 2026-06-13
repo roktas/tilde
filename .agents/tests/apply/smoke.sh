@@ -86,7 +86,7 @@ EOF
 
 Review this instruction before running the command.
 
-```bash
+```text
 printf 'manual\n' > "$HOME"/manual-ran
 ```
 EOF
@@ -118,6 +118,8 @@ EOF
 # Section
 
 ## Install
+
+Document the executable section before the shell block.
 
 ```bash
 mkdir -p "$HOME"/section
@@ -433,7 +435,9 @@ EOF
 		abort "flatpak should run after ignored partial result" unless results.any? { |result| result.fetch("module_id") == "public/flatpak" && result.fetch("status") == "ok" }
 		abort "missing command package should defer" unless results.any? { |result| result.fetch("module_id") == "public/missing-command" && result.fetch("status") == "deferred" }
 		abort "missing package failure" unless results.any? { |result| result.fetch("module_id") == "public/pkg" && result.fetch("status") == "notok" }
-		abort "missing manual deferred result" unless results.any? { |result| result.fetch("module_id") == "public/manual" && result.fetch("status") == "deferred" }
+		manual = results.find { |result| result.fetch("module_id") == "public/manual" }
+		abort "missing manual deferred result" unless manual&.fetch("status") == "deferred"
+		abort "manual reason should identify non-shell code" unless manual.fetch("diagnostics").fetch("reason") == "non-shell-code"
 		state, = File.read(ENV.fetch("STATE_FILE")).split(/^---\s*$/, 3)[1, 2]
 		frontmatter = YAML.safe_load(state)
 		abort "state should include public metadata" unless frontmatter.fetch("public").fetch("role") == "public"
@@ -451,7 +455,7 @@ EOF
 
 	grep -q '^gh release view --repo owner/tool --json tagName,assets$' "$home/package-log"
 	grep -q '^gh release download --repo owner/tool --pattern tool_1\.2\.3_linux_amd64\.deb --dir .*/tilde-github-.* --clobber$' "$home/package-log"
-	grep -q '^sudo apt-get install -y .*/tool_1\.2\.3_linux_amd64\.deb$' "$home/package-log"
+	grep -q '^sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y .*/tool_1\.2\.3_linux_amd64\.deb$' "$home/package-log"
 
 	STATE_FILE=$state/tilde/hosts/$host/state.md ruby -ryaml -rdate -e '
 		path = ENV.fetch("STATE_FILE")
@@ -537,8 +541,8 @@ EOF
 
 	grep -q '^brew update$' "$home/package-log"
 	grep -q '^brew upgrade$' "$home/package-log"
-	grep -q '^sudo apt-get update$' "$home/package-log"
-	grep -q '^sudo apt-get upgrade -y$' "$home/package-log"
+	grep -q '^sudo -n env DEBIAN_FRONTEND=noninteractive apt-get update$' "$home/package-log"
+	grep -q '^sudo -n env DEBIAN_FRONTEND=noninteractive apt-get upgrade -y$' "$home/package-log"
 
 	REFRESH_APPLY_JSON=$refresh_apply_json REFRESH_APPLY_CACHE=$state/tilde/hosts/$host/last-refresh-apply.json REFRESH_PLAN_CACHE=$state/tilde/hosts/$host/last-refresh-plan.json ruby -rjson -e '
 		apply = JSON.parse(File.read(ENV.fetch("REFRESH_APPLY_JSON")))
@@ -551,8 +555,8 @@ EOF
 		commands = apply.fetch("results").flat_map { |result| result.fetch("diagnostics", {}).fetch("commands", []) }
 		abort "missing brew update diagnostics" unless commands.any? { |run| run.fetch("command") == %w[brew update] }
 		abort "missing brew upgrade diagnostics" unless commands.any? { |run| run.fetch("command") == %w[brew upgrade] }
-		abort "missing apt update diagnostics" unless commands.any? { |run| run.fetch("command") == %w[sudo apt-get update] }
-		abort "missing apt upgrade diagnostics" unless commands.any? { |run| run.fetch("command") == %w[sudo apt-get upgrade -y] }
+		abort "missing apt update diagnostics" unless commands.any? { |run| run.fetch("command") == %w[sudo -n env DEBIAN_FRONTEND=noninteractive apt-get update] }
+		abort "missing apt upgrade diagnostics" unless commands.any? { |run| run.fetch("command") == %w[sudo -n env DEBIAN_FRONTEND=noninteractive apt-get upgrade -y] }
 	'
 
 	echo "apply smoke ok"

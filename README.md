@@ -305,7 +305,8 @@ Git-backed target, Tilde clones or fetches the public repository, normally under
 `$tilde help` shows public commands as a Markdown table. Internal semantic commands such as `internal.apply` are for
 Tilde development and are not shown in ordinary help.
 
-The installed helper `bin/help --format markdown` emits the same public table.
+The installed runtime router `bin/tilde help` emits the same public table. The direct `bin/help --format markdown`
+helper remains available for direct helper use.
 
 Bare `$tilde` means `help`.
 
@@ -315,6 +316,7 @@ applying it.
 | Command | Action |
 | --- | --- |
 | `adopt` | Adopt an app, config, package, or path into the public or private data repository. |
+| `align` | Reconcile links and copies without bootstrap, packages, or module scripts. |
 | `clean` | Propose conservative cleanup, including duplicate candidates when relevant. |
 | `create` | Create public/private home repository skeletons. |
 | `deploy` | Prepare a host and install desired state. |

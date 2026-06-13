@@ -41,7 +41,7 @@ class Apply
   PACKAGE_COMMANDS = {
     %w[install brew] => ->(name) { ["brew", "install", name] },
     %w[install cask] => ->(name) { ["brew", "install", "--cask", name] },
-    %w[install deb] => ->(name) { ["sudo", "apt-get", "install", "-y", name] },
+    %w[install deb] => ->(name) { %w[sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y] + [name] },
     %w[install egg] => ->(name) { ["uv", "tool", "install", name] },
     %w[install flatpak] => ->(name) { ["flatpak", "install", "-y", "--user", "flathub", name] },
     %w[install gem] => ->(name) { ["gem", "install", "--user-install", "--no-document", name] },
@@ -51,9 +51,12 @@ class Apply
     %w[refresh cask] => ->(name) { ["brew", "upgrade", "--cask", name] },
     %w[refresh deb] => lambda { |name|
       if name == "*"
-        [%w[sudo apt-get update], %w[sudo apt-get upgrade -y]]
+        [
+          %w[sudo -n env DEBIAN_FRONTEND=noninteractive apt-get update],
+          %w[sudo -n env DEBIAN_FRONTEND=noninteractive apt-get upgrade -y]
+        ]
       else
-        %w[sudo apt-get install --only-upgrade -y] + [name]
+        %w[sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install --only-upgrade -y] + [name]
       end
     },
     %w[refresh egg] => ->(name) { ["uv", "tool", "upgrade", name] },
@@ -67,9 +70,9 @@ class Apply
     },
     %w[upgrade deb] => lambda { |name|
       if name == "*"
-        %w[sudo apt-get full-upgrade -y]
+        %w[sudo -n env DEBIAN_FRONTEND=noninteractive apt-get full-upgrade -y]
       else
-        %w[sudo apt-get install --only-upgrade -y] + [name]
+        %w[sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install --only-upgrade -y] + [name]
       end
     },
     %w[upgrade egg] => ->(name) { ["uv", "tool", "upgrade", name] },
@@ -138,7 +141,7 @@ class Apply
     failed_modules = {}
 
     actions.each do |action|
-      break unless process_action(action, failed_modules)
+      break unless process_action?(action, failed_modules)
     end
 
     @apply[:completed] = !stop_after_reached? && @apply[:results].length == actions.length
@@ -332,30 +335,41 @@ class Apply
     execute_commands(action, commands)
   end
 
-	def execute_commands(action, commands, diagnostics = {})
-		runs = []
-		commands.each do |command|
-			stdout, stderr, status = capture_command(command)
-			unless status
-				run = { "command" => command, "stdout" => stdout, "stderr" => stderr, "exit" => nil }
-				return action_result(action, "deferred", diagnostics.merge("commands" => runs + [run], "reason" => "missing command"))
-			end
+  def execute_commands(action, commands, diagnostics = {})
+    runs = []
+    commands.each do |command|
+      stdout, stderr, status = capture_command(command)
+      unless status
+        run = { "command" => command, "stdout" => stdout, "stderr" => stderr, "exit" => nil }
+        return action_result(
+          action,
+          "deferred",
+          diagnostics.merge("commands" => runs + [run], "reason" => "missing command")
+        )
+      end
 
-			run = { "command" => command, "stdout" => stdout, "stderr" => stderr, "exit" => status.exitstatus }
-			return action_result(action, "notok", diagnostics.merge("commands" => runs + [run])) unless status.success?
+      run = { "command" => command, "stdout" => stdout, "stderr" => stderr, "exit" => status.exitstatus }
+      if privilege_deferred?(command, stderr, status)
+        return action_result(
+          action,
+          "deferred",
+          diagnostics.merge("commands" => runs + [run], "reason" => "privilege required")
+        )
+      end
+      return action_result(action, "notok", diagnostics.merge("commands" => runs + [run])) unless status.success?
 
-			runs << run
-		end
+      runs << run
+    end
 
-		action_result(action, "ok", diagnostics.merge("commands" => runs))
-	end
+    action_result(action, "ok", diagnostics.merge("commands" => runs))
+  end
 
-	def capture_command(command)
-		stdout, stderr, status = Open3.capture3(*command)
-		[stdout, stderr, status]
-	rescue Errno::ENOENT => e
-		["", e.message, nil]
-	end
+  def capture_command(command)
+    stdout, stderr, status = Open3.capture3(*command)
+    [stdout, stderr, status]
+  rescue Errno::ENOENT => e
+    ["", e.message, nil]
+  end
 
   def execute_github(action)
     repo = action.fetch("package").fetch("name")
@@ -561,7 +575,11 @@ class Apply
   def install_github_asset(action, repo, tag, asset, path)
     diagnostics = { "repo" => repo, "tag" => tag, "asset" => asset, "path" => path.to_s }
     if path.basename.to_s.downcase.end_with?(".deb")
-      return execute_commands(action, [["sudo", "apt-get", "install", "-y", path.to_s]], diagnostics)
+      return execute_commands(
+        action,
+        [%w[sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y] + [path.to_s]],
+        diagnostics
+      )
     end
 
     executable = github_executable(path)
@@ -582,7 +600,7 @@ class Apply
 
     Dir.mktmpdir("tilde-github-extract-") do |dir|
       extracted = Pathname.new(dir)
-      return nil unless github_extract(path, extracted)
+      return nil unless extract_github_archive?(path, extracted)
 
       copy_github_executable(path, github_candidate(path, extracted))
     end
@@ -626,7 +644,7 @@ class Apply
     copy
   end
 
-  def github_extract(path, dir)
+  def extract_github_archive?(path, dir)
     name = path.basename.to_s.downcase
     command =
       if name.match?(/\.(?:tar\.gz|tgz|tar)\z/)
@@ -794,7 +812,7 @@ class Apply
     @apply = init_apply
   end
 
-  def process_action(action, failed_modules)
+  def process_action?(action, failed_modules)
     result = result_for(action, failed_modules)
     record(result)
     failed_modules[action.fetch("module_id")] = true if module_failure?(action, result)
@@ -932,6 +950,13 @@ class Apply
     Open3.capture3("bash", file.path)
   ensure
     file&.close!
+  end
+
+  def privilege_deferred?(command, stderr, status)
+    return false if status.success?
+    return false unless command.first == "sudo"
+
+    stderr.match?(/password|not allowed|no tty|terminal is required|a tty is required|authentication/i)
   end
 
   def stop_after_reached?

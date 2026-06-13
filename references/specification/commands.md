@@ -8,6 +8,34 @@ command defines its own semantics, and explicit arguments refine the target.
 
 Bare `$tilde` means `help`. It is read-only and must behave like `$tilde help`.
 
+### Runtime Router
+
+`bin/tilde` is the canonical runtime router for implemented helper behavior. It sets the shared Tilde helper
+environment, resolves the skill root, normalizes route aliases, and dispatches to the matching helper. It is a runtime
+entrypoint, not a replacement for prompt-level agent orchestration.
+
+The router may expose implemented helper routes such as:
+
+- `tilde help`
+- `tilde status`
+- `tilde doctor`
+- `tilde plan`
+- `tilde apply`
+- `tilde bootstrap` and `tilde boot`
+- `tilde preflight`
+- `tilde checkout`
+
+The public prompt commands `adopt`, `align`, `clean`, `create`, `deploy`, `init`, `organize`, `repair`, `update`, and
+`upgrade` are agent-orchestrated unless a matching runtime route is explicitly defined. If those names are invoked
+directly through `bin/tilde` without a matching route, the router must fail clearly instead of pretending to apply the
+prompt command.
+
+The router accepts dotted internal aliases for development, such as `tilde .plan` and `tilde internal.plan`, when a
+matching runtime route exists. Dotted aliases are not shown in ordinary public help.
+
+Prefer `bin/tilde COMMAND ...` for runtime helper access. Direct helper entrypoints such as `bin/plan`, `bin/apply`,
+`bin/status`, `bin/doctor`, `bin/bootstrap`, `bin/preflight`, and `bin/checkout` remain valid focused entrypoints.
+
 ### Public Commands
 
 `$tilde help` is the read-only public command reference. Start the output by showing the general format,
@@ -15,8 +43,9 @@ Bare `$tilde` means `help`. It is read-only and must behave like `$tilde help`.
 GitHub-flavored Markdown table with `Command` and `Action` columns. With one public command subject, it shows detailed
 help for only that command. If the subject is a configured custom data-layer command, use the custom-help behavior below.
 If the subject is neither a public Tilde command nor a configured custom command, say that no such Tilde command exists,
-then behave like bare `$tilde help`. Agents should prefer the installed `bin/help --format markdown` helper for built-in
-public help when available, but custom command help requires reading configured data-layer policy.
+then behave like bare `$tilde help`. Agents should prefer the installed `bin/tilde help` runtime route for built-in
+public help when available; `bin/help --format markdown` remains available for direct helper use. Custom command help
+requires reading configured data-layer policy.
 
 Use this public action inventory for help output:
 
@@ -76,7 +105,7 @@ Public command semantics:
   `upgrade` is the widest update command and may affect packages not declared by Tilde.
 - `status`: print a short read-only summary of configured public/private repositories, deployment state, and
   home-entrypoint facts, plus a concise managed-link/copy/package surface summary when cached state is available. It should
-  prefer the installed `bin/status` helper when available so the agent can produce the summary with one read-only
+  prefer the installed `bin/tilde status` route when available so the agent can produce the summary with one read-only
   command. It must not perform broad diagnostics or regenerate plans by default. When full deployment state or status
   caches are missing, print a limited-status warning and suggest explicit next commands such as
   `$tilde status discover`, `$tilde doctor`, or `$tilde deploy`.
@@ -126,7 +155,7 @@ command semantics and do not bypass proposal-first confirmation.
 
 Default `status` must not:
 
-- run `bin/plan` to regenerate desired state;
+- run `bin/tilde plan` or `bin/plan` to regenerate desired state;
 - read every module `README.md` just to compute managed-surface counts;
 - walk all managed targets to validate live links;
 - query package managers, Dropbox, network remotes, or SSH targets unless the user explicitly requested that target.
@@ -177,7 +206,7 @@ adds package-manager-wide or aggressive upgrade actions that may go beyond Tilde
 The `dry-run`, `plan`, and `plan-only` qualifiers on public commands use `internal.plan` to produce a proposal and then
 stop before applying changes.
 
-CLI implementations should treat dotted command tokens as command names before path or extension interpretation, or
+Runtime implementations should treat dotted command tokens as command names before path or extension interpretation, or
 otherwise provide an unambiguous way to invoke internal commands during development.
 
 ### Proposal-First Rules

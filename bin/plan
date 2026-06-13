@@ -133,7 +133,14 @@ class Plan
   def actions_skipped?(skipped) = skipped || !apply_like?
 
   def bash_blocks(body)
-    body.scan(/```(?:bash|sh)\s*\n(.*?)```/m).flatten.map(&:strip).reject(&:empty?)
+    fenced_blocks(body).filter_map do |info, content|
+      block = content.strip
+      block if bash_fence?(info) && !block.empty?
+    end
+  end
+
+  def bash_fence?(info)
+    %w[bash sh].include?(info.strip.split.first)
   end
 
   def canonicalize(value)
@@ -709,23 +716,24 @@ class Plan
   def ordered_actions(plan)
     actions = plan.fetch(:core).fetch(:home_entrypoints_to_write).map { |entrypoint| entrypoint_action(entrypoint) }
     used = {}
-    modules = plan.fetch(:modules)
 
-    module_actions =
-      if align?
-        modules.flat_map { |mod| align_module_actions(mod) }
-      elsif upgrade?
-        modules.flat_map { |mod| refresh_module_actions(mod) } + modules.flat_map { |mod| upgrade_module_actions(mod) }
-      else
-        modules.flat_map { |mod| module_actions(mod) }
-      end
-
-    module_actions.each do |action|
+    ordered_module_actions(plan.fetch(:modules)).each do |action|
       action[:id] = action_id(action.fetch(:id), used)
       actions << action
     end
 
     actions
+  end
+
+  def ordered_module_actions(modules)
+    return modules.flat_map { |mod| align_module_actions(mod) } if align?
+
+    if upgrade?
+      return modules.flat_map { |mod| refresh_module_actions(mod) } +
+             modules.flat_map { |mod| upgrade_module_actions(mod) }
+    end
+
+    modules.flat_map { |mod| module_actions(mod) }
   end
 
   def package_plan_actions(mod, operation, packages)
@@ -898,11 +906,19 @@ class Plan
       bash_only:,
       bash_blocks: section.fetch(:bash_blocks),
       body: section.fetch(:body),
-      reason: bash_only ? nil : "mixed-prose",
+      reason: section_manual_reason(section),
       conflict: {
         strategy: "none"
       }
     }
+  end
+
+  def section_manual_reason(section)
+    return nil if section.fetch(:bash_only)
+
+    return "non-shell-code" if fenced_blocks(section.fetch(:body)).any? { |info, _content| !bash_fence?(info) }
+
+    "no-shell-blocks"
   end
 
   def section_plan_actions(mod, names)
@@ -916,13 +932,16 @@ class Plan
     return [false, nil] if align?
     return [false, nil] if refresh? || upgrade?
     return repair_skip_status(module_name) if repair?
-    return [false, nil] unless @previous_state
-    return [false, nil] unless current_state_head?
+    return [false, nil] unless state_skip_available?
 
     status = module_state_status(module_name)
     return [true, "already #{status} at current head"] if %w[ok ignored].include?(status)
 
     [false, nil]
+  end
+
+  def state_skip_available?
+    @previous_state && current_state_head?
   end
 
   def current_state_head?
@@ -941,7 +960,7 @@ class Plan
 
   def selected_special_sections(body)
     sections = special_sections(body)
-    return sections.select { |name, _section| name == "Update" } if full_refresh?
+    return sections.slice("Update") if full_refresh?
     return {} if refresh?
 
     sections.except("Update")
@@ -988,8 +1007,12 @@ class Plan
     {
       body:,
       bash_blocks: blocks,
-      bash_only: body.gsub(/```(?:bash|sh)\s*\n.*?```/m, "").strip.empty? && !blocks.empty?
+      bash_only: blocks.any? && fenced_blocks(body).all? { |info, _content| bash_fence?(info) }
     }
+  end
+
+  def fenced_blocks(body)
+    body.scan(/^```([^\n`]*)\n(.*?)^```[ \t]*$/m)
   end
 
   def platform_scopes(body)

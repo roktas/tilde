@@ -16,6 +16,8 @@ specification, and this file is the stable entrypoint for skills, repository ins
   `tilde.protocol: tilde/v1` and a repository `role`.
 - `$tilde`, first-word `tilde`, and command-shaped `~` prompts are compact natural-language commands, not strict shell
   invocations. Bare `$tilde` means read-only `help`.
+- `bin/tilde` is the runtime router for implemented helper commands. It does not replace the prompt contract or bypass
+  proposal-first agent orchestration for public commands that do not yet have runtime implementations.
 - Writes, moves, removals, package changes, repository edits, home-entrypoint writes, state writes, and remote-host
   actions are proposal-first and require explicit confirmation.
 - Discovery is bounded. Do not recursively scan `$HOME` unless the user explicitly asks after scope and cost are
@@ -48,11 +50,13 @@ reference file unless the task is cross-cutting.
 ## Public Commands
 
 `$tilde help` must show public commands as a GitHub-flavored Markdown table with `Command` and `Action` columns. The
-installed helper `bin/help --format markdown` emits the canonical public table.
+installed runtime route `bin/tilde help` emits the canonical public table; `bin/help --format markdown` remains
+available for direct helper use.
 
 | Command | Action |
 | --- | --- |
 | `adopt` | Adopt an app, config, package, or path into the public or private data repository. |
+| `align` | Reconcile links and copies without bootstrap, packages, or module scripts. |
 | `clean` | Propose conservative cleanup, including duplicate candidates when relevant. |
 | `create` | Create public/private home repository skeletons. |
 | `deploy` | Prepare a host and install desired state. |
@@ -72,7 +76,8 @@ Detailed public and internal command semantics live in `references/specification
 - `references/specification.md` owns the always-read contract, routing map, and public inventory.
 - Files under `references/specification/` own detailed behavior in their routed areas.
 - `SKILL.md` owns reusable prompt workflow and should stay short.
-- `bin/` owns runnable helper implementations.
+- `bin/tilde` owns runtime routing and shared helper environment setup.
+- `bin/` owns runnable helper entrypoints.
 - `references/development.md` owns repository-development workflow.
 
 When adding or moving behavior, put it in exactly one detailed specification file and link to it from this entrypoint

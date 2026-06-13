@@ -469,6 +469,8 @@ macos: ~
 
 ### Install
 
+Run the all-platform setup block.
+
 ```bash
 echo all
 ```
@@ -476,6 +478,8 @@ echo all
 ## MacOS
 
 ### Install
+
+Run the macOS setup block.
 
 ```bash
 echo macos
@@ -499,6 +503,7 @@ EOF
 		smoke = plan.fetch("modules").find { |mod| mod.fetch("name") == "zz-platform-smoke" }
 		abort "missing platform module" unless smoke
 		abort "missing platform install section" unless smoke.fetch("special_sections").key?("Install")
+		abort "platform install prose should still be executable" unless smoke.fetch("special_sections").fetch("Install").fetch("bash_only")
 		body = smoke.fetch("special_sections").fetch("Install").fetch("body")
 		abort "platform scoped sections should preserve document order" unless body.index("echo all") < body.index("echo macos")
 	'

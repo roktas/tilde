@@ -34,9 +34,10 @@ module's declared `all`, `linux`, or `macos` scope unless package availability o
 
 ## Prompt Contract
 
-Tilde is a skill the agent reads and applies directly. There is no `tilde` binary on any machine; SSH-based operations
-are executed by the agent via SSH commands. In example prompts, `$tilde` is a dispatch notation: it signals that this
-skill should be loaded and the given operation applied by the agent.
+Tilde is a skill the agent reads and applies directly. In example prompts, `$tilde` is a dispatch notation: it signals
+that this skill should be loaded and the given operation applied by the agent. The installed skill also provides
+`bin/tilde` as a runtime router for implemented helper commands; that router does not replace proposal-first agent
+orchestration for public commands that are still prompt-level workflows.
 
 Treat `$tilde [command] [subject...] [qualifiers...]`, `tilde`-prefixed, and `~`-prefixed (second word is a known
 public or internal tilde command) messages as compact natural-language commands, not strict shell invocations. `~`
@@ -49,8 +50,9 @@ Bare `$tilde` means `help`. It is read-only and must behave like `$tilde help`.
 columns, then shows the general prompt format, detailed-help form, bare-command default, and a short example prompt
 section. `$tilde help COMMAND` shows only that public command. `$tilde help custom.NAME` must resolve configured
 data-layer policy before answering; `bin/help` can only provide the built-in public table. If `COMMAND` is unknown or
-internal, say so and then show the public command table. Prefer `bin/help --format markdown` when available for bare
-`$tilde` and `$tilde help`. Present the output as rendered Markdown (GFM table, etc.), not as raw code-block text.
+internal, say so and then show the public command table. Prefer `bin/tilde help` when available for bare `$tilde` and
+`$tilde help`; `bin/help --format markdown` remains available for direct helper use. Present the output as rendered
+Markdown (GFM table, etc.), not as raw code-block text.
 
 Use proposal-first behavior for writes, moves, removals, repository edits, package changes, home-entrypoint writes, state
 writes, and remote-host actions. Prefer structured confirmation and choice UI over raw prompts such as `[Y/n]`. In
@@ -69,7 +71,7 @@ equivalent. If only text is available, present explicit choices with target, eff
 - `repair`: retry failed install phases from recorded state.
 - `upgrade`: run `update full`, then broad package-manager upgrades after explicit confirmation.
 - `status`: show a short read-only deployment, home-entrypoint, and managed-surface summary. Keep it fast and state-first:
-  prefer `bin/status --format markdown` when available; do not regenerate plans, validate live links, query package
+  prefer `bin/tilde status --format markdown` when available; do not regenerate plans, validate live links, query package
   managers, or call Dropbox by default. If full deployment state or caches are missing, warn that status is partial and
   suggest explicit `$tilde status discover`, `$tilde doctor`, or `$tilde deploy`.
 - `doctor`: run bounded diagnostics; this is not a whole-home audit.
@@ -79,6 +81,10 @@ equivalent. If only text is available, present explicit choices with target, eff
 
 Internal semantic commands live under `internal.` with `.name` shorthand during Tilde development. Do not show them in
 ordinary help. Treat `plan` and `dry-run` as qualifiers on public commands, not as public commands.
+
+For local helper execution, prefer `bin/tilde COMMAND ...` when a runtime route exists. Direct helper paths such as
+`bin/plan`, `bin/apply`, `bin/status`, `bin/doctor`, `bin/bootstrap`, `bin/preflight`, and `bin/checkout` remain valid
+focused entrypoints.
 
 ## Common Prompt Shapes
 
@@ -118,16 +124,20 @@ control-plane safety rules.
 ## Deployment
 
 Choose host kind from the target repo copy: `dropbox`, `git`, `self`, or `any`. For `dropbox`, Dropbox setup and account
-linking are interactive preconditions; guide the user, then run `bin/preflight` in the target context. Treat required
-files and Git traversal failures as blockers, and macOS File Provider flags as advisory. Do not create a Git clone on a
-`dropbox` target unless the user changes host kind.
+linking are interactive preconditions; guide the user, then run `bin/tilde preflight` in the target context. Treat
+required files and Git traversal failures as blockers, and macOS File Provider flags as advisory. Do not create a Git
+clone on a `dropbox` target unless the user changes host kind.
 
 For real local deployment or `remote-git`, require a clean worktree and pushed target commit. Generate plans with
-`bin/plan`; it never applies changes. Write deployment state on the target first and optionally mirror it back to the
-controller. Run `bin/bootstrap` only when the target is missing the bootstrap baseline, the baseline is suspect, or the
-user explicitly asks for a bootstrap check. Cleaning deployment state is not a reason to rerun bootstrap.
-Run `bin/preflight` before planning; it starts with `bin/bootstrap --check --record` so compatible bootstrap state uses
-the fast path and missing or stale bootstrap state is probed before deployment continues. For normal apply/update
+`bin/tilde plan`; it never applies changes. Write deployment state on the target first and optionally mirror it back to
+the controller. Run `bin/bootstrap` only when the target is missing the bootstrap baseline, the baseline is suspect, or
+the user explicitly asks for a bootstrap check. Cleaning deployment state is not a reason to rerun bootstrap.
+For `remote-git` with a private data repository, use controller-side Git bundle transport as the default first move.
+Target-side private GitHub authentication is opt-in only; do not try `gh auth`, deploy keys, PATs, or SSH agent
+forwarding before bundle transport unless the user or host policy explicitly chooses target-side private Git. Prefer
+`bin/tilde checkout remote` for bundle-based private checkout preparation and updates.
+Run `bin/tilde preflight` before planning; it starts with `bin/bootstrap --check --record` so compatible bootstrap state
+uses the fast path and missing or stale bootstrap state is probed before deployment continues. For normal apply/update
 preflight, missing or incomplete bootstrap baseline is recoverable: preflight runs idempotent bootstrap and re-checks.
 If bootstrap needs credentials or another external action but the existing runtime can still run plan/apply, continue
 with a warning instead of blocking desired-state reconciliation.

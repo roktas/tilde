@@ -5,9 +5,10 @@
 Provisioning is the lower-level module operation performed during deployment. It is intended to be idempotent where
 practical, but it is not perfectly idempotent.
 
-Planning and execution are separate. `bin/plan` produces the confirmed executable action stream; `bin/apply` validates
-and executes that exact stream according to [Apply](apply.md). Apply must not rediscover desired state or reconstruct
-action order from grouped summaries.
+Planning and execution are separate. `bin/tilde plan` produces the confirmed executable action stream; `bin/tilde apply`
+validates and executes that exact stream according to [Apply](apply.md). Direct `bin/plan` and `bin/apply` entrypoints
+remain valid focused entrypoints. Apply must not rediscover desired state or reconstruct action order from grouped
+summaries.
 
 ### Modes
 

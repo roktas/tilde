@@ -118,8 +118,8 @@ owns the home-directory entrypoint.
 
 If `~/AGENTS.md` is missing, Tilde may propose creating a fallback or linking the available data-repository home
 entrypoint. If it is a fallback generated from `assets/AGENTS.md`, Tilde should propose replacing it with the
-data-repository `home/AGENTS.md` link once that source exists. If it is a legacy symlink to the installed fallback
-template, Tilde should propose replacing it with the data-repository link so edits do not dirty the installed skill
+data-repository `home/AGENTS.md` link once that source exists. If it is a symlink to the installed fallback template,
+Tilde should propose replacing it with the data-repository link so edits do not dirty the installed skill
 repository. If the file is user-owned and not a managed/generated fallback, never overwrite it without explicit
 confirmation.
 

@@ -11,9 +11,11 @@ Load this reference when editing this repository, the Tilde skill, helper script
 - Routed detailed specifications: `references/specification/`
 - Dotagents spec alias: `.agents/specs/tilde.md`
 - Tilde skill: `SKILL.md`
+- Runtime router helper: `bin/tilde`
 - Status helper: `bin/status`
 - Doctor helper: `bin/doctor`
 - Plan helper: `bin/plan`
+- Checkout transport helper: `bin/checkout`
 - Bootstrap helper: `bin/bootstrap`
 - Checkout preflight helper: `bin/preflight`
 - Provisioning state: `~/.local/state/tilde/hosts/HOST/state.md`
@@ -69,8 +71,10 @@ Run relevant checks after Tilde skill, helper, or migrated module changes:
 ```bash
 bin/plan --repo ../home --allow-dirty --platform linux --host smoke --format markdown
 .agents/tests/apply/smoke.sh
+.agents/tests/checkout/smoke.sh
 .agents/tests/deploy/smoke.sh
 .agents/tests/doctor/smoke.sh
+.agents/tests/router/smoke.sh
 .agents/tests/status/smoke.sh
 REPO_ROOT=../home .agents/tests/plan/smoke.sh
 RUBOCOP_SERVER=false RUBOCOP_CACHE_ROOT=.agents/state/rubocop-cache rubocop --cache false --config .agents/tests/rubocop.yml bin/plan bin/apply bin/doctor bin/status

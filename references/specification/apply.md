@@ -2,8 +2,9 @@
 
 ## Purpose
 
-`bin/apply` is the deterministic executor for a confirmed provisioning plan. It replaces agent-generated,
-deployment-specific apply scripts for normal Tilde provisioning.
+`bin/tilde apply` is the deterministic executor route for a confirmed provisioning plan. The direct `bin/apply` helper
+remains available for focused executor use. This executor replaces agent-generated, deployment-specific apply scripts for
+normal Tilde provisioning.
 
 The executor is deliberately narrow. It does not discover repositories, regenerate plans, interpret prose, choose
 packages, repair declarations, or invent fallbacks. It may perform deterministic package-handler work described by the
@@ -15,18 +16,18 @@ structured results for the agent or user to resolve.
 The intended command surface is:
 
 ```text
-bin/apply --plan PLAN.json [--plan PLAN.json ...]
+bin/tilde apply --plan PLAN.json [--plan PLAN.json ...]
 ```
 
 Plans must be generated in the target context. Remote orchestration runs the executor on the target and uses target-local
 repository paths, home paths, platform facts, and deployment state.
 
-The caller owns proposal-first confirmation. `bin/apply` must not turn a plan into a broader action than the user
+The caller owns proposal-first confirmation. The apply executor must not turn a plan into a broader action than the user
 confirmed.
 
 ## Executable Plan
 
-An executable plan is immutable input, not a suggestion to rediscover desired state. `bin/plan` must emit:
+An executable plan is immutable input, not a suggestion to rediscover desired state. `bin/tilde plan` must emit:
 
 - a versioned plan schema;
 - repository protocol, role, path, branch, commit, and dirty-state facts;
@@ -77,9 +78,10 @@ The executor supports these action kinds:
 
 The planner owns action order and dependencies. The executor processes actions in plan order.
 
-Mixed prose-and-code special sections are `manual` actions. The executor runs only sections whose plan representation
-marks them Bash-only. It writes each Bash block to a temporary script, executes it without rewriting, captures output
-and exit status, then removes the temporary script.
+Special-section Markdown prose is documentation. The executor runs only sections whose plan representation marks them
+Bash-only, meaning the section contains shell fenced blocks and no non-shell fenced code blocks. It writes each Bash
+block to a temporary script, executes it without rewriting, captures output and exit status, then removes the temporary
+script.
 
 Actions that require an interactive terminal or user decision are marked `manual` or `deferred` instead of being
 attempted in a non-interactive remote apply. A `manual` action records a `deferred` result with the original instruction
@@ -89,14 +91,19 @@ If a package handler command is missing, record that package action as `deferred
 package actions do not fail the module, so later deterministic link/copy actions in the same module can still reconcile
 desired state. A present package command that exits nonzero remains `notok`.
 
+For Linux `deb:` package actions, the executor uses non-interactive sudo. If `sudo -n` reports that authentication, a
+TTY, or policy approval is required, record the package action as `deferred` with reason `privilege required`; do not
+hang waiting for a password prompt. This does not grant privilege or change system policy; it only makes privilege
+failure deterministic.
+
 Package actions may include supported conditions. When a condition is not met, the executor records the action as
 `ignored` and does not run the package command. The `graphical` condition is always true on macOS, true on Linux only
 when `systemctl get-default` is `graphical.target`, and false elsewhere.
 
 ## Determinism
 
-For the same executable plan and equivalent initial managed state, `bin/apply` must use the same action order, handlers,
-arguments, link values, conflict strategies, and result classification.
+For the same executable plan and equivalent initial managed state, the apply executor must use the same action order,
+handlers, arguments, link values, conflict strategies, and result classification.
 
 Determinism does not mean package managers or networks produce identical external versions. It means Tilde does not
 silently substitute declarations, select ambiguous assets, infer missing commands, or change strategy during apply.

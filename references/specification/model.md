@@ -141,7 +141,7 @@ Host state frontmatter records enough provenance to explain what was applied:
 - `date`: provisioning time.
 - `bootstrap`: bootstrap baseline status when it has been checked or installed.
 - `skill`: installed skill path or version.
-- `head`: public repository `HEAD` at provisioning time, retained for compatibility with current plan helpers.
+- `head`: public repository `HEAD` at provisioning time, available to plan helpers and status readers.
 - `public`: public repository path and commit.
 - `private`: private repository path and commit when present.
 - `done`: ordered map of provisioned module directories. Values are `ok`, `notok`, or `ignored`.

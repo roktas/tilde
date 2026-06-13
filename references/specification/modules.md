@@ -156,8 +156,9 @@ tools.
 The README body is agent instruction text. Some headings are conventional special sections, documented under
 Provisioning.
 
-If a special section contains only `bash` fenced blocks and no other instruction text, the blocks are run in written
-order after confirmation.
+If a special section contains one or more `bash` or `sh` fenced blocks and no other fenced code block languages, those
+blocks are run in written order after confirmation. Markdown prose outside those fenced blocks is documentation and is
+not executed. A special section with no shell fenced blocks, or with non-shell fenced blocks, is treated as manual.
 
 Special sections may contain lower-level headings such as `### GNOME`. These headings group literate instructions and
 do not create new special-section semantics.

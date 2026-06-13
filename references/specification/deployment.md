@@ -43,7 +43,7 @@ ssh HOST sh -s <<'SH'
 set -eu
 export PATH="/opt/homebrew/bin:/usr/local/bin:/home/linuxbrew/.linuxbrew/bin:$PATH"
 skill="$HOME/.agents/skills/tilde"
-"$skill/bin/plan" --repo "$HOME/Dropbox/home" --mode apply --host HOST --format json > /tmp/plan.json
+"$skill/bin/tilde" plan --repo "$HOME/Dropbox/home" --mode apply --host HOST --format json > /tmp/plan.json
 SH
 ```
 
@@ -71,13 +71,26 @@ repository's own name; do not force it to `home`.
 
 For `remote-git`, a public data repository is required. The private data repository is optional: include it when it is
 configured by controller state, public repository frontmatter, or an explicit `--private PRIVATE_REPO`; otherwise run a
-public-only deployment. When private is included, clone or fetch it on the target alongside the public repository,
-normally under `~/.local/src/<private-repo-name>`.
+public-only deployment. When private is included, prepare it on the target alongside the public repository, normally
+under `~/.local/src/<private-repo-name>`.
 
-If a private data repository is configured but the target private checkout is missing, unreadable, not synced, or does
-not confirm its private role, stop before normal install and guide the user to sync or initialize the private checkout.
-Continue without a private checkout only when the user has no private data repository configured or explicitly confirms
-a public-only deployment.
+For `remote-git`, the default private repository transport is a controller-side Git bundle, not target-side private
+GitHub authentication. The controller verifies the local private checkout is clean and at its upstream commit, creates a
+full bundle for the selected branch, transfers it over the existing SSH path, and the target clones or fetches that
+bundle into the normal target-local checkout. Target-side private Git authentication is opt-in only, for hosts where the
+user explicitly wants deploy keys, `gh auth`, SSH agent forwarding, or another private Git credential on the target.
+
+Bundle transport must update existing target checkouts with `git fetch BUNDLE refs/heads/BRANCH:refs/remotes/origin/BRANCH`
+followed by `git merge --ff-only origin/BRANCH`. It must stop when the target checkout is dirty, on the wrong branch, or
+cannot fast-forward. It must write only temporary bundle files on the target and remove them before closeout. The
+controller may use `bin/tilde checkout remote` for this transport.
+
+If `remote-git` bundle transport is selected and the target private checkout is missing, create it from the bundle
+before planning. Stop only when an existing target private path is not a Git checkout, is dirty, is on the wrong branch,
+cannot fast-forward from the bundle, or does not confirm its private role after checkout preparation. For
+`remote-dropbox` or explicit target-side private Git transport, a missing, unreadable, unsynced, or role-mismatched
+private checkout remains a blocker. Continue without a private checkout only when the user has no private data
+repository configured or explicitly confirms a public-only deployment.
 
 ### User Scenarios
 
@@ -223,11 +236,12 @@ install and guide the user through the platform-appropriate manual Dropbox setup
 After the user confirms Dropbox is installed, linked, and synced, re-run the preflight. Only then run bootstrap when
 needed and continue to plan/install.
 
-Run `bin/preflight` in the target context to make the checkout check bounded and repeatable. Supply important
+Run `bin/tilde preflight` in the target context to make the checkout check bounded and repeatable. Supply important
 checkout-relative paths with `--require`; for example, require `AGENTS.md` for a data repository and `SKILL.md`,
-`bin/plan`, and `bin/bootstrap` for the Tilde repository. A missing required path, unreadable Git `HEAD` or `HEAD` tree,
-or Git tree that cannot be traversed blocks deployment. Do not use an unbounded full-object `git fsck` during ordinary
-preflight; reserve deeper repository diagnosis for doctor flows.
+`bin/tilde`, `bin/plan`, and `bin/bootstrap` for the Tilde repository when direct helper entrypoints are used. A
+missing required path, unreadable Git `HEAD` or `HEAD` tree, or Git tree that cannot be traversed blocks deployment. Do
+not use an unbounded full-object `git fsck` during ordinary preflight; reserve deeper repository diagnosis for doctor
+flows.
 
 Preflight starts with a bootstrap check. If compatible bootstrap state is already recorded in the target host state, the
 check returns through the fast path without probing the system. If that state is missing, stale, or incompatible, the
@@ -324,12 +338,9 @@ load the target Homebrew environment and Ruby formula path explicitly.
 
 - `remote-git`: deterministic default for SSH provisioning when the target does not have a Dropbox-backed public data
   checkout. Prepare the target public repository by cloning or fetching it, usually under `~/.local/src/<repo-name>`.
-  Prepare the private repository the same way only when it is configured or explicitly requested. Use `main` and the
-  latest pushed commit unless instructed otherwise. Require a clean local worktree and a pushed commit. If the target
-  can read the public repository but cannot authenticate to a private Git remote, the agent may use a controller-side
-  `git bundle` as an explicit private transport after confirmation. Bundle transport must preserve branch and commit
-  identity, write only temporary bundle files on the target, clone or fetch into the normal target-local repository
-  path, and remove the transferred bundle before closeout.
+  Prepare the private repository with controller-side bundle transport when it is configured or explicitly requested.
+  Use `main` and the latest pushed commit unless instructed otherwise. Require a clean local worktree and a pushed
+  commit. Target-side private Git authentication is an opt-in transport, not the default.
 - `remote-dropbox`: use the target public/private repositories that already exist under Dropbox. Local and target Git
   `HEAD` do not need to match, but repository identity and public/private roles must match. Runtime state stays under
   `~/.local/state/tilde` on the target.
