@@ -1,11 +1,7 @@
-# Tilde sudo and ssh runtime draft
+# Tilde sudo and ssh runtime rationale
 
-This note is a working draft, not canonical Tilde behavior. Promote settled decisions into
-`references/specification/` and `references/development.md` after the model is implemented and validated.
-
-Router hub basics are now canonicalized in `references/specification.md`,
-`references/specification/commands.md`, `SKILL.md`, and `references/development.md`. The remaining sudo, SSH, and
-`libexec/` layout details in this note are still draft.
+This note records the design rationale behind the routed SSH and sudo runtime. Canonical behavior lives in
+`references/specification/`, `SKILL.md`, and `references/development.md`.
 
 ## Problem
 
@@ -60,14 +56,27 @@ Only the Tilde execution environment prepends `bin/` to `PATH`.
 bin/
   tilde
   sudo
+  apply
+  bootstrap
+  checkout
+  doctor
+  help
+  plan
+  preflight
+  smoke
+  status
 
 libexec/
   apply
   boot
   checkout
+  doctor
   help
   plan
+  preflight
+  smoke
   ssh
+  status
   sudo
 ```
 
@@ -77,9 +86,6 @@ present, are focused entrypoints, not separate command families.
 
 `bin/tilde` is the public dispatcher and router hub. It resolves the Tilde root, sets the Tilde execution environment,
 normalizes global flags and diagnostics, and dispatches to `libexec/*`.
-
-Initial implementation note: the first router slice may dispatch to direct `bin/*` helper entrypoints while the
-`libexec/` layout is built out.
 
 `bin/sudo` is a shim visible only inside the Tilde execution environment. It delegates to the internal `tilde sudo`
 route, which dispatches to `libexec/sudo`.
@@ -133,8 +139,8 @@ PATH=$TILDE_ROOT/bin:$PATH
 
 Outside that environment, the user's shell and normal `sudo` behavior are unchanged.
 
-`bin/sudo` should guard against accidental use. If `TILDE_SUDO` is not `intercept`, it should transparently delegate to
-real sudo or fail with a clear configuration error. The safer default needs a final decision before implementation.
+`bin/sudo` guards against accidental use. If `TILDE_SUDO` is not `intercept`, it fails closed with a clear configuration
+error.
 
 ## SSH Runtime
 
@@ -161,12 +167,9 @@ Expected behavior:
 - Password, TTY, authentication, or policy failure: return a structured privilege failure.
 - Other sudo command failures: preserve the original nonzero failure.
 
-The wrapper should write a machine-readable marker to stderr and may also append a JSONL event to a Tilde runtime log
-path supplied by `libexec/apply`. The log option is useful because a README block can swallow a sudo failure with shell
-logic such as `|| true`.
-
-Open detail: choose the marker and exit code. A reserved exit code such as `125` plus a marker such as
-`TILDE_PRIVILEGE_REQUIRED` is a plausible first pass.
+The wrapper writes the machine-readable marker `TILDE_PRIVILEGE_REQUIRED` to stderr, exits with the reserved status
+`125`, and appends a JSONL event to a Tilde runtime log path supplied by `libexec/apply`. The log is useful because a
+README block can swallow a sudo failure with shell logic such as `|| true`.
 
 ## Apply Semantics
 
@@ -201,36 +204,17 @@ The handoff should:
 - Provide a matching cleanup command.
 - Warn that the rule grants broad root privilege and must be removed after the run.
 
-Open detail: decide whether Tilde should verify cleanup automatically when it already has non-interactive sudo, or only
-ask/report.
-
 ## Implementation Sketch
 
-1. Add `bin/tilde` dispatcher as the canonical router hub while keeping direct helper paths valid.
-2. Put command implementations under `libexec/` where that separation reduces complexity.
-3. Add `boot` as the bootstrap route name while keeping `bootstrap` valid.
-4. Add `bin/sudo` and `libexec/sudo`, guarded by `TILDE_SUDO=intercept`.
-5. Route README shell block execution through the Tilde execution environment.
-6. Add section-level privilege classification and tests.
-7. Add `libexec/ssh` and route remote snippets through `tilde ssh`.
-8. Update skill/spec/development docs only after behavior is implemented and validated.
+1. `bin/tilde` is the canonical router hub while direct helper paths remain valid wrappers.
+2. Command implementations live under `libexec/`.
+3. `boot` is the bootstrap route name; `bootstrap` remains a valid alias.
+4. `bin/sudo` and `libexec/sudo` are guarded by `TILDE_SUDO=intercept`.
+5. README shell block execution runs through the Tilde execution environment.
+6. Section-level privilege classification uses stderr, status, and `TILDE_SUDO_LOG`.
+7. `libexec/ssh` routes remote snippets through `tilde ssh`.
 
-## Open Questions
-
-- Should accidental `bin/sudo` use outside Tilde execution delegate to real sudo, or fail closed? Draft answer: fail
-  closed.
-- Should privilege failure stop the run immediately, or should apply finish independent actions and summarize? Draft
-  answer: finish independent work, but stop dependent follow-up work.
-- Should the sudo shim maintain a JSONL log so swallowed sudo failures are still detectable? Draft answer: use both a
-  stderr marker and an apply-owned JSONL event file.
-- What exact handoff command and cleanup command should be generated?
-- Should handoff state be represented in `last-apply.json`, host `state.md`, or both?
-- How should `repair` resume after a user installs and later removes temporary sudoers policy?
-- Should `tilde ssh` expose only high-level operations, or also a low-level script transport for diagnostics?
-- Which direct `bin/*` helper entrypoints should remain available after the router hub lands?
-- Should direct `libexec/*` invocation be supported for tests only, or treated as a stable internal interface?
-
-## Current Preferences
+## Settled Preferences
 
 Prefer `bin/tilde COMMAND ...` as the canonical routed surface. The public shape should be one controlled entrypoint,
 not a family of prefixed executables. This keeps the command vocabulary short, gives future commands a shared runtime
@@ -240,9 +224,8 @@ for tests and development, but not as the normal agent-facing contract.
 
 Prefer fail-closed behavior for accidental `bin/sudo` use outside the Tilde execution environment. If `bin/sudo` is
 visible but `TILDE_SUDO=intercept` is missing, that is either a Tilde runtime setup bug or an accidental PATH leak.
-Transparent pass-through could hide a missing Tilde guard and reintroduce blocking sudo prompts inside apply. A future
-explicit diagnostic escape hatch such as `TILDE_SUDO=passthrough` can be added if needed, but the default should be a
-clear configuration failure. This is the current draft decision unless the runtime model changes.
+Transparent pass-through could hide a missing Tilde guard and reintroduce blocking sudo prompts inside apply. An explicit
+diagnostic escape hatch such as `TILDE_SUDO=passthrough` can be considered only with a separate spec change.
 
 Prefer end-of-run reporting as the default, but not blind continuation. A privilege failure should mark the current
 action as `deferred` and stop dependent follow-up work in the same module, so later non-privileged actions do not fail
@@ -254,8 +237,7 @@ immediate handoff/resume cycle is cheaper.
 
 Prefer both stderr/capture and an apply-owned JSONL event file. The stderr marker and reserved exit code provide fast
 classification for simple failures. The JSONL file is needed for failures swallowed by shell logic such as
-`sudo ... || true`. `libexec/apply` should create a temporary event file for the action or block, export it as
-`TILDE_SUDO_LOG`, read it after execution, fold structured events into action diagnostics and `last-apply.json`, then
-remove the raw file unless trace/debug retention is enabled. Default policy: any recorded privilege failure makes the
-action `deferred`, even if the shell block exits 0. Optional sudo should need an explicit future escape hatch rather
-than being inferred.
+`sudo ... || true`. `libexec/apply` creates a temporary event file for the action or block, exports it as
+`TILDE_SUDO_LOG`, reads it after execution, folds structured events into action diagnostics and `last-apply.json`, then
+removes the raw file. Default policy: any recorded privilege failure makes the action `deferred`, even if the shell block
+exits 0. Optional sudo needs an explicit future escape hatch rather than being inferred.

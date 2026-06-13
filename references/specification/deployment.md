@@ -34,28 +34,26 @@ discovery.
 If no public/private arguments are given, Tilde resolves them from local state, home-entrypoint metadata, or the remote
 target's configured state according to the command's semantics.
 
-Remote SSH orchestration must not rely on the target user's login shell. The canonical multi-command remote form is a
-POSIX `sh -s` heredoc; agents must use this shape for remote dry-run, update, deploy, status, and doctor snippets unless
-the user explicitly asks for a different transport:
+Remote SSH orchestration must not rely on the target user's login shell. Use `bin/tilde ssh` for Tilde-controlled
+multi-command remote work when the runtime route is available. The route reads the heredoc body from stdin, sets a
+target PATH prelude, and executes the body through the visible POSIX `ssh HOST sh -s --` shape:
 
 ```sh
-ssh HOST sh -s <<'SH'
-set -eu
-export PATH="/opt/homebrew/bin:/usr/local/bin:/home/linuxbrew/.linuxbrew/bin:$PATH"
+bin/tilde ssh HOST <<'SH'
 skill="$HOME/.agents/skills/tilde"
 "$skill/bin/tilde" plan --repo "$HOME/Dropbox/home" --mode apply --host HOST --format json > /tmp/plan.json
 SH
 ```
 
-The quoted heredoc delimiter prevents local-shell expansion; variables expand on the target inside `sh`. This shape
+The quoted heredoc delimiter prevents local-shell expansion; variables expand on the target inside `sh`. This route
 keeps the remote body visible and avoids nested quote bugs. Do not begin an SSH command with login-shell syntax such as
 `set -e; ...`; targets may use Fish, Zsh, or another shell with different `set` semantics. Do not compress
 multi-command remote orchestration into `ssh HOST 'sh -c ...'`, and do not use `bash -lc` as default remote glue on
-macOS, because `bash` may resolve to the old system Bash instead of a Homebrew Bash. Use Bash only for explicit Bash
-script entrypoints such as `bin/bootstrap` or scripts with a Bash shebang. When a post-bootstrap remote step genuinely
-requires Homebrew Bash, resolve that interpreter target-locally from the Homebrew environment or an explicit target path
-instead of assuming `bash` means it. Do not rely on login-shell startup files for `PATH`; set any required environment
-inside the remote snippet.
+macOS, because `bash` may resolve to the system Bash instead of a Homebrew Bash. Use Bash only for explicit Bash script
+entrypoints such as `libexec/boot` or scripts with a Bash shebang. When a post-bootstrap remote step genuinely requires
+Homebrew Bash, resolve that interpreter target-locally from the Homebrew environment or an explicit target path instead
+of assuming `bash` means it. Do not rely on login-shell startup files for `PATH`; set any required environment inside
+the remote snippet or let `bin/tilde ssh` provide the standard Tilde prelude.
 
 Do not use these forms for multi-command Tilde orchestration:
 
@@ -238,19 +236,18 @@ needed and continue to plan/install.
 
 Run `bin/tilde preflight` in the target context to make the checkout check bounded and repeatable. Supply important
 checkout-relative paths with `--require`; for example, require `AGENTS.md` for a data repository and `SKILL.md`,
-`bin/tilde`, `bin/plan`, and `bin/bootstrap` for the Tilde repository when direct helper entrypoints are used. A
-missing required path, unreadable Git `HEAD` or `HEAD` tree, or Git tree that cannot be traversed blocks deployment. Do
-not use an unbounded full-object `git fsck` during ordinary preflight; reserve deeper repository diagnosis for doctor
-flows.
+`bin/tilde`, `bin/sudo`, `libexec/plan`, `libexec/apply`, and `libexec/boot` for the Tilde repository. A missing
+required path, unreadable Git `HEAD` or `HEAD` tree, or Git tree that cannot be traversed blocks deployment. Do not use
+an unbounded full-object `git fsck` during ordinary preflight; reserve deeper repository diagnosis for doctor flows.
 
 Preflight starts with a bootstrap check. If compatible bootstrap state is already recorded in the target host state, the
 check returns through the fast path without probing the system. If that state is missing, stale, or incompatible, the
 check probes the bootstrap baseline and records an `ok` result in the host state when the probe succeeds. For normal
 apply/update preflight, a failed probe is recoverable: preflight runs idempotent bootstrap, then re-runs
-`bin/bootstrap --check --record`. If bootstrap still needs credentials, an interactive platform installer, network, or
+`bin/tilde boot --check --record`. If bootstrap still needs credentials, an interactive platform installer, network, or
 another external action but the existing `git`, `ruby`, and `curl` runtime can run plan/apply, preflight reports the
 deferred bootstrap and continues so desired-state reconciliation is not blocked. If bootstrap remains incomplete and the
-required runtime is missing, preflight blocks. Use `bin/preflight --bootstrap check` for check-only flows such as
+required runtime is missing, preflight blocks. Use `bin/tilde preflight --bootstrap check` for check-only flows such as
 dry-run contexts that must not install anything, `--bootstrap require` when the caller needs a complete baseline before
 continuing, and `--bootstrap skip` only when a caller has already handled bootstrap.
 
@@ -267,9 +264,10 @@ when a private data repository is configured.
 
 ### Bootstrap
 
-The bootstrap helper is `bin/bootstrap` in the installed skill. It prepares the smallest baseline needed for normal
-provisioning: transport tools, Homebrew, Ruby, `curl`, and `git`. Bootstrap must be Bash, must not require Ruby, must be
-idempotent, and must remain outside normal module state.
+The bootstrap preparation route is `bin/tilde boot` in the installed skill, with `bin/bootstrap` as a focused wrapper.
+Its implementation is `libexec/boot`. It prepares the smallest baseline needed for normal provisioning: transport tools,
+Homebrew, Ruby, `curl`, and `git`. Bootstrap must be Bash, must not require Ruby, must be idempotent, and must remain
+outside normal module state.
 
 Bootstrap has two separate concerns:
 
@@ -280,26 +278,26 @@ When the installed skill is already present on the target but the bootstrap base
 bootstrap from the installed skill:
 
 ```bash
-bin/bootstrap
+bin/tilde boot
 ```
 
 Do not rerun bootstrap merely because deployment state was cleaned or a host is being redeployed. Clean state means the
 planner and executor should behave like a fresh desired-state apply; it does not reset the target's bootstrap baseline.
 
-`bin/bootstrap --check` checks the bootstrap baseline without installing packages. It reads the target host state first:
-a compatible `bootstrap: {status: ok}` entry is a fast-path success. If `--probe` is given, or if compatible state is
-missing, stale, or incompatible, it probes the system for the baseline tools. Failed checks must report the missing or
-broken baseline part, such as stale state, missing Homebrew, missing Xcode Command Line Tools, a broken Homebrew tool,
-or unavailable noninteractive `sudo`. `--record` records a successful probe into the existing host `state.md`
+`bin/tilde boot --check` checks the bootstrap baseline without installing packages. It reads the target host state
+first: a compatible `bootstrap: {status: ok}` entry is a fast-path success. If `--probe` is given, or if compatible
+state is missing, stale, or incompatible, it probes the system for the baseline tools. Failed checks must report the
+missing or broken baseline part, such as stale state, missing Homebrew, missing Xcode Command Line Tools, a broken
+Homebrew tool, or unavailable noninteractive `sudo`. `--record` records a successful probe into the existing host `state.md`
 frontmatter. Normal bootstrap records the same `bootstrap` state after a successful install.
 
 When bootstrapping a remote target that does not have the installed skill yet, deliver the script over SSH:
 
 ```bash
-ssh HOST 'bash -s' < bin/bootstrap
+ssh HOST 'bash -s' < libexec/boot
 ```
 
-This is an explicit Bash script delivery exception, not the general remote orchestration shell. `bin/bootstrap` must
+This is an explicit Bash script delivery exception, not the general remote orchestration shell. `libexec/boot` must
 remain compatible with the target's baseline Bash until Homebrew is installed and available.
 
 When `tilde.roktas.dev` exists as the GitHub-backed public site for the installed skill, prefer the public bootstrap endpoint
@@ -333,6 +331,29 @@ platform installer finishes. Bootstrap must detect an existing Homebrew installa
 locations even when non-interactive SSH does not put `brew` on `PATH`. After installing formulas, bootstrap uses the
 Homebrew `curl` and keg-only Ruby paths for its own verification. Later remote processes that require Homebrew Ruby must
 load the target Homebrew environment and Ruby formula path explicitly.
+
+### Privilege Handoff
+
+Tilde-controlled package and section execution uses noninteractive sudo only. `bin/sudo` is a shim that is visible in the
+Tilde execution `PATH`; it delegates to `bin/tilde sudo`, which calls the real sudo command with `-n`. Authentication,
+TTY, and sudo policy failures emit `TILDE_PRIVILEGE_REQUIRED` and are reported as `deferred`.
+
+When a remote deployment needs sudo and the target cannot run it noninteractively, present a user-run handoff command
+instead of collecting a password. Generate it with:
+
+```bash
+bin/tilde sudo handoff --host HOST
+```
+
+The printed command runs the target's `bin/tilde sudo allow` in the user's terminal. That command validates and installs
+`/etc/sudoers.d/tilde` for the target user and prints the matching cleanup command:
+
+```bash
+sudo rm -f /etc/sudoers.d/tilde
+```
+
+This rule grants broad root privilege to the target user and must be removed after the run. `bin/tilde sudo handoff
+--copy` may copy the printed command to the local clipboard when a clipboard tool is available.
 
 ### Remote Modes
 

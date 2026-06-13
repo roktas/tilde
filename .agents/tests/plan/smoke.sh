@@ -42,6 +42,7 @@ main() {
 	local normal_plan_json
 	local platform_module
 	local plan
+	local plan_impl
 	local plan_json
 	local private_macos_plan_json
 	local private_plan_json
@@ -61,6 +62,7 @@ main() {
 	script_dir=$(cd -- "${BASH_SOURCE[0]%/*}" >/dev/null && pwd)
 	skill_root=$(cd -- "$script_dir/../../.." >/dev/null && pwd)
 	plan=$skill_root/bin/plan
+	plan_impl=$skill_root/libexec/plan
 	repo=${REPO_ROOT:-$(cd -- "$skill_root/../home" >/dev/null && pwd)}
 	private_repo=${PRIVATE_REPO_ROOT:-}
 	if [[ -z $private_repo && -d $repo/../home- ]]; then
@@ -106,7 +108,7 @@ main() {
 	git config --global --add safe.directory "$repo"
 	[[ -z $private_repo ]] || git config --global --add safe.directory "$private_repo"
 
-	ruby -c "$plan"
+	ruby -c "$plan_impl"
 
 	rm -rf "$dirty_module"
 	mkdir -p "$dirty_module"

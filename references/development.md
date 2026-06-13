@@ -12,12 +12,13 @@ Load this reference when editing this repository, the Tilde skill, helper script
 - Dotagents spec alias: `.agents/specs/tilde.md`
 - Tilde skill: `SKILL.md`
 - Runtime router helper: `bin/tilde`
-- Status helper: `bin/status`
-- Doctor helper: `bin/doctor`
-- Plan helper: `bin/plan`
-- Checkout transport helper: `bin/checkout`
-- Bootstrap helper: `bin/bootstrap`
-- Checkout preflight helper: `bin/preflight`
+- Sudo PATH shim: `bin/sudo`
+- Direct helper wrappers: `bin/apply`, `bin/bootstrap`, `bin/checkout`, `bin/doctor`, `bin/help`, `bin/plan`,
+  `bin/preflight`, `bin/smoke`, `bin/status`
+- Runtime implementations: `libexec/`
+- Bootstrap implementation: `libexec/boot`
+- SSH transport implementation: `libexec/ssh`
+- Sudo classifier and handoff implementation: `libexec/sudo`
 - Provisioning state: `~/.local/state/tilde/hosts/HOST/state.md`
 - Agent resume checkpoint: `.agents/state/checkpoints/assistant.md`
 - Shared notes and TODO inbox: `.agents/notes/todo.md`
@@ -59,17 +60,17 @@ checkpoint after requested commits or pushes when practical.
   weight.
 - Do not add expanded home paths or machine-specific absolute filesystem paths to tracked repository files. Write home
   paths with `~`, for example `~/.config/foo`, and otherwise use repository-relative or module-relative paths.
-- Do not migrate old `install.sh` files by default. Prefer README frontmatter and special sections; keep a script only
-  when it is an intentional module implementation detail.
+- Do not convert `install.sh` files by default. Prefer README frontmatter and special sections; keep a script only when
+  it is an intentional module implementation detail.
 - When searching for literal text that may contain shell metacharacters such as backticks, `$`, `!`, or quotes, avoid
   double-quoted shell patterns. Prefer `rg -F -e 'literal text'`.
 
 ## Validation
 
-Run relevant checks after Tilde skill, helper, or migrated module changes:
+Run relevant checks after Tilde skill, helper, or module changes:
 
 ```bash
-bin/plan --repo ../home --allow-dirty --platform linux --host smoke --format markdown
+bin/tilde plan --repo ../home --allow-dirty --platform linux --host smoke --format markdown
 .agents/tests/apply/smoke.sh
 .agents/tests/checkout/smoke.sh
 .agents/tests/deploy/smoke.sh
@@ -77,7 +78,7 @@ bin/plan --repo ../home --allow-dirty --platform linux --host smoke --format mar
 .agents/tests/router/smoke.sh
 .agents/tests/status/smoke.sh
 REPO_ROOT=../home .agents/tests/plan/smoke.sh
-RUBOCOP_SERVER=false RUBOCOP_CACHE_ROOT=.agents/state/rubocop-cache rubocop --cache false --config .agents/tests/rubocop.yml bin/plan bin/apply bin/doctor bin/status
+RUBOCOP_SERVER=false RUBOCOP_CACHE_ROOT=.agents/state/rubocop-cache rubocop --cache false --config .agents/tests/rubocop.yml libexec/plan libexec/apply libexec/doctor libexec/status
 mapfile -t shell_files < <(rg --hidden -l '^#!.*(bash|sh)' -g '!**/.git/**' -g '!**/.agents/state/**')
 shellcheck "${shell_files[@]}"
 ```

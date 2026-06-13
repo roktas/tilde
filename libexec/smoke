@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+[[ -z ${TRACE:-} ]] || set -x
+unset CDPATH
+
+abort() {
+	warn "E: $*"
+	exit 1
+}
+
+warn() {
+	printf '%s\n' "$*" >&2
+}
+
+# ------------------------------------------------------------------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------------------------------------------------------------------
+
+repo_root() {
+	git rev-parse --show-toplevel 2>/dev/null || abort "not inside a Git repository"
+}
+
+there() {
+	if ! type -P there >/dev/null; then
+		abort "\"there\" is not in PATH; install there or activate an environment that provides it"
+	fi
+
+	command there "$@"
+}
+
+# ------------------------------------------------------------------------------------------------------------------------
+# Main
+# ------------------------------------------------------------------------------------------------------------------------
+
+usage() {
+	cat <<-EOF
+		Usage:
+		  smoke [plan|boot|stop|destroy|prune]
+	EOF
+}
+
+main() {
+	local command=${1:-plan}
+	local repo
+
+	repo=$(repo_root)
+	cd "$repo"
+
+	case $command in
+	plan)
+		there run .agents/tests/plan/smoke.sh
+		;;
+	boot)
+		there run bin/tilde boot
+		there run bash -lc 'ruby --version; git --version; curl --version | head -n 1'
+		;;
+	stop)
+		there stop
+		;;
+	destroy)
+		there destroy
+		;;
+	prune)
+		there prune
+		;;
+	-h | --help | help)
+		usage
+		;;
+	*)
+		usage
+		exit 2
+		;;
+	esac
+}
+
+main "$@"

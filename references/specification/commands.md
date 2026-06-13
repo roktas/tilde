@@ -11,8 +11,8 @@ Bare `$tilde` means `help`. It is read-only and must behave like `$tilde help`.
 ### Runtime Router
 
 `bin/tilde` is the canonical runtime router for implemented helper behavior. It sets the shared Tilde helper
-environment, resolves the skill root, normalizes route aliases, and dispatches to the matching helper. It is a runtime
-entrypoint, not a replacement for prompt-level agent orchestration.
+environment, resolves the skill root, normalizes route aliases, and dispatches to the matching `libexec/` helper. It is
+a runtime entrypoint, not a replacement for prompt-level agent orchestration.
 
 The router may expose implemented helper routes such as:
 
@@ -24,6 +24,8 @@ The router may expose implemented helper routes such as:
 - `tilde bootstrap` and `tilde boot`
 - `tilde preflight`
 - `tilde checkout`
+- `tilde ssh`
+- `tilde sudo`
 
 The public prompt commands `adopt`, `align`, `clean`, `create`, `deploy`, `init`, `organize`, `repair`, `update`, and
 `upgrade` are agent-orchestrated unless a matching runtime route is explicitly defined. If those names are invoked
@@ -33,8 +35,10 @@ prompt command.
 The router accepts dotted internal aliases for development, such as `tilde .plan` and `tilde internal.plan`, when a
 matching runtime route exists. Dotted aliases are not shown in ordinary public help.
 
-Prefer `bin/tilde COMMAND ...` for runtime helper access. Direct helper entrypoints such as `bin/plan`, `bin/apply`,
-`bin/status`, `bin/doctor`, `bin/bootstrap`, `bin/preflight`, and `bin/checkout` remain valid focused entrypoints.
+Prefer `bin/tilde COMMAND ...` for runtime helper access. Command implementations live under `libexec/`. Direct helper
+entrypoints such as `bin/plan`, `bin/apply`, `bin/status`, `bin/doctor`, `bin/bootstrap`, `bin/preflight`, and
+`bin/checkout` remain valid focused wrappers. `bin/sudo` is a PATH shim for Tilde-controlled execution only; ordinary
+help must not present it as a public command.
 
 ### Public Commands
 
@@ -184,6 +188,8 @@ Internal commands:
   desired-state link reconciliation and updates normal system package managers; full scope also refreshes managed
   non-system package types and selected `Update` sections.
 - `internal.repair` or `.repair`: retry failed modules or failed installation phases from recorded state.
+- `internal.ssh` or `.ssh`: run Tilde-controlled remote script delivery.
+- `internal.sudo` or `.sudo`: classify Tilde-controlled sudo execution and generate privilege handoff commands.
 
 If a user explicitly requests an internal command, explain that it is internal and suggest the public command that covers
 the same workflow, unless the user is developing Tilde itself.

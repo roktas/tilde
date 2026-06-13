@@ -1,0 +1,303 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+[[ -z ${TRACE:-} ]] || set -x
+unset CDPATH
+
+readonly MARKER="TILDE_PRIVILEGE_REQUIRED"
+readonly PRIVILEGE_EXIT=125
+
+abort() {
+	warn "E: $*"
+	exit 2
+}
+
+warn() {
+	printf '%s\n' "$*" >&2
+}
+
+# ------------------------------------------------------------------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------------------------------------------------------------------
+
+copy_clipboard() {
+	local text=$1
+
+	if command -v pbcopy >/dev/null 2>&1; then
+		printf '%s' "$text" | pbcopy
+		return
+	fi
+	if command -v wl-copy >/dev/null 2>&1; then
+		printf '%s' "$text" | wl-copy
+		return
+	fi
+	if command -v xclip >/dev/null 2>&1; then
+		printf '%s' "$text" | xclip -selection clipboard
+		return
+	fi
+	if command -v xsel >/dev/null 2>&1; then
+		printf '%s' "$text" | xsel --clipboard --input
+		return
+	fi
+	if command -v clip.exe >/dev/null 2>&1; then
+		printf '%s' "$text" | clip.exe
+		return
+	fi
+
+	return 1
+}
+
+emit_privilege() {
+	local reason=$1
+	local status=${2:-$PRIVILEGE_EXIT}
+
+	local timestamp
+
+	timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+	printf '%s reason=%s status=%s\n' "$MARKER" "$reason" "$status" >&2
+	if [[ -n ${TILDE_SUDO_LOG:-} ]]; then
+		printf '{"schema":"tilde.sudo/v1","event":"privilege_required","reason":"%s","status":%s,"timestamp":"%s"}\n' \
+			"$reason" "$status" "$timestamp" >>"$TILDE_SUDO_LOG"
+	fi
+}
+
+real_sudo() {
+	local dir
+	local IFS=:
+	local shim
+	local sudo
+
+	if [[ -n ${TILDE_REAL_SUDO:-} && -x ${TILDE_REAL_SUDO:-} ]]; then
+		printf '%s\n' "$TILDE_REAL_SUDO"
+		return
+	fi
+
+	shim=${TILDE_ROOT:-}/bin/sudo
+	for dir in $PATH; do
+		[[ -n $dir ]] || dir=.
+		sudo=$dir/sudo
+		[[ -x $sudo ]] || continue
+		[[ $sudo != "$shim" ]] || continue
+		printf '%s\n' "$sudo"
+		return
+	done
+
+	for sudo in /usr/bin/sudo /bin/sudo /usr/local/bin/sudo; do
+		[[ -x $sudo ]] || continue
+		[[ $sudo != "$shim" ]] || continue
+		printf '%s\n' "$sudo"
+		return
+	done
+
+	return 1
+}
+
+shell_quote() {
+	local value=$1
+
+	printf "'"
+	printf '%s' "$value" | sed "s/'/'\\\\''/g"
+	printf "'"
+}
+
+sudo_privilege_failure() {
+	local stderr=$1
+
+	[[ $stderr =~ [Pp]assword ]] ||
+		[[ $stderr =~ [Nn]o[[:space:]]+tty ]] ||
+		[[ $stderr =~ [Tt]erminal[[:space:]]+is[[:space:]]+required ]] ||
+		[[ $stderr =~ [Aa][[:space:]]+tty[[:space:]]+is[[:space:]]+required ]] ||
+		[[ $stderr =~ [Aa]uthentication ]] ||
+		[[ $stderr =~ [Nn]ot[[:space:]]+allowed ]] ||
+		[[ $stderr =~ [Mm]ay[[:space:]]+not[[:space:]]+run[[:space:]]+sudo ]]
+}
+
+write_rule() {
+	local path=$1
+	local user=$2
+
+	printf '%s ALL=(ALL) NOPASSWD:ALL\n' "$user" >"$path"
+}
+
+# ------------------------------------------------------------------------------------------------------------------------
+# Commands
+# ------------------------------------------------------------------------------------------------------------------------
+
+command.allow() {
+	local user=${USER:-}
+
+	local sudo
+	local tempfile
+
+	while (($# > 0)); do
+		case $1 in
+		--user)
+			(($# > 1)) || abort "--user needs a value"
+			user=$2
+			shift 2
+			;;
+		--user=*)
+			user=${1#*=}
+			shift
+			;;
+		*)
+			abort "unknown allow option: $1"
+			;;
+		esac
+	done
+
+	[[ -n $user ]] || abort "could not determine target user"
+	id "$user" >/dev/null 2>&1 || abort "unknown target user: $user"
+	sudo=$(real_sudo) || abort "real sudo is missing"
+	tempfile=$(mktemp) || exit
+	trap 'rm -f "'"$tempfile"'"' EXIT
+	trap 'rm -f "'"$tempfile"'"; exit 130' HUP INT QUIT TERM
+
+	write_rule "$tempfile" "$user"
+	"$sudo" visudo -cf "$tempfile" >/dev/null
+	"$sudo" install -m 0440 "$tempfile" /etc/sudoers.d/tilde
+	if ! "$sudo" visudo -cf /etc/sudoers.d/tilde >/dev/null; then
+		"$sudo" rm -f /etc/sudoers.d/tilde
+		abort "installed sudoers rule failed validation and was removed"
+	fi
+
+	printf 'OK: installed /etc/sudoers.d/tilde for %s\n' "$user"
+	printf 'Cleanup: %s\n' "sudo rm -f /etc/sudoers.d/tilde"
+}
+
+command.cleanup() {
+	local sudo
+
+	sudo=$(real_sudo) || abort "real sudo is missing"
+	"$sudo" rm -f /etc/sudoers.d/tilde
+	printf 'OK: removed /etc/sudoers.d/tilde\n'
+}
+
+command.handoff() {
+	local copy=0
+	local host=
+	local root=\$HOME/.agents/skills/tilde
+
+	local command
+	local remote
+
+	while (($# > 0)); do
+		case $1 in
+		--copy)
+			copy=1
+			shift
+			;;
+		--host)
+			(($# > 1)) || abort "--host needs a value"
+			host=$2
+			shift 2
+			;;
+		--host=*)
+			host=${1#*=}
+			shift
+			;;
+		--root)
+			(($# > 1)) || abort "--root needs a value"
+			root=$2
+			shift 2
+			;;
+		--root=*)
+			root=${1#*=}
+			shift
+			;;
+		*)
+			abort "unknown handoff option: $1"
+			;;
+		esac
+	done
+
+	remote="$root/bin/tilde sudo allow"
+	if [[ -n $host ]]; then
+		command="ssh -t $(shell_quote "$host") $(shell_quote "$remote")"
+	else
+		command=$remote
+	fi
+
+	printf '%s\n' "$command"
+	if ((copy)); then
+		if copy_clipboard "$command"; then
+			warn "Copied handoff command to clipboard"
+		else
+			warn "W: clipboard command unavailable"
+		fi
+	fi
+}
+
+command.run() {
+	if [[ ${TILDE_SUDO:-} != intercept ]]; then
+		warn "E: Tilde sudo route is only available inside the Tilde execution environment"
+		exit "$PRIVILEGE_EXIT"
+	fi
+
+	local real
+	local status
+	local stderr
+	local stdout
+	local -a args=("$@")
+
+	real=$(real_sudo) || {
+		emit_privilege "sudo-missing"
+		exit "$PRIVILEGE_EXIT"
+	}
+	stdout=$(mktemp) || exit
+	stderr=$(mktemp) || exit
+	trap 'rm -f "'"$stdout"'" "'"$stderr"'"' EXIT
+	trap 'rm -f "'"$stdout"'" "'"$stderr"'"; exit 130' HUP INT QUIT TERM
+
+	if [[ ${args[0]:-} == -n ]]; then
+		"$real" "${args[@]}" >"$stdout" 2>"$stderr" && status=0 || status=$?
+	else
+		"$real" -n "${args[@]}" >"$stdout" 2>"$stderr" && status=0 || status=$?
+	fi
+
+	cat "$stdout"
+	cat "$stderr" >&2
+
+	if ((status != 0)) && sudo_privilege_failure "$(cat "$stderr")"; then
+		emit_privilege "sudo-auth" "$status"
+		exit "$PRIVILEGE_EXIT"
+	fi
+
+	exit "$status"
+}
+
+# ------------------------------------------------------------------------------------------------------------------------
+# Main
+# ------------------------------------------------------------------------------------------------------------------------
+
+usage() {
+	cat <<-EOF
+		Usage:
+		  tilde sudo allow [--user USER]
+		  tilde sudo cleanup
+		  tilde sudo handoff [--host HOST] [--root ROOT] [--copy]
+	EOF
+}
+
+main() {
+	local command=${1:-}
+
+	case $command in
+	allow | cleanup | handoff)
+		shift
+		"command.$command" "$@"
+		;;
+	--help | -h | help)
+		usage
+		;;
+	--)
+		shift
+		command.run "$@"
+		;;
+	*)
+		command.run "$@"
+		;;
+	esac
+}
+
+main "$@"

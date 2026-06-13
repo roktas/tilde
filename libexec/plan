@@ -1,0 +1,1150 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "date"
+require "digest"
+require "json"
+require "open3"
+require "optparse"
+require "pathname"
+require "rbconfig"
+require "time"
+require "yaml"
+
+class Plan
+  SKILL_ROOT = Pathname.new(__dir__).parent.expand_path.freeze
+  FALLBACK_ENTRYPOINT_SOURCE = "assets/AGENTS.md"
+  HOME_ENTRYPOINT_TARGET = "~/AGENTS.md"
+  PLAN_SCHEMA = "tilde.plan/v1"
+  DEFAULT_PACKAGE_TYPE = {
+    "linux" => "brew",
+    "macos" => "brew",
+    "windows" => "scoop"
+  }.freeze
+  LEVELS = {
+    "minimal" => 1,
+    "normal" => 5,
+    "extra" => 10
+  }.freeze
+  MODES = %w[align apply refresh repair upgrade].freeze
+
+  FULL_REFRESH_PACKAGE_TYPES = %w[egg flatpak gem github npm skill].freeze
+  PACKAGE_TYPES = %w[brew cask deb npm gem egg flatpak scoop github skill].freeze
+  PACKAGE_CONDITIONS = {
+    "flatpak" => "graphical"
+  }.freeze
+  SCOPES = %w[fast full].freeze
+  SPECIAL_SECTIONS = %w[
+    Preinstall
+    Install
+    Postinstall
+    Prelink
+    Presetup
+    Link
+    Postlink
+    Setup
+    Update
+  ].freeze
+
+  def initialize(options)
+    @allow_dirty = options.fetch(:allow_dirty)
+    @format = options.fetch(:format)
+    @host = options[:host] || short_hostname
+    @level = options.fetch(:level)
+    @mode = options.fetch(:mode)
+    @platform = options[:platform] || detect_platform
+    @repo = Pathname.new(options.fetch(:repo)).expand_path
+    @scope = options[:scope] || default_scope
+  end
+
+  def run
+    validate_repo!
+    validate_level!
+    validate_mode!
+    validate_platform!
+    validate_scope!
+    validate_worktree!
+
+    @head = git("rev-parse", "HEAD")
+    @previous_state = previous_state
+
+    modules = planned_modules
+    core = core_plan(modules)
+
+    plan = {
+      schema: PLAN_SCHEMA,
+      generated_at: Time.now.iso8601,
+      repo: @repo.to_s,
+      head: @head,
+      branch: current_branch,
+      dirty: dirty?,
+      host: @host,
+      level: @level,
+      mode: @mode,
+      scope: @scope,
+      platform: @platform,
+      state_path: state_path.to_s,
+      repository: repository_identity,
+      target: target_identity,
+      previous_state: @previous_state,
+      core:,
+      modules:
+    }
+    plan[:actions] = ordered_actions(plan)
+    plan[:plan_id] = plan_id(plan)
+
+    @format == "markdown" ? puts_markdown(plan) : puts(JSON.pretty_generate(plan))
+  end
+
+  private
+
+  def action_id(base, used)
+    id = base
+    suffix = 2
+
+    while used.key?(id)
+      id = "#{base}:#{suffix}"
+      suffix += 1
+    end
+
+    used[id] = true
+    id
+  end
+
+  def active_config(frontmatter)
+    all = normalize_map(frontmatter["all"])
+    platform = normalize_map(frontmatter[@platform])
+
+    merge_config(all, platform)
+  end
+
+  def active_system_packages(modules)
+    packages = []
+    packages << system_package("brew") if homebrew_active?(modules)
+    packages << system_package("deb") if apt_active?
+    packages << system_package("scoop") if scoop_active?(modules)
+    packages
+  end
+
+  def align? = @mode == "align"
+
+  def apply_like? = align? || apply? || repair?
+
+  def actions_skipped?(skipped) = skipped || !apply_like?
+
+  def bash_blocks(body)
+    fenced_blocks(body).filter_map do |info, content|
+      block = content.strip
+      block if bash_fence?(info) && !block.empty?
+    end
+  end
+
+  def bash_fence?(info)
+    %w[bash sh].include?(info.strip.split.first)
+  end
+
+  def canonicalize(value)
+    case value
+    when Array
+      value.map { |item| canonicalize(item) }
+    when Hash
+      value.keys.map(&:to_s).sort.to_h do |key|
+        original = value.key?(key.to_sym) ? key.to_sym : key
+        [key, canonicalize(value[original])]
+      end
+    else
+      value
+    end
+  end
+
+  def content_hash(plan)
+    content = canonicalize(plan.except(:generated_at, :plan_id))
+    Digest::SHA256.hexdigest(JSON.generate(content))
+  end
+
+  def apt_active? = @platform == "linux" && command_available?("apt-get")
+
+  def broad_upgrade_packages(modules)
+    packages = []
+    packages << system_package("cask") if homebrew_active?(modules)
+    packages << system_package("deb") if apt_active?
+    packages << system_package("flatpak") if flatpak_active?(modules)
+    packages << system_package("scoop") if scoop_active?(modules)
+    packages
+  end
+
+  def command_available?(name)
+    ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).any? do |dir|
+      path = File.join(dir, name)
+      File.file?(path) && File.executable?(path)
+    end
+  end
+
+  def current_branch
+    git("branch", "--show-current")
+  rescue StandardError
+    nil
+  end
+
+  def default_scope
+    case @mode
+    when "refresh"
+      "fast"
+    when "upgrade"
+      "full"
+    end
+  end
+
+  def configure_update_packages(modules)
+    return modules unless refresh? || upgrade?
+
+    modules.each do |mod|
+      mod[:packages_to_refresh] = []
+      mod[:packages_to_upgrade] = []
+    end
+
+    if full_refresh?
+      add_full_refresh_packages(modules)
+    else
+      add_fast_refresh_packages(modules)
+    end
+
+    add_broad_upgrade_packages(modules) if upgrade?
+    modules
+  end
+
+  def core_plan(modules)
+    {
+      links_to_create: [],
+      home_entrypoints_to_write: fallback_entrypoint_needed?(modules) ? fallback_entrypoints : []
+    }
+  end
+
+  def copy_action(mod, copy)
+    {
+      id: "#{mod.fetch(:id)}:copy:#{copy.fetch(:source)}->#{copy.fetch(:target)}",
+      kind: "copy",
+      module_id: mod.fetch(:id),
+      module_name: mod.fetch(:name),
+      repo_role: mod.fetch(:repo_role),
+      source: copy.fetch(:source),
+      source_path: copy.fetch(:source_path),
+      target: copy.fetch(:target),
+      conflict: {
+        strategy: "backup"
+      }
+    }
+  end
+
+  def fallback_entrypoint_needed?(modules)
+    apply_like? && !home_entrypoint_linked_by_module?(modules) && !home_entrypoint_linked_by_companion?
+  end
+
+  def fallback_entrypoints
+    source_path = SKILL_ROOT.join(FALLBACK_ENTRYPOINT_SOURCE)
+    [
+      {
+        source: FALLBACK_ENTRYPOINT_SOURCE,
+        source_path: source_path.to_s,
+        target: HOME_ENTRYPOINT_TARGET,
+        source_sha256: Digest::SHA256.file(source_path).hexdigest,
+        strategy: "write-fallback-file"
+      }
+    ]
+  end
+
+  def flatpak_active?(modules) = command_available?("flatpak") || package_type_present?(modules, %w[flatpak])
+
+  def full_refresh? = upgrade? || (refresh? && @scope == "full")
+
+  def full_refresh_packages(packages)
+    packages.select { |package| FULL_REFRESH_PACKAGE_TYPES.include?(package.fetch(:type)) }
+  end
+
+  def homebrew_active?(modules) = command_available?("brew") || package_type_present?(modules, %w[brew cask])
+
+  def add_broad_upgrade_packages(modules)
+    target = update_package_module(modules)
+    return unless target
+
+    target[:packages_to_upgrade].concat(broad_upgrade_packages(modules))
+  end
+
+  def add_fast_refresh_packages(modules)
+    target = update_package_module(modules)
+    return unless target
+
+    target[:packages_to_refresh].concat(active_system_packages(modules))
+  end
+
+  def add_full_refresh_packages(modules)
+    add_fast_refresh_packages(modules)
+
+    modules.each do |mod|
+      mod[:packages_to_refresh].concat(full_refresh_packages(mod.fetch(:packages)))
+    end
+  end
+
+  def package_type_present?(modules, types)
+    modules.any? do |mod|
+      mod.fetch(:packages).any? { |package| types.include?(package.fetch(:type)) }
+    end
+  end
+
+  def scoop_active?(modules)
+    @platform == "windows" && (command_available?("scoop") || package_type_present?(modules, %w[scoop]))
+  end
+
+  def system_package(type)
+    {
+      type:,
+      name: "*",
+      value: "#{type}:*",
+      system: true,
+      condition: PACKAGE_CONDITIONS[type]
+    }.compact
+  end
+
+  def update_package_module(modules)
+    return nil if repo_role == "private" && companion_repo
+
+    modules.find { |mod| mod.fetch(:name) == @platform } || modules.first
+  end
+
+  def home_entrypoint_linked_by_module?(modules)
+    modules.any? do |mod|
+      mod[:home_entrypoint] || Array(mod[:links_to_create]).any? { |link| link[:target] == HOME_ENTRYPOINT_TARGET }
+    end
+  end
+
+  def home_entrypoint_linked_by_companion?
+    repo = companion_repo
+    return false unless repo
+
+    readme = repo.join("home", "README.md")
+    return false unless readme.file?
+
+    frontmatter, = frontmatter_and_body(readme)
+    home_entrypoint_declared?(active_config(frontmatter))
+  rescue StandardError
+    false
+  end
+
+  def detect_platform
+    host_os = RbConfig::CONFIG.fetch("host_os")
+
+    case host_os
+    when /darwin/i
+      "macos"
+    when /linux/i
+      "linux"
+    when /mswin|mingw|cygwin/i
+      "windows"
+    else
+      raise "Unsupported platform: #{host_os}"
+    end
+  end
+
+  def dirty?
+    !git("status", "--porcelain").empty?
+  end
+
+  def companion_repo
+    agents = @repo.join("AGENTS.md")
+    return nil unless agents.file?
+
+    tilde = tilde_frontmatter(agents)
+    key = companion_repo_key(tilde)
+
+    return nil unless key && tilde[key]
+
+    path = companion_repo_path(tilde[key])
+    path.directory? ? path : nil
+  end
+
+  def companion_repo_key(tilde)
+    case tilde["role"]
+    when "public"
+      "private"
+    when "private"
+      "public"
+    end
+  end
+
+  def companion_repo_path(path)
+    repo = Pathname.new(path.to_s)
+    repo.absolute? ? repo : @repo.join(repo).cleanpath
+  end
+
+  def frontmatter_and_body(path)
+    text = path.read
+    return [{}, text] unless text.start_with?("---\n")
+
+    _, yaml_text, body = text.split(/^---\s*$\n?/, 3)
+    [YAML.safe_load(yaml_text, aliases: true, permitted_classes: [Date, Time]) || {}, body || ""]
+  end
+
+  def git(*)
+    stdout, stderr, status = Open3.capture3("git", "-C", @repo.to_s, *)
+    raise stderr.strip unless status.success?
+
+    stdout.strip
+  end
+
+  def host_allowed?(config)
+    hosts = Array(config["hosts"]).map(&:to_s)
+    hosts.empty? || hosts.include?(@host)
+  end
+
+  def entrypoint_action(entrypoint)
+    {
+      id: "core:entrypoint:#{entrypoint.fetch(:target)}",
+      kind: "entrypoint",
+      module_id: "core",
+      module_name: "core",
+      repo_role:,
+      source: entrypoint.fetch(:source),
+      source_path: entrypoint.fetch(:source_path),
+      target: entrypoint.fetch(:target),
+      source_sha256: entrypoint.fetch(:source_sha256),
+      conflict: {
+        strategy: entrypoint.fetch(:strategy)
+      }
+    }
+  end
+
+  def level_allowed?(level)
+    LEVELS.fetch(level) <= LEVELS.fetch(@level)
+  end
+
+  def merge_config(all, platform)
+    all.merge(platform) do |_key, old_value, new_value|
+      old_value.is_a?(Hash) && new_value.is_a?(Hash) ? old_value.merge(new_value) : new_value
+    end
+  end
+
+  def module_applicable?(frontmatter, body)
+    return true if frontmatter.empty? || frontmatter.key?("all") || frontmatter.key?(@platform)
+    return true if body_platform_applicable?(body)
+
+    platform_keys = DEFAULT_PACKAGE_TYPE.keys
+    !frontmatter.keys.intersect?(platform_keys)
+  end
+
+  def body_platform_applicable?(body)
+    platform_scopes(body).any? do |scope|
+      ["all", @platform].include?(scope.fetch(:platform))
+    end
+  end
+
+  def module_level(config)
+    level = (config["level"] || "normal").to_s
+    raise "Unsupported level: #{level}" unless LEVELS.key?(level)
+
+    level
+  end
+
+  def validate_module_level(module_name, level)
+    raise "misc- must use level: extra" if module_name == "misc-" && level != "extra"
+  end
+
+  def module_dirs
+    @repo
+      .children
+      .select(&:directory?)
+      .reject { |path| ignored_root_dir?(path) }
+      .select { |path| path.join("README.md").file? }
+      .sort_by { |path| path.basename.to_s }
+  end
+
+  def ignored_root_dir?(path)
+    name = path.basename.to_s
+    name.start_with?(".") || DEFAULT_PACKAGE_TYPE.key?(name) || platform_variant?(name)
+  end
+
+  def platform_variant?(name)
+    DEFAULT_PACKAGE_TYPE.keys.any? { |platform| name == "#{platform}-" }
+  end
+
+  def normalize_copies(config, dir)
+    normalize_map(config["copies"]).map do |source, target|
+      {
+        source:,
+        source_path: source_path(dir, source),
+        target:
+      }
+    end
+  end
+
+  def normalize_links(config, dir)
+    normalize_map(config["links"]).flat_map do |source, targets|
+      normalize_link_targets(targets, source).flat_map do |target|
+        link_actions(dir, source, target)
+      end
+    end
+  end
+
+  def normalize_link_targets(value, source)
+    targets = value.is_a?(Array) ? value : [value]
+    raise "links target list must not be empty for #{source}" if targets.empty?
+
+    targets.map do |target|
+      raise "links target must be a string for #{source}" unless target.is_a?(String)
+
+      target
+    end
+  end
+
+  def link_actions(dir, source, target)
+    return [link_action(dir, source, target)] unless source.end_with?("/")
+
+    source_dir = Pathname.new(source_path(dir, source))
+    raise "Link fan-in source is not a directory: #{source}" unless source_dir.directory?
+
+    source_dir.children.sort_by { |child| child.basename.to_s }.map do |child|
+      child_source = File.join(source, child.basename.to_s)
+      child_target = File.join(target, child.basename.to_s)
+      link_action(dir, child_source, child_target, fan_in_metadata(source, target))
+    end
+  end
+
+  def link_action(dir, source, target, metadata = {})
+    {
+      source:,
+      source_path: source_path(dir, source),
+      target:,
+      fan_in: false,
+      fan_in_source: nil,
+      fan_in_target: nil
+    }.merge(metadata)
+  end
+
+  def link_plan_action(mod, link)
+    {
+      id: "#{mod.fetch(:id)}:link:#{link.fetch(:source)}->#{link.fetch(:target)}",
+      kind: "link",
+      module_id: mod.fetch(:id),
+      module_name: mod.fetch(:name),
+      repo_role: mod.fetch(:repo_role),
+      source: link.fetch(:source),
+      source_path: link.fetch(:source_path),
+      target: link.fetch(:target),
+      link_value: link_value(link.fetch(:source_path), link.fetch(:target)),
+      fan_in: link.fetch(:fan_in),
+      fan_in_source: link.fetch(:fan_in_source),
+      fan_in_target: link.fetch(:fan_in_target),
+      conflict: {
+        strategy: "backup"
+      }
+    }
+  end
+
+  def module_id(module_name)
+    "#{repo_role}/#{module_name}"
+  end
+
+  def link_value(source_path, target)
+    source = Pathname.new(source_path).expand_path
+    target_path = target_path(target)
+    source_dropbox = dropbox_path(source)
+    target_dropbox = dropbox_path(target_path)
+
+    return source_path unless source_dropbox && target_dropbox
+
+    source_dropbox.relative_path_from(target_dropbox.dirname).to_s
+  end
+
+  def path_inside?(path, root)
+    path = path.expand_path
+    root = root.expand_path
+    path.to_s == root.to_s || path.to_s.start_with?("#{root}/")
+  end
+
+  def dropbox_path(path)
+    names = path.expand_path.each_filename.to_a
+    index = names.rindex("Dropbox")
+    return nil unless index
+
+    Pathname.new(File.join("/", "Dropbox", *names[(index + 1)..]))
+  end
+
+  def target_path(target)
+    value = target.to_s
+    value = File.join(Dir.home, value.delete_prefix("~/")) if value.start_with?("~/")
+    Pathname.new(value).expand_path
+  end
+
+  def fan_in_metadata(source, target)
+    {
+      fan_in: true,
+      fan_in_source: source,
+      fan_in_target: target
+    }
+  end
+
+  def normalize_map(value)
+    value.is_a?(Hash) ? value : {}
+  end
+
+  def normalize_package(package)
+    value = package.to_s
+    type, name = value.include?(":") ? value.split(":", 2) : [DEFAULT_PACKAGE_TYPE.fetch(@platform), value]
+    raise "Package type must not be empty: #{value}" if type.empty?
+    raise "Unsupported package type: #{type}" unless PACKAGE_TYPES.include?(type)
+    raise "Package name must not be empty: #{value}" if name.empty?
+
+    {
+      type:,
+      name:,
+      value: "#{type}:#{name}",
+      condition: PACKAGE_CONDITIONS[type]
+    }.compact
+  end
+
+  def normalize_packages(config)
+    return [] unless config.key?("packages")
+
+    normalize_sequence(config["packages"], "packages").map { |package| normalize_package(package) }
+  end
+
+  def normalize_sequence(value, key)
+    raise "#{key} must be a list" unless value.is_a?(Array)
+
+    value
+  end
+
+  def package_actions(packages, mode, skipped)
+    return [] if skipped
+    return packages if mode == "apply" && apply_like?
+
+    []
+  end
+
+  def planned_module(dir)
+    readme = dir.join("README.md")
+    frontmatter, body = frontmatter_and_body(readme)
+    return nil unless module_applicable?(frontmatter, body)
+
+    config = active_config(frontmatter)
+    level = module_level(config)
+    module_name = dir.relative_path_from(@repo).to_s
+
+    validate_module_level(module_name, level)
+    return nil unless level_allowed?(level)
+    return nil unless host_allowed?(config)
+
+    skipped, skip_reason = skip_status(module_name)
+    actions_skipped = actions_skipped?(skipped)
+    home_entrypoint = home_entrypoint_declared?(config)
+    links = actions_skipped ? [] : normalize_links(config, dir)
+    packages = normalize_packages(config)
+
+    {
+      id: module_id(module_name),
+      name: module_name,
+      repo_role:,
+      readme: readme.to_s,
+      level:,
+      home_entrypoint:,
+      packages:,
+      packages_to_install: align? ? [] : package_actions(packages, "apply", skipped),
+      packages_to_refresh: [],
+      packages_to_upgrade: [],
+      links_to_create: links,
+      copies_to_create: actions_skipped ? [] : normalize_copies(config, dir),
+      special_sections: section_actions(body, skipped),
+      skipped:,
+      skip_reason:,
+      virtual: !config.key?("packages")
+    }
+  end
+
+  def planned_modules
+    platform_dir = @repo.join(@platform)
+    platform_variant_dir = @repo.join("#{@platform}-")
+    dirs = []
+    dirs << platform_dir if platform_dir.join("README.md").file?
+    dirs << platform_variant_dir if platform_variant_dir.join("README.md").file?
+    dirs.concat(module_dirs.reject { |dir| [platform_dir, platform_variant_dir].include?(dir) })
+
+    configure_update_packages(dirs.filter_map { |dir| planned_module(dir) })
+  end
+
+  def home_entrypoint_declared?(config)
+    normalize_map(config["links"]).any? do |_source, targets|
+      (targets.is_a?(Array) ? targets : [targets]).any? { |target| target.to_s == HOME_ENTRYPOINT_TARGET }
+    end
+  end
+
+  def align_module_actions(mod)
+    return [] if mod.fetch(:skipped)
+
+    mod.fetch(:links_to_create).map { |link| link_plan_action(mod, link) } +
+      mod.fetch(:copies_to_create).map { |copy| copy_action(mod, copy) }
+  end
+
+  def module_actions(mod)
+    return [] if mod.fetch(:skipped)
+
+    actions = []
+    actions.concat(section_plan_actions(mod, %w[Preinstall]))
+    actions.concat(package_plan_actions(mod, "install", mod.fetch(:packages_to_install)))
+    actions.concat(package_plan_actions(mod, "refresh", mod.fetch(:packages_to_refresh)))
+    actions.concat(package_plan_actions(mod, "upgrade", mod.fetch(:packages_to_upgrade)))
+    actions.concat(section_plan_actions(mod, %w[Install Postinstall Prelink Presetup]))
+    actions.concat(mod.fetch(:links_to_create).map { |link| link_plan_action(mod, link) })
+    actions.concat(mod.fetch(:copies_to_create).map { |copy| copy_action(mod, copy) })
+    actions.concat(section_plan_actions(mod, %w[Link Postlink Setup Update]))
+    actions
+  end
+
+  def refresh_module_actions(mod)
+    return [] if mod.fetch(:skipped)
+
+    actions = []
+    actions.concat(package_plan_actions(mod, "refresh", mod.fetch(:packages_to_refresh)))
+    actions.concat(section_plan_actions(mod, %w[Update]))
+    actions
+  end
+
+  def upgrade_module_actions(mod)
+    return [] if mod.fetch(:skipped)
+
+    package_plan_actions(mod, "upgrade", mod.fetch(:packages_to_upgrade))
+  end
+
+  def ordered_actions(plan)
+    actions = plan.fetch(:core).fetch(:home_entrypoints_to_write).map { |entrypoint| entrypoint_action(entrypoint) }
+    used = {}
+
+    ordered_module_actions(plan.fetch(:modules)).each do |action|
+      action[:id] = action_id(action.fetch(:id), used)
+      actions << action
+    end
+
+    actions
+  end
+
+  def ordered_module_actions(modules)
+    return modules.flat_map { |mod| align_module_actions(mod) } if align?
+
+    if upgrade?
+      return modules.flat_map { |mod| refresh_module_actions(mod) } +
+             modules.flat_map { |mod| upgrade_module_actions(mod) }
+    end
+
+    modules.flat_map { |mod| module_actions(mod) }
+  end
+
+  def package_plan_actions(mod, operation, packages)
+    packages.map do |package|
+      {
+        id: "#{mod.fetch(:id)}:package:#{operation}:#{package.fetch(:value)}",
+        kind: "package",
+        module_id: mod.fetch(:id),
+        module_name: mod.fetch(:name),
+        repo_role: mod.fetch(:repo_role),
+        operation:,
+        package:,
+        condition: package[:condition],
+        conflict: {
+          strategy: "none"
+        }
+      }.compact
+    end
+  end
+
+  def plan_id(plan)
+    "sha256:#{content_hash(plan)}"
+  end
+
+  def puts_markdown(plan)
+    puts("# Tilde Plan")
+    puts
+    puts("- schema: `#{plan[:schema]}`")
+    puts("- plan: `#{plan[:plan_id]}`")
+    puts("- repo: `#{plan[:repo]}`")
+    puts("- role: `#{plan[:repository][:role] || 'unknown'}`")
+    puts("- head: `#{plan[:head]}`")
+    puts("- branch: `#{plan[:branch]}`")
+    puts("- host: `#{plan[:host]}`")
+    puts("- level: `#{plan[:level]}`")
+    puts("- mode: `#{plan[:mode]}`")
+    puts("- scope: `#{plan[:scope]}`") if plan[:scope]
+    puts("- platform: `#{plan[:platform]}`")
+    puts("- state: `#{plan[:state_path]}`")
+    puts("- actions: `#{plan[:actions].length}`")
+    puts
+    puts("## Core")
+    puts
+    puts_action_list("Home Entrypoints", plan.fetch(:core).fetch(:home_entrypoints_to_write)) do |entrypoint|
+      "`#{entrypoint[:source]}` => `#{entrypoint[:target]}` (#{entrypoint[:strategy]})"
+    end
+
+    puts_action_list("Links", plan.fetch(:core).fetch(:links_to_create)) do |link|
+      "`#{link[:source]}` -> `#{link[:target]}`"
+    end
+
+    plan[:modules].each do |mod|
+      puts("## #{mod[:name]}")
+      puts
+      if mod[:skipped]
+        puts("Skipped: #{mod[:skip_reason]}")
+        puts
+        next
+      end
+
+      puts("Level: #{mod[:level]}")
+      puts("Virtual: #{mod[:virtual] ? 'yes' : 'no'}")
+      puts
+      puts_action_list("Links", mod[:links_to_create]) { |link| "`#{link[:source]}` -> `#{link[:target]}`" }
+      puts_action_list("Copies", mod[:copies_to_create]) { |copy| "`#{copy[:source]}` -> `#{copy[:target]}`" }
+      puts_action_list("Install Packages", mod[:packages_to_install]) { |pkg| "`#{pkg[:value]}`" }
+      puts_action_list("Refresh Packages", mod[:packages_to_refresh]) { |pkg| "`#{pkg[:value]}`" }
+      puts_action_list("Upgrade Packages", mod[:packages_to_upgrade]) { |pkg| "`#{pkg[:value]}`" }
+    end
+
+    puts("## Manual Actions")
+    puts
+    puts_action_list("Actions", manual_actions(plan)) do |action|
+      "`#{action[:module_id]}` #{action[:name]} (#{action[:reason]})"
+    end
+  end
+
+  def puts_action_list(title, items)
+    puts("#{title}:")
+    items.each { |item| puts("- #{yield(item)}") }
+    puts("- none") if items.empty?
+    puts
+  end
+
+  def manual_actions(plan)
+    plan.fetch(:actions).select { |action| action.fetch(:kind) == "manual" }
+  end
+
+  def repository_identity
+    tilde = tilde_frontmatter(@repo.join("AGENTS.md"))
+    {
+      protocol: tilde["protocol"],
+      role: tilde["role"],
+      path: @repo.to_s,
+      branch: current_branch,
+      commit: @head,
+      dirty: dirty?
+    }
+  end
+
+  def repo_role
+    @repo_role ||= tilde_frontmatter(@repo.join("AGENTS.md"))["role"] || "unknown"
+  end
+
+  def source_path(dir, source)
+    path = (dir + source).cleanpath
+    repo = @repo.to_s
+
+    raise "Source escapes repository: #{source}" unless path.to_s == repo || path.to_s.start_with?("#{repo}/")
+
+    path.to_s
+  end
+
+  def previous_state
+    return nil unless state_path.file?
+
+    frontmatter, body = frontmatter_and_body(state_path)
+    frontmatter.merge("body" => body.strip)
+  end
+
+  def apply?
+    @mode == "apply"
+  end
+
+  def refresh?
+    @mode == "refresh"
+  end
+
+  def repair?
+    @mode == "repair"
+  end
+
+  def upgrade?
+    @mode == "upgrade"
+  end
+
+  def short_hostname
+    hostname = `hostname -f 2>/dev/null`.strip
+    hostname = `hostname`.strip if hostname.empty?
+    hostname.sub(/\..*\z/, "")
+  end
+
+  def repair_skip_status(module_name)
+    return [true, "no previous state to repair"] unless @previous_state
+    return [true, "state head differs from current head"] unless current_state_head?
+
+    status = module_state_status(module_name)
+    return [false, nil] if status == "notok"
+
+    [true, "not marked notok at current head"]
+  end
+
+  def section_actions(body, skipped)
+    return {} if align?
+
+    skipped ? {} : selected_special_sections(body)
+  end
+
+  def section_plan_action(mod, name, section)
+    bash_only = section.fetch(:bash_only)
+    kind = bash_only ? "section" : "manual"
+
+    {
+      id: "#{mod.fetch(:id)}:#{kind}:#{name}",
+      kind:,
+      module_id: mod.fetch(:id),
+      module_name: mod.fetch(:name),
+      repo_role: mod.fetch(:repo_role),
+      name:,
+      bash_only:,
+      bash_blocks: section.fetch(:bash_blocks),
+      body: section.fetch(:body),
+      reason: section_manual_reason(section),
+      conflict: {
+        strategy: "none"
+      }
+    }
+  end
+
+  def section_manual_reason(section)
+    return nil if section.fetch(:bash_only)
+
+    return "non-shell-code" if fenced_blocks(section.fetch(:body)).any? { |info, _content| !bash_fence?(info) }
+
+    "no-shell-blocks"
+  end
+
+  def section_plan_actions(mod, names)
+    names.filter_map do |name|
+      section = mod.fetch(:special_sections)[name]
+      section_plan_action(mod, name, section) if section
+    end
+  end
+
+  def skip_status(module_name)
+    return [false, nil] if align?
+    return [false, nil] if refresh? || upgrade?
+    return repair_skip_status(module_name) if repair?
+    return [false, nil] unless state_skip_available?
+
+    status = module_state_status(module_name)
+    return [true, "already #{status} at current head"] if %w[ok ignored].include?(status)
+
+    [false, nil]
+  end
+
+  def state_skip_available?
+    @previous_state && current_state_head?
+  end
+
+  def current_state_head?
+    previous_state_commit == @head
+  end
+
+  def module_state_status(module_name)
+    done = normalize_map(@previous_state["done"])
+    done[module_id(module_name)] || done[module_name]
+  end
+
+  def previous_state_commit
+    role_state = normalize_map(@previous_state[repo_role])
+    role_state["commit"] || (repo_role == "public" ? @previous_state["head"] : nil)
+  end
+
+  def selected_special_sections(body)
+    sections = special_sections(body)
+    return sections.slice("Update") if full_refresh?
+    return {} if refresh?
+
+    sections.except("Update")
+  end
+
+  def special_sections(body)
+    sections = {}
+    collected_special_sections(body).each do |section|
+      existing = sections[section.fetch(:name)]
+      sections[section.fetch(:name)] = merge_section(existing, section.fetch(:content))
+    end
+
+    sections
+  end
+
+  def collected_special_sections(body)
+    markdown_sections(body, 2).flat_map do |section|
+      name = special_heading(section.fetch(:title))
+      next [{ name:, content: section.fetch(:content) }] if name
+
+      platform = platform_heading(section.fetch(:title))
+      next [] unless ["all", @platform].include?(platform)
+
+      markdown_sections(section.fetch(:content), 3).filter_map do |subsection|
+        subsection_name = special_heading(subsection.fetch(:title))
+        next unless subsection_name
+
+        { name: subsection_name, content: subsection.fetch(:content) }
+      end
+    end
+  end
+
+  def markdown_sections(body, level)
+    heading = "#" * level
+    body.scan(/^#{heading}\s+(.+?)\s*$\n(.*?)(?=^#{heading}\s+|\z)/m).map do |title, content|
+      { title: title.strip, content: content.strip }
+    end
+  end
+
+  def merge_section(existing, content)
+    body = [existing&.fetch(:body), content].compact.reject(&:empty?).join("\n\n")
+    blocks = bash_blocks(body)
+
+    {
+      body:,
+      bash_blocks: blocks,
+      bash_only: blocks.any? && fenced_blocks(body).all? { |info, _content| bash_fence?(info) }
+    }
+  end
+
+  def fenced_blocks(body)
+    body.scan(/^```([^\n`]*)\n(.*?)^```[ \t]*$/m)
+  end
+
+  def platform_scopes(body)
+    markdown_sections(body, 2).filter_map do |section|
+      platform = platform_heading(section.fetch(:title))
+      next unless platform
+
+      { platform:, content: section.fetch(:content) }
+    end
+  end
+
+  def tilde_frontmatter(path)
+    frontmatter, = frontmatter_and_body(path)
+    tilde = frontmatter["tilde"] if frontmatter.is_a?(Hash)
+    tilde.is_a?(Hash) ? tilde : {}
+  end
+
+  def platform_heading(title)
+    case title.strip.downcase
+    when "all", "all platforms"
+      "all"
+    when "linux"
+      "linux"
+    when "macos", "darwin"
+      "macos"
+    when "windows"
+      "windows"
+    end
+  end
+
+  def special_heading(title)
+    SPECIAL_SECTIONS.find { |name| name == title }
+  end
+
+  def state_root
+    root = ENV.fetch("XDG_STATE_HOME", File.join(Dir.home, ".local", "state"))
+    Pathname.new(root).expand_path.join("tilde")
+  end
+
+  def state_path
+    state_root.join("hosts", @host, "state.md")
+  end
+
+  def target_identity
+    {
+      host: @host,
+      platform: @platform,
+      mode: @mode,
+      scope: @scope,
+      level: @level,
+      home: Dir.home,
+      state_root: state_root.to_s,
+      state_path: state_path.to_s
+    }
+  end
+
+  def validate_platform!
+    return if DEFAULT_PACKAGE_TYPE.key?(@platform)
+
+    raise "Unsupported platform: #{@platform}"
+  end
+
+  def validate_level!
+    return if LEVELS.key?(@level)
+
+    raise "Unsupported level: #{@level}"
+  end
+
+  def validate_mode!
+    return if MODES.include?(@mode)
+
+    raise "Unsupported mode: #{@mode}"
+  end
+
+  def validate_scope!
+    case @mode
+    when "refresh"
+      return if SCOPES.include?(@scope)
+    when "upgrade"
+      return if @scope == "full"
+    else
+      return if @scope.nil?
+    end
+
+    raise "Unsupported scope for #{@mode}: #{@scope || '(none)'}"
+  end
+
+  def validate_repo!
+    raise "Not a directory: #{@repo}" unless @repo.directory?
+  end
+
+  def validate_worktree!
+    return if refresh? || upgrade?
+    return if @allow_dirty || !dirty?
+
+    raise "Dirty worktree. Commit changes before provisioning, or use --allow-dirty for development only."
+  end
+end
+
+def main(argv)
+  options = {
+    allow_dirty: false,
+    format: "json",
+    level: "normal",
+    mode: "apply",
+    repo: Dir.pwd
+  }
+
+  OptionParser
+    .new do |parser|
+      parser.banner = "Usage: plan [options]"
+      parser.on("--allow-dirty", "Allow planning with a dirty worktree") { options[:allow_dirty] = true }
+      parser.on("--format FORMAT", "Output format: json or markdown") { |value| options[:format] = value }
+      parser.on("--host HOST", "Host short name") { |value| options[:host] = value }
+      parser.on("--level LEVEL", "Level: minimal, normal, extra") { |value| options[:level] = value }
+      parser.on("--mode MODE", "Mode: align, apply, refresh, repair, upgrade") { |value| options[:mode] = value }
+      parser.on("--platform PLATFORM", "Platform: linux, macos, windows") { |value| options[:platform] = value }
+      parser.on("--repo PATH", "Repository root") { |value| options[:repo] = value }
+      parser.on("--scope SCOPE", "Refresh scope: fast or full") { |value| options[:scope] = value }
+    end
+    .parse!(argv)
+
+  unless %w[json markdown].include?(options[:format])
+    warn("Unsupported format: #{options[:format]}")
+    return 2
+  end
+
+  Plan.new(options).run
+  0
+rescue StandardError => e
+  warn("error: #{e.message}")
+  1
+end
+
+exit(main(ARGV)) if $PROGRAM_NAME == __FILE__

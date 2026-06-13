@@ -7,7 +7,7 @@ practical, but it is not perfectly idempotent.
 
 Planning and execution are separate. `bin/tilde plan` produces the confirmed executable action stream; `bin/tilde apply`
 validates and executes that exact stream according to [Apply](apply.md). Direct `bin/plan` and `bin/apply` entrypoints
-remain valid focused entrypoints. Apply must not rediscover desired state or reconstruct action order from grouped
+remain valid focused wrappers. Apply must not rediscover desired state or reconstruct action order from grouped
 summaries.
 
 ### Modes

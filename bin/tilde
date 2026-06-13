@@ -19,14 +19,16 @@ readonly -a AGENT_COMMANDS=(
 
 readonly -a ROUTES=(
 	apply
-	bootstrap
+	boot
 	checkout
 	doctor
 	help
 	plan
 	preflight
 	smoke
+	ssh
 	status
+	sudo
 )
 
 abort() {
@@ -68,8 +70,8 @@ resolve_route() {
 	local name=$1
 
 	case $name in
-	.bootstrap | internal.bootstrap | boot)
-		printf '%s\n' bootstrap
+	.bootstrap | bootstrap | internal.bootstrap | boot)
+		printf '%s\n' boot
 		;;
 	.apply | internal.apply)
 		printf '%s\n' apply
@@ -92,8 +94,14 @@ resolve_route() {
 	.smoke | internal.smoke)
 		printf '%s\n' smoke
 		;;
+	.ssh | internal.ssh)
+		printf '%s\n' ssh
+		;;
 	.status | internal.status)
 		printf '%s\n' status
+		;;
+	.sudo | internal.sudo)
+		printf '%s\n' sudo
 		;;
 	*)
 		printf '%s\n' "$name"
@@ -106,10 +114,6 @@ route_path() {
 
 	if [[ -x $TILDE_ROOT/libexec/$route ]]; then
 		printf '%s\n' "$TILDE_ROOT/libexec/$route"
-		return
-	fi
-	if [[ -x $TILDE_ROOT/bin/$route ]]; then
-		printf '%s\n' "$TILDE_ROOT/bin/$route"
 		return
 	fi
 
@@ -151,6 +155,7 @@ main() {
 	TILDE_ROOT=$(script_root)
 	readonly TILDE_ROOT
 	export TILDE_ROOT
+	export TILDE_SUDO=${TILDE_SUDO:-intercept}
 	export PATH=$TILDE_ROOT/bin:$PATH
 
 	case $command in

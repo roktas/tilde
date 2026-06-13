@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+[[ -z ${TRACE:-} ]] || set -x
+unset CDPATH
+
+abort() {
+	warn "E: $*"
+	exit 2
+}
+
+warn() {
+	printf '%s\n' "$*" >&2
+}
+
+# ------------------------------------------------------------------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------------------------------------------------------------------
+
+shell_quote() {
+	local value=$1
+
+	printf "'"
+	printf '%s' "$value" | sed "s/'/'\\\\''/g"
+	printf "'"
+}
+
+write_prelude() {
+	local root=$1
+
+	cat <<'SH'
+set -eu
+PATH="/opt/homebrew/bin:/usr/local/bin:/home/linuxbrew/.linuxbrew/bin:$HOME/.local/bin:$PATH"
+export PATH
+SH
+	if [[ -n $root ]]; then
+		if [[ $root == "\$HOME/.agents/skills/tilde" ]]; then
+			printf '%s\n' "TILDE_ROOT=\${TILDE_ROOT:-\"\$HOME/.agents/skills/tilde\"}"
+		else
+			printf 'TILDE_ROOT=%s\n' "$(shell_quote "$root")"
+		fi
+		cat <<'SH'
+export TILDE_ROOT
+PATH="$TILDE_ROOT/bin:$PATH"
+TILDE_SUDO=intercept
+export PATH TILDE_SUDO
+SH
+	fi
+}
+
+# ------------------------------------------------------------------------------------------------------------------------
+# Main
+# ------------------------------------------------------------------------------------------------------------------------
+
+usage() {
+	cat <<-EOF
+		Usage: tilde ssh [--no-root] [--root ROOT] [--tty] HOST [-- ARG...]
+	EOF
+}
+
+main() {
+	local host=
+	local root=\$HOME/.agents/skills/tilde
+	local tempfile
+	local -a remote_args=()
+	local -a ssh_args=()
+
+	while (($# > 0)); do
+		case $1 in
+		--help | -h)
+			usage
+			return
+			;;
+		--no-root)
+			root=
+			shift
+			;;
+		--root)
+			(($# > 1)) || abort "--root needs a value"
+			root=$2
+			shift 2
+			;;
+		--root=*)
+			root=${1#*=}
+			shift
+			;;
+		--tty)
+			ssh_args+=("-tt")
+			shift
+			;;
+		--)
+			shift
+			remote_args=("$@")
+			break
+			;;
+		-*)
+			ssh_args+=("$1")
+			shift
+			;;
+		*)
+			if [[ -z $host ]]; then
+				host=$1
+			else
+				remote_args+=("$1")
+			fi
+			shift
+			;;
+		esac
+	done
+
+	[[ -n $host ]] || {
+		usage >&2
+		return 2
+	}
+	command -v ssh >/dev/null || abort "ssh is missing"
+	[[ ! -t 0 ]] || abort "remote script body must be provided on stdin"
+	tempfile=$(mktemp) || exit
+	trap 'rm -f "'"$tempfile"'"' EXIT
+	trap 'rm -f "'"$tempfile"'"; exit 130' HUP INT QUIT TERM
+
+	cat >"$tempfile"
+	{
+		write_prelude "$root"
+		cat "$tempfile"
+	} | ssh "${ssh_args[@]}" "$host" sh -s -- "${remote_args[@]}"
+}
+
+main "$@"

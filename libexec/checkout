@@ -1,0 +1,398 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+[[ -z ${TRACE:-} ]] || set -x
+unset CDPATH
+
+abort() {
+	warn "E: $*"
+	exit 1
+}
+
+warn() {
+	printf '%s\n' "$*" >&2
+}
+
+# ------------------------------------------------------------------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------------------------------------------------------------------
+
+branch_commit() {
+	local repo=$1
+	local branch=$2
+
+	git -C "$repo" rev-parse --verify "$branch^{commit}"
+}
+
+check_clean() {
+	local repo=$1
+
+	local status
+
+	status=$(git -C "$repo" status --porcelain=v1)
+	[[ -z $status ]] || abort "dirty repository: $repo"
+}
+
+check_pushed() {
+	local repo=$1
+	local branch=$2
+
+	local commit
+	local upstream
+	local upstream_commit
+
+	upstream=$(git -C "$repo" rev-parse --abbrev-ref --symbolic-full-name "$branch@{upstream}" 2>/dev/null) ||
+		abort "branch has no upstream: $branch"
+	commit=$(branch_commit "$repo" "$branch")
+	upstream_commit=$(git -C "$repo" rev-parse --verify "$upstream^{commit}")
+	[[ $commit = "$upstream_commit" ]] ||
+		abort "branch is not at upstream: $branch ($commit != $upstream $upstream_commit)"
+}
+
+ensure_parent() {
+	local path=$1
+
+	local parent
+
+	parent=$(dirname -- "$path")
+	mkdir -p "$parent"
+}
+
+ensure_remote() {
+	local repo=$1
+	local remote=$2
+	local origin=$3
+
+	[[ -n $origin ]] || return
+	if git -C "$repo" remote get-url "$remote" >/dev/null 2>&1; then
+		git -C "$repo" remote set-url "$remote" "$origin"
+	else
+		git -C "$repo" remote add "$remote" "$origin"
+	fi
+}
+
+origin_url() {
+	local repo=$1
+
+	git -C "$repo" remote get-url origin 2>/dev/null || true
+}
+
+pack_bundle() {
+	local repo=$1
+	local bundle=$2
+	local branch=$3
+	local allow_unpushed=$4
+
+	[[ -d $repo/.git ]] || abort "repository is missing or not a Git checkout: $repo"
+	check_clean "$repo"
+	branch_commit "$repo" "$branch" >/dev/null
+	((allow_unpushed)) || check_pushed "$repo" "$branch"
+	[[ ! -e $bundle ]] || abort "bundle already exists: $bundle"
+	ensure_parent "$bundle"
+	git -C "$repo" bundle create "$bundle" "$branch"
+	git -C "$repo" bundle verify "$bundle" >/dev/null 2>&1 || abort "invalid bundle: $bundle"
+	printf 'OK: bundle %s %s\n' "$bundle" "$(git -C "$repo" rev-parse --short "$branch")"
+}
+
+receive_bundle() {
+	local repo=$1
+	local bundle=$2
+	local branch=$3
+	local remote=$4
+	local origin=$5
+
+	local current
+
+	[[ -r $bundle ]] || abort "bundle is missing or unreadable: $bundle"
+	git bundle verify "$bundle" >/dev/null 2>&1 || abort "invalid bundle: $bundle"
+
+	if [[ -e $repo && ! -d $repo/.git ]]; then
+		abort "target exists but is not a Git checkout: $repo"
+	fi
+
+	if [[ -d $repo/.git ]]; then
+		check_clean "$repo"
+		current=$(git -C "$repo" branch --show-current)
+		[[ $current = "$branch" ]] || abort "target branch is $current, expected $branch"
+		ensure_remote "$repo" "$remote" "$origin"
+		git -C "$repo" fetch "$bundle" "refs/heads/$branch:refs/remotes/$remote/$branch"
+		git -C "$repo" merge --ff-only "$remote/$branch"
+	else
+		ensure_parent "$repo"
+		mkdir -p "$repo"
+		git -C "$repo" init -q
+		ensure_remote "$repo" "$remote" "$origin"
+		git -C "$repo" fetch "$bundle" "refs/heads/$branch:refs/remotes/$remote/$branch"
+		git -C "$repo" checkout -q -B "$branch" "$remote/$branch"
+	fi
+
+	git -C "$repo" branch --set-upstream-to="$remote/$branch" "$branch" >/dev/null 2>&1 || true
+	printf 'OK: checkout %s %s\n' "$repo" "$(git -C "$repo" rev-parse --short HEAD)"
+}
+
+remote_bundle_path() {
+	local repo=$1
+	local branch=$2
+
+	local name
+	local slug
+
+	name=${repo##*/}
+	slug=$(printf '%s-%s' "$name" "$branch" | tr -c 'A-Za-z0-9_.-' '_')
+	printf '/tmp/tilde-checkout-%s-%s.bundle\n' "$slug" "$$"
+}
+
+tilde_root() {
+	cd -- "${BASH_SOURCE[0]%/*}/.." >/dev/null && pwd
+}
+
+# ------------------------------------------------------------------------------------------------------------------------
+# Commands
+# ------------------------------------------------------------------------------------------------------------------------
+
+command.pack() {
+	local allow_unpushed=0
+	local branch=main
+	local bundle=
+	local repo=
+
+	while (($# > 0)); do
+		case $1 in
+		--allow-unpushed)
+			allow_unpushed=1
+			shift
+			;;
+		--branch)
+			(($# > 1)) || abort "--branch needs a value"
+			branch=$2
+			shift 2
+			;;
+		--bundle)
+			(($# > 1)) || abort "--bundle needs a path"
+			bundle=$2
+			shift 2
+			;;
+		--repo)
+			(($# > 1)) || abort "--repo needs a path"
+			repo=$2
+			shift 2
+			;;
+		*)
+			abort "unknown pack option: $1"
+			;;
+		esac
+	done
+
+	[[ -n $repo ]] || abort "--repo is required"
+	[[ -n $bundle ]] || abort "--bundle is required"
+	pack_bundle "$repo" "$bundle" "$branch" "$allow_unpushed"
+}
+
+command.receive() {
+	local branch=main
+	local bundle=
+	local origin=
+	local remote=origin
+	local repo=
+
+	while (($# > 0)); do
+		case $1 in
+		--branch)
+			(($# > 1)) || abort "--branch needs a value"
+			branch=$2
+			shift 2
+			;;
+		--bundle)
+			(($# > 1)) || abort "--bundle needs a path"
+			bundle=$2
+			shift 2
+			;;
+		--origin)
+			(($# > 1)) || abort "--origin needs a URL"
+			origin=$2
+			shift 2
+			;;
+		--remote)
+			(($# > 1)) || abort "--remote needs a name"
+			remote=$2
+			shift 2
+			;;
+		--repo)
+			(($# > 1)) || abort "--repo needs a path"
+			repo=$2
+			shift 2
+			;;
+		*)
+			abort "unknown receive option: $1"
+			;;
+		esac
+	done
+
+	[[ -n $repo ]] || abort "--repo is required"
+	[[ -n $bundle ]] || abort "--bundle is required"
+	receive_bundle "$repo" "$bundle" "$branch" "$remote" "$origin"
+}
+
+command.remote() {
+	local allow_unpushed=0
+	local branch=main
+	local bundle
+	local host=
+	local origin=
+	local remote=origin
+	local remote_bundle
+	local repo=
+	local target=
+
+	while (($# > 0)); do
+		case $1 in
+		--allow-unpushed)
+			allow_unpushed=1
+			shift
+			;;
+		--branch)
+			(($# > 1)) || abort "--branch needs a value"
+			branch=$2
+			shift 2
+			;;
+		--host)
+			(($# > 1)) || abort "--host needs a value"
+			host=$2
+			shift 2
+			;;
+		--origin)
+			(($# > 1)) || abort "--origin needs a URL"
+			origin=$2
+			shift 2
+			;;
+		--remote)
+			(($# > 1)) || abort "--remote needs a name"
+			remote=$2
+			shift 2
+			;;
+		--repo)
+			(($# > 1)) || abort "--repo needs a path"
+			repo=$2
+			shift 2
+			;;
+		--target)
+			(($# > 1)) || abort "--target needs a path"
+			target=$2
+			shift 2
+			;;
+		*)
+			abort "unknown remote option: $1"
+			;;
+		esac
+	done
+
+	[[ -n $host ]] || abort "--host is required"
+	[[ -n $repo ]] || abort "--repo is required"
+	[[ -n $target ]] || abort "--target is required"
+
+	[[ -n $origin ]] || origin=$(origin_url "$repo")
+	bundle=$(mktemp)
+	rm -f "$bundle"
+	remote_bundle=$(remote_bundle_path "$repo" "$branch")
+	trap 'rm -f "$bundle"' EXIT
+	trap 'rm -f "$bundle"; exit 130' HUP INT QUIT TERM
+
+	pack_bundle "$repo" "$bundle" "$branch" "$allow_unpushed"
+	scp "$bundle" "$host:$remote_bundle"
+	"$(tilde_root)/bin/tilde" ssh --no-root "$host" -- "$target" "$remote_bundle" "$branch" "$remote" "$origin" <<'SH'
+repo=$1
+bundle=$2
+branch=$3
+remote=$4
+origin=$5
+trap 'rm -f "$bundle"' EXIT HUP INT QUIT TERM
+
+if [ ! -r "$bundle" ]; then
+	printf 'E: bundle is missing or unreadable: %s\n' "$bundle" >&2
+	exit 1
+fi
+git bundle verify "$bundle" >/dev/null 2>&1 || {
+	printf 'E: invalid bundle: %s\n' "$bundle" >&2
+	exit 1
+}
+
+if [ -e "$repo" ] && [ ! -d "$repo/.git" ]; then
+	printf 'E: target exists but is not a Git checkout: %s\n' "$repo" >&2
+	exit 1
+fi
+
+if [ -d "$repo/.git" ]; then
+	status=$(git -C "$repo" status --porcelain=v1)
+	if [ -n "$status" ]; then
+		printf 'E: dirty repository: %s\n' "$repo" >&2
+		exit 1
+	fi
+	current=$(git -C "$repo" branch --show-current)
+	if [ "$current" != "$branch" ]; then
+		printf 'E: target branch is %s, expected %s\n' "$current" "$branch" >&2
+		exit 1
+	fi
+	if [ -n "$origin" ]; then
+		if git -C "$repo" remote get-url "$remote" >/dev/null 2>&1; then
+			git -C "$repo" remote set-url "$remote" "$origin"
+		else
+			git -C "$repo" remote add "$remote" "$origin"
+		fi
+	fi
+	git -C "$repo" fetch "$bundle" "refs/heads/$branch:refs/remotes/$remote/$branch"
+	git -C "$repo" merge --ff-only "$remote/$branch"
+else
+	parent=$(dirname -- "$repo")
+	mkdir -p "$parent" "$repo"
+	git -C "$repo" init -q
+	if [ -n "$origin" ]; then
+		git -C "$repo" remote add "$remote" "$origin"
+	fi
+	git -C "$repo" fetch "$bundle" "refs/heads/$branch:refs/remotes/$remote/$branch"
+	git -C "$repo" checkout -q -B "$branch" "$remote/$branch"
+fi
+
+git -C "$repo" branch --set-upstream-to="$remote/$branch" "$branch" >/dev/null 2>&1 || true
+printf 'OK: checkout %s %s\n' "$repo" "$(git -C "$repo" rev-parse --short HEAD)"
+SH
+}
+
+# ------------------------------------------------------------------------------------------------------------------------
+# Main
+# ------------------------------------------------------------------------------------------------------------------------
+
+usage() {
+	cat <<-EOF
+		Usage:
+		  checkout pack --repo REPO --bundle BUNDLE [--branch BRANCH] [--allow-unpushed]
+		  checkout receive --repo TARGET --bundle BUNDLE [--branch BRANCH] [--remote NAME] [--origin URL]
+		  checkout remote --host HOST --repo REPO --target TARGET [--branch BRANCH] [--remote NAME] [--origin URL] [--allow-unpushed]
+	EOF
+}
+
+main() {
+	local command
+
+	(($# > 0)) || {
+		usage >&2
+		return 2
+	}
+
+	case $1 in
+	--help)
+		usage
+		;;
+	pack | receive | remote)
+		command=$1
+		shift
+		"command.$command" "$@"
+		;;
+	*)
+		warn "E: unknown command: $1"
+		usage >&2
+		return 2
+		;;
+	esac
+}
+
+main "$@"

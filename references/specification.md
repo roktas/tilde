@@ -77,7 +77,8 @@ Detailed public and internal command semantics live in `references/specification
 - Files under `references/specification/` own detailed behavior in their routed areas.
 - `SKILL.md` owns reusable prompt workflow and should stay short.
 - `bin/tilde` owns runtime routing and shared helper environment setup.
-- `bin/` owns runnable helper entrypoints.
+- `bin/` owns PATH-visible runtime entrypoints: the `tilde` router, the `sudo` shim, and direct helper wrappers.
+- `libexec/` owns command implementations dispatched by `bin/tilde`.
 - `references/development.md` owns repository-development workflow.
 
 When adding or moving behavior, put it in exactly one detailed specification file and link to it from this entrypoint

@@ -70,7 +70,7 @@
   and `.agents` are excluded.
 - A root directory is a module only when it contains `README.md`.
 - Provisioning decisions are made after host deployment state is loaded.
-- On fresh or underprovisioned hosts, run `bin/bootstrap` explicitly before normal provisioning when
+- On fresh or underprovisioned hosts, run `bin/tilde boot` explicitly before normal provisioning when
   baseline tools are missing. Bootstrap is idempotent, remains outside normal module state, and may record bootstrap
   baseline cache in host runtime state. A failed bootstrap check is a recoverable preflight condition for apply/update
   flows. If completing bootstrap needs user credentials, an interactive platform installer, or another explicit external
@@ -150,9 +150,9 @@ The deployment state body is optional. Use it for details that may help resolve 
 
 The `bootstrap` frontmatter entry records the last known bootstrap baseline result for the host. It uses schema
 `tilde.bootstrap/v1`, has a `status` such as `ok`, records the platform and requirements hash used by
-`bin/bootstrap --check`, and may record resolved tool paths for `brew`, `ruby`, `git`, and `curl`. This entry is a fast
+`bin/tilde boot --check`, and may record resolved tool paths for `brew`, `ruby`, `git`, and `curl`. This entry is a fast
 path cache for bootstrap checks, not desired state. If it is missing, stale, or incompatible with current bootstrap
-requirements, `bin/bootstrap --check` must perform a live probe.
+requirements, `bin/tilde boot --check` must perform a live probe.
 
 `last-plan.json` and `last-apply.json` are read-only deployment caches for the last `apply` or `repair` run. `status`
 may summarize managed module, link, copy, and install-package counts from these files without regenerating a plan or

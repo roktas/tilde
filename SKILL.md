@@ -12,7 +12,7 @@ of truth.
 
 Read `references/specification.md` first, then only the relevant routed specification file before changing behavior or
 executing nontrivial commands. Keep `SKILL.md` short; durable semantics belong in `references/specification.md` and
-`references/specification/`, and runnable helpers belong in `bin/`.
+`references/specification/`. Runtime entrypoints belong in `bin/`; command implementations belong in `libexec/`.
 
 ## Specification Map
 
@@ -84,7 +84,7 @@ ordinary help. Treat `plan` and `dry-run` as qualifiers on public commands, not 
 
 For local helper execution, prefer `bin/tilde COMMAND ...` when a runtime route exists. Direct helper paths such as
 `bin/plan`, `bin/apply`, `bin/status`, `bin/doctor`, `bin/bootstrap`, `bin/preflight`, and `bin/checkout` remain valid
-focused entrypoints.
+focused wrappers. `bin/sudo` is a Tilde execution shim, not a user-facing command.
 
 ## Common Prompt Shapes
 
@@ -130,13 +130,13 @@ clone on a `dropbox` target unless the user changes host kind.
 
 For real local deployment or `remote-git`, require a clean worktree and pushed target commit. Generate plans with
 `bin/tilde plan`; it never applies changes. Write deployment state on the target first and optionally mirror it back to
-the controller. Run `bin/bootstrap` only when the target is missing the bootstrap baseline, the baseline is suspect, or
+the controller. Run `bin/tilde boot` only when the target is missing the bootstrap baseline, the baseline is suspect, or
 the user explicitly asks for a bootstrap check. Cleaning deployment state is not a reason to rerun bootstrap.
 For `remote-git` with a private data repository, use controller-side Git bundle transport as the default first move.
 Target-side private GitHub authentication is opt-in only; do not try `gh auth`, deploy keys, PATs, or SSH agent
 forwarding before bundle transport unless the user or host policy explicitly chooses target-side private Git. Prefer
 `bin/tilde checkout remote` for bundle-based private checkout preparation and updates.
-Run `bin/tilde preflight` before planning; it starts with `bin/bootstrap --check --record` so compatible bootstrap state
+Run `bin/tilde preflight` before planning; it starts with `bin/tilde boot --check --record` so compatible bootstrap state
 uses the fast path and missing or stale bootstrap state is probed before deployment continues. For normal apply/update
 preflight, missing or incomplete bootstrap baseline is recoverable: preflight runs idempotent bootstrap and re-checks.
 If bootstrap needs credentials or another external action but the existing runtime can still run plan/apply, continue
@@ -145,18 +145,18 @@ For Dropbox-internal symlinks, the plan must carry a relative link value even wh
 root differently, such as direct `~/Dropbox` paths versus macOS File Provider paths under
 `~/Library/CloudStorage/Dropbox`.
 
-For remote SSH orchestration, do not rely on the target login shell. The canonical multi-command form is a POSIX
-`sh -s` heredoc; use this shape for remote dry-run, update, deploy, status, and doctor snippets:
+For remote SSH orchestration, do not rely on the target login shell. Use `bin/tilde ssh HOST` for Tilde-controlled
+multi-command remote work when the route is available; it executes the body through the POSIX `ssh HOST sh -s --`
+shape:
 
 ```sh
-ssh HOST sh -s <<'SH'
-set -eu
+bin/tilde ssh HOST <<'SH'
 # ...
 SH
 ```
 
 Do not start remote commands with `set -e; ...`, and do not use `sh -c` or `bash -lc` for multi-command remote
-orchestration. Reserve Bash only for explicit Bash script entrypoints such as `bin/bootstrap` or a target-resolved
+orchestration. Reserve Bash only for explicit Bash script entrypoints such as `libexec/boot` or a target-resolved
 Homebrew Bash when truly required.
 
 Before presenting or running a remote multi-command snippet, scan it once: if it contains `ssh ... 'set -e;`,

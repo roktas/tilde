@@ -9,7 +9,8 @@ normal Tilde provisioning.
 The executor is deliberately narrow. It does not discover repositories, regenerate plans, interpret prose, choose
 packages, repair declarations, or invent fallbacks. It may perform deterministic package-handler work described by the
 confirmed plan, including selecting an unambiguous `github:` release asset. Unexpected or unsupported conditions produce
-structured results for the agent or user to resolve.
+structured results for the agent or user to resolve. The implementation lives at `libexec/apply`; `bin/apply` is a
+focused wrapper through `bin/tilde apply`.
 
 ## Interface
 
@@ -95,6 +96,21 @@ For Linux `deb:` package actions, the executor uses non-interactive sudo. If `su
 TTY, or policy approval is required, record the package action as `deferred` with reason `privilege required`; do not
 hang waiting for a password prompt. This does not grant privilege or change system policy; it only makes privilege
 failure deterministic.
+
+Package commands and Bash-only section blocks run in the Tilde execution environment:
+
+```text
+PATH=$TILDE_ROOT/bin:$PATH
+TILDE_ROOT=<skill checkout>
+TILDE_SUDO=intercept
+TILDE_SUDO_LOG=<temporary jsonl path>
+```
+
+`bin/sudo` must fail closed outside this environment. Inside the environment it delegates to `bin/tilde sudo`, which
+runs the real sudo command with `-n`. A privilege failure emits the stderr marker `TILDE_PRIVILEGE_REQUIRED`, exits with
+the reserved status `125`, and appends a `tilde.sudo/v1` JSONL event when `TILDE_SUDO_LOG` is set. Any recorded sudo
+event makes the current action `deferred` with reason `privilege required`, even when a shell block exits 0 after
+swallowing the sudo failure.
 
 Package actions may include supported conditions. When a condition is not met, the executor records the action as
 `ignored` and does not run the package command. The `graphical` condition is always true on macOS, true on Linux only

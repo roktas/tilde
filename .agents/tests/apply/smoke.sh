@@ -167,6 +167,35 @@ EOF
 	printf 'private\n' >"$repo/zzz-private/private.txt"
 }
 
+write_privilege_repo() {
+	local repo=$1
+
+	mkdir -p "$repo/sudo-section"
+
+	cat >"$repo/AGENTS.md" <<'EOF'
+---
+tilde:
+  protocol: tilde/v1
+  role: public
+---
+
+# Privilege Apply Smoke
+EOF
+
+	cat >"$repo/sudo-section/README.md" <<'EOF'
+# Sudo Section
+
+## Install
+
+This block keeps running after sudo so the executor must read the Tilde sudo event log.
+
+```bash
+sudo -n true || true
+printf 'after sudo\n' > "$HOME"/sudo-swallowed
+```
+EOF
+}
+
 # ------------------------------------------------------------------------------------------------------------------------
 # Main
 # ------------------------------------------------------------------------------------------------------------------------
@@ -192,6 +221,11 @@ main() {
 	local plan_json
 	local private_plan_json
 	local private_repo
+	local privilege_apply_json
+	local privilege_home
+	local privilege_plan_json
+	local privilege_repo
+	local privilege_state
 	local refresh_apply_json
 	local refresh_plan_json
 	local repo
@@ -220,6 +254,11 @@ main() {
 	state=$tmpdir/state
 	repo=$home/Dropbox/src/home
 	private_repo=$home/Dropbox/src/home-
+	privilege_apply_json=$tmpdir/privilege-apply.json
+	privilege_home=$tmpdir/privilege-home
+	privilege_plan_json=$tmpdir/privilege-plan.json
+	privilege_repo=$privilege_home/Dropbox/src/home
+	privilege_state=$tmpdir/privilege-state
 	bad_repo=$tmpdir/bad-home
 	fake_bin=$tmpdir/bin
 	apply_before_refresh=$tmpdir/apply-before-refresh.json
@@ -245,6 +284,8 @@ main() {
 		"$fake_bin" \
 		"$home/Dropbox/var/app" \
 		"$home/.config/sample" \
+		"$privilege_repo" \
+		"$privilege_state/tilde" \
 		"$private_repo" \
 		"$repo" \
 		"$align_state/tilde" \
@@ -304,6 +345,11 @@ exit 1
 EOF
 	cat >"$fake_bin/sudo" <<'EOF'
 #!/usr/bin/env bash
+if [[ ${TILDE_FAKE_SUDO:-} == auth ]]; then
+	printf 'sudo: a password is required\n' >&2
+	exit 1
+fi
+
 printf 'sudo %s\n' "$*" >> "$HOME"/package-log
 exit 0
 EOF
@@ -324,6 +370,7 @@ EOF
 
 	write_repo "$repo"
 	write_private_repo "$private_repo"
+	write_privilege_repo "$privilege_repo"
 	git -C "$repo" init -q
 	git -C "$repo" config user.email smoke@example.invalid
 	git -C "$repo" config user.name Smoke
@@ -334,9 +381,27 @@ EOF
 	git -C "$private_repo" config user.name Smoke
 	git -C "$private_repo" add .
 	git -C "$private_repo" commit -q -m init
+	git -C "$privilege_repo" init -q
+	git -C "$privilege_repo" config user.email smoke@example.invalid
+	git -C "$privilege_repo" config user.name Smoke
+	git -C "$privilege_repo" add .
+	git -C "$privilege_repo" commit -q -m init
 
 	HOME=$home XDG_STATE_HOME=$state "$plan" --repo "$repo" --platform linux --host "$host" >"$plan_json"
 	HOME=$home XDG_STATE_HOME=$state "$plan" --repo "$private_repo" --platform linux --host "$host" >"$private_plan_json"
+	HOME=$privilege_home XDG_STATE_HOME=$privilege_state "$plan" --repo "$privilege_repo" --platform linux --host "$host" >"$privilege_plan_json"
+	HOME=$privilege_home XDG_STATE_HOME=$privilege_state PATH=$fake_bin:$PATH TILDE_FAKE_SUDO=auth "$apply" \
+		--plan "$privilege_plan_json" >"$privilege_apply_json"
+	grep -q '^after sudo$' "$privilege_home/sudo-swallowed"
+	PRIVILEGE_APPLY_JSON=$privilege_apply_json ruby -rjson -e '
+		apply = JSON.parse(File.read(ENV.fetch("PRIVILEGE_APPLY_JSON")))
+		result = apply.fetch("results").find { |item| item.fetch("module_id") == "public/sudo-section" }
+		abort "missing sudo-section result" unless result
+		abort "sudo-section should defer" unless result.fetch("status") == "deferred"
+		abort "missing privilege reason" unless result.fetch("diagnostics").fetch("reason") == "privilege required"
+		sudo = result.fetch("diagnostics").fetch("blocks").flat_map { |block| block.fetch("sudo", []) }
+		abort "missing sudo event" unless sudo.any? { |event| event.fetch("event") == "privilege_required" }
+	'
 	HOME=$align_home XDG_STATE_HOME=$align_state "$plan" --repo "$repo" --mode align --platform linux --host "$host" >"$align_plan_json"
 	HOME=$align_home XDG_STATE_HOME=$align_state PATH=/usr/bin:/bin "$apply" --plan "$align_plan_json" >"$align_apply_json"
 	[[ -L $align_home/Dropbox/var/app/source-link.txt ]]

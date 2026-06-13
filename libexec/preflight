@@ -1,0 +1,191 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+[[ -z ${TRACE:-} ]] || set -x
+unset CDPATH
+
+# ------------------------------------------------------------------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------------------------------------------------------------------
+
+check_file_provider() {
+	local repo=$1
+	local status
+
+	[[ $(uname -s) == Darwin ]] || return
+	command -v fileproviderctl >/dev/null 2>&1 || return
+	status=$(fileproviderctl evaluate "$repo" 2>/dev/null) || return
+
+	[[ $status != *'isDownloading = 1;'* ]] || warn "W: checkout is downloading: $repo"
+	[[ $status != *'isKeepDownloaded = 0;'* ]] || warn "W: checkout is not marked keep downloaded: $repo"
+	[[ $status != *'isRecursivelyDownloaded = 0;'* ]] || warn "W: checkout is not recursively downloaded: $repo"
+}
+
+check_bootstrap() {
+	local mode=$1
+	local root
+
+	root=$(cd -- "${BASH_SOURCE[0]%/*}/.." >/dev/null && pwd)
+
+	case $mode in
+	auto)
+		if "$root/bin/tilde" boot --check --record; then
+			return
+		fi
+
+		warn "W: bootstrap check failed; running bootstrap"
+		if "$root/bin/tilde" boot && "$root/bin/tilde" boot --check --record; then
+			return
+		fi
+
+		if runtime_ready; then
+			warn "W: bootstrap remains incomplete; continuing with existing runtime"
+			return
+		fi
+
+		warn "E: bootstrap remains incomplete and required runtime is missing"
+		return 1
+		;;
+	check)
+		"$root/bin/tilde" boot --check --record
+		;;
+	require)
+		if "$root/bin/tilde" boot --check --record; then
+			return
+		fi
+
+		warn "W: bootstrap check failed; running bootstrap"
+		"$root/bin/tilde" boot
+		"$root/bin/tilde" boot --check --record
+		;;
+	skip)
+		;;
+	*)
+		warn "E: unsupported bootstrap mode: $mode"
+		return 2
+		;;
+	esac
+}
+
+runtime_ready() {
+	command -v curl >/dev/null &&
+		command -v git >/dev/null &&
+		command -v ruby >/dev/null
+}
+
+check_repo() {
+	local repo=$1
+	shift
+
+	local required
+
+	if [[ ! -d $repo ]]; then
+		warn "E: checkout is missing: $repo"
+		return 1
+	fi
+
+	for required; do
+		if [[ ! -r $repo/$required ]]; then
+			warn "E: required checkout path is missing or unreadable: $repo/$required"
+			return 1
+		fi
+	done
+
+	if ! git -C "$repo" rev-parse --verify HEAD >/dev/null 2>&1; then
+		warn "E: checkout has no readable Git HEAD: $repo"
+		return 1
+	fi
+
+	if ! git -C "$repo" cat-file -e 'HEAD^{tree}' >/dev/null 2>&1; then
+		warn "E: checkout has no readable Git HEAD tree: $repo"
+		return 1
+	fi
+
+	if ! git -C "$repo" status --porcelain=v1 --untracked-files=no >/dev/null 2>&1; then
+		warn "E: checkout Git tree cannot be traversed: $repo"
+		return 1
+	fi
+
+	check_file_provider "$repo"
+	printf 'OK: %s\n' "$repo"
+}
+
+warn() {
+	printf '%s\n' "$*" >&2
+}
+
+# ------------------------------------------------------------------------------------------------------------------------
+# Main
+# ------------------------------------------------------------------------------------------------------------------------
+
+usage() {
+	cat <<-EOF
+		Usage: preflight [--bootstrap auto|check|require|skip] [--require PATH] REPO...
+	EOF
+}
+
+main() {
+	local bootstrap=auto
+	local failed=0
+	local repo
+	local -a repos=()
+	local -a required=()
+
+	while (($# > 0)); do
+		case $1 in
+		--help)
+			usage
+			return
+			;;
+		--bootstrap)
+			(($# > 1)) || {
+				warn "E: --bootstrap needs a mode"
+				return 2
+			}
+			bootstrap=$2
+			shift 2
+			;;
+		--bootstrap=*)
+			bootstrap=${1#*=}
+			shift
+			;;
+		--require)
+			(($# > 1)) || {
+				warn "E: --require needs a checkout-relative path"
+				return 2
+			}
+			required+=("$2")
+			shift 2
+			;;
+		--)
+			shift
+			repos+=("$@")
+			break
+			;;
+		-*)
+			warn "E: unknown option: $1"
+			usage >&2
+			return 2
+			;;
+		*)
+			repos+=("$1")
+			shift
+			;;
+		esac
+	done
+
+	if ((${#repos[@]} == 0)); then
+		usage >&2
+		return 2
+	fi
+
+	check_bootstrap "$bootstrap" || return 1
+
+	for repo in "${repos[@]}"; do
+		check_repo "$repo" "${required[@]}" || failed=1
+	done
+
+	return "$failed"
+}
+
+main "$@"
