@@ -159,6 +159,9 @@ EOF
 	'
 
 	grep -Fq "Last deployment plan cache: present" "$markdown"
+	grep -Fq "Deployment state date: \`2026-06-05 00:00:00 +0300\`" "$markdown"
+	grep -Fq "Last deployment apply date: \`2026-06-05T00:00:01+03:00\`" "$markdown"
+	grep -Fq "Last refresh apply date: \`2026-06-05T00:00:03+03:00\`" "$markdown"
 	grep -Fq "Last refresh plan cache: present" "$markdown"
 	grep -Fq "Cached links: \`2\`" "$markdown"
 	grep -Fq "Cached copies: \`1\`" "$markdown"

@@ -103,6 +103,8 @@ PATH=$TILDE_ROOT/bin:$PATH
 TILDE_ROOT=<skill checkout>
 TILDE_SUDO=intercept
 TILDE_SUDO_LOG=<temporary jsonl path>
+LC_ALL=en_US.UTF-8
+LANG=en_US.UTF-8
 ```
 
 `bin/sudo` must fail closed outside this environment. Inside the environment it delegates to `bin/tilde sudo`, which

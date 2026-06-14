@@ -984,7 +984,9 @@ class Apply
       "PATH" => path,
       "TILDE_ROOT" => TILDE_ROOT.to_s,
       "TILDE_SUDO" => "intercept",
-      "TILDE_SUDO_LOG" => log
+      "TILDE_SUDO_LOG" => log,
+      "LC_ALL" => "en_US.UTF-8",
+      "LANG" => "en_US.UTF-8"
     }
   end
 

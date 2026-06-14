@@ -116,6 +116,19 @@ class Status
     }
   end
 
+  def cache_time(cache)
+    return unless cache&.dig(:present) && !cache[:error]
+
+    cache[:started_at] || cache[:generated_at]
+  end
+
+  def display_time(value)
+    return "unknown" unless value
+    return value.iso8601 if value.respond_to?(:iso8601)
+
+    value.to_s
+  end
+
   def config_summary(path, config)
     return { present: false, path: display_path(path) } unless path.file?
     return { present: true, path: display_path(path), error: config.fetch("_error") } if config_error?(config)
@@ -245,13 +258,21 @@ class Status
     puts("## Deployment")
     puts("- Config: #{presence_line(status.dig(:config, :present), status.dig(:config, :path))}")
     puts("- Host state: #{presence_line(host_state[:present], host_state[:path])}")
-    puts("- Last apply date: `#{host_state[:date] || 'unknown'}`") if host_state[:present]
+    puts("- Deployment state date: `#{display_time(host_state[:date])}`") if host_state[:present]
+    puts_cache_time("Last deployment apply date", status.dig(:caches, :last_apply))
+    puts_cache_time("Last refresh apply date", status.dig(:caches, :last_refresh_apply))
+    puts_cache_time("Last upgrade apply date", status.dig(:caches, :last_upgrade_apply))
     puts("- Recorded modules: `#{host_state[:done_count]}`") if host_state[:present]
     puts("- Last deployment plan cache: #{plan_cache}")
     puts("- Last deployment apply cache: #{apply_cache}")
     puts("- Last refresh plan cache: #{refresh_cache}")
     puts("- Last upgrade plan cache: #{upgrade_cache}")
     puts
+  end
+
+  def puts_cache_time(label, cache)
+    time = cache_time(cache)
+    puts("- #{label}: `#{time}`") if time
   end
 
   def puts_header(status)

@@ -14,6 +14,10 @@ Bare `$tilde` means `help`. It is read-only and must behave like `$tilde help`.
 environment, resolves the skill root, normalizes route aliases, and dispatches to the matching `libexec/` helper. It is
 a runtime entrypoint, not a replacement for prompt-level agent orchestration.
 
+Before dispatch, the router normalizes empty, `C`, `POSIX`, `C.UTF-8`, and `C.utf8` locale settings to
+`LC_ALL=en_US.UTF-8` and `LANG=en_US.UTF-8`. This keeps Ruby helper encoding behavior UTF-8 based while preserving any
+explicit non-C locale selected by the caller.
+
 The router may expose implemented helper routes such as:
 
 - `tilde help`

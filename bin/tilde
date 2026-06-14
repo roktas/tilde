@@ -44,6 +44,15 @@ warn() {
 # Helpers
 # ------------------------------------------------------------------------------------------------------------------------
 
+configure_locale() {
+	case ${LC_ALL:-${LANG:-}} in
+	"" | C | POSIX | C.UTF-8 | C.utf8)
+		export LC_ALL=en_US.UTF-8
+		export LANG=en_US.UTF-8
+		;;
+	esac
+}
+
 is_agent_command() {
 	local name=$1
 
@@ -157,6 +166,7 @@ main() {
 	export TILDE_ROOT
 	export TILDE_SUDO=${TILDE_SUDO:-intercept}
 	export PATH=$TILDE_ROOT/bin:$PATH
+	configure_locale
 
 	case $command in
 	-h | --help)

@@ -261,7 +261,8 @@ postinstall idempotence and diagnostic behavior clearer.
   with `2 ok`; final checks reported `/etc/sudoers.d/tilde` absent, `sudo -n` requiring a password, and no stuck apply
   processes.
 - Residual warnings remained: duplicate Chrome apt sources under `chrome.list` and `google-chrome.list`, and repeated
-  `LC_ALL=C.UTF-8` locale warnings in remote shell output.
+  locale warnings in remote shell output. Later local newton bootstrap showed Homebrew Ruby using US-ASCII under
+  `C.UTF-8`; the router and apply execution environment now normalize C/POSIX locales to `en_US.UTF-8`.
 
 ## Implementation Sketch
 

@@ -7,13 +7,8 @@
   failed modules is useful operationally, but `last-apply.json` should not become misleading for status or later audits.
 - [ ] Clean up duplicate Google Chrome apt source declarations produced or tolerated by the Linux/Chrome modules.
   Spinoza reports duplicate targets in `chrome.list` and `google-chrome.list` during every apt update.
-- [ ] Investigate repeated `LC_ALL=C.UTF-8` warnings on remote Linux shells. Bootstrap recorded locale state as ok, but
-  remote apply output still includes locale warnings from Bash and the Tilde sudo wrapper.
-- [ ] Decide the right home-module shape for macOS Screen Sharing enablement. `home/macos` currently defers the
-  Postinstall command on non-interactive SSH because `launchctl load -w` needs sudo; after handoff, macOS may still emit
-  `Load failed: 5` while Screen Sharing is reachable, so the module should make idempotence and diagnostics clearer.
+- [ ] Verify that router/apply locale normalization removes repeated locale warnings on remote Linux shells. Bootstrap
+  records locale state as ok, and Tilde now normalizes C/POSIX locales to `en_US.UTF-8`, but this still needs a remote
+  Linux update run to confirm.
 - [ ] Make macOS Dropbox File Provider warnings more actionable. `preflight` can detect checkouts that are not marked
   keep-downloaded, but remote update closeout should also explain the expected user action or policy.
-- [ ] Clarify `status` timestamps by separating deployment apply, refresh apply, and upgrade apply dates. The kant
-  update showed "Last apply date" coming from a refresh cache, while the deployment apply cache still contained a
-  deferred module.
