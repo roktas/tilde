@@ -10,8 +10,8 @@
 - [ ] Investigate repeated `LC_ALL=C.UTF-8` warnings on remote Linux shells. Bootstrap recorded locale state as ok, but
   remote apply output still includes locale warnings from Bash and the Tilde sudo wrapper.
 - [ ] Decide the right home-module shape for macOS Screen Sharing enablement. `home/macos` currently defers the
-  Postinstall command on non-interactive SSH because `launchctl load -w` needs sudo; this may belong in an explicit
-  manual/repair path rather than routine update apply.
+  Postinstall command on non-interactive SSH because `launchctl load -w` needs sudo; after handoff, macOS may still emit
+  `Load failed: 5` while Screen Sharing is reachable, so the module should make idempotence and diagnostics clearer.
 - [ ] Make macOS Dropbox File Provider warnings more actionable. `preflight` can detect checkouts that are not marked
   keep-downloaded, but remote update closeout should also explain the expected user action or policy.
 - [ ] Clarify `status` timestamps by separating deployment apply, refresh apply, and upgrade apply dates. The kant

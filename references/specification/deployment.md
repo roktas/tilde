@@ -337,8 +337,9 @@ Tilde-controlled package and section execution uses noninteractive sudo only. `b
 Tilde execution `PATH`; it delegates to `bin/tilde sudo`, which calls the real sudo command with `-n`. Authentication,
 TTY, and sudo policy failures emit `TILDE_PRIVILEGE_REQUIRED` and are reported as `deferred`.
 
-When a remote deployment needs sudo and the target cannot run it noninteractively, present a user-run handoff command
-instead of collecting a password. Generate it with:
+After a remote deploy or update apply, inspect the structured apply results before closeout. If any result is
+`deferred` with reason `privilege required`, the operation is not fully closed. Present a user-run handoff command
+instead of collecting a password, unless the user explicitly chooses to leave those actions deferred. Generate it with:
 
 ```bash
 bin/tilde sudo handoff --host HOST
@@ -353,6 +354,11 @@ sudo rm -f /etc/sudoers.d/tilde
 
 This rule grants broad root privilege to the target user and must be removed after the run. `bin/tilde sudo handoff
 --copy` may copy the printed command to the local clipboard when a clipboard tool is available.
+
+After the user confirms that the handoff command completed, rerun the affected repair or update path, then remove the
+temporary rule with the printed cleanup command and verify that `/etc/sudoers.d/tilde` is absent. If the same privilege
+result remains deferred after handoff, report the exact module and action instead of repeatedly presenting the same
+handoff.
 
 ### Remote Modes
 

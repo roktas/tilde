@@ -140,6 +140,10 @@ uses the fast path and missing or stale bootstrap state is probed before deploym
 preflight, missing or incomplete bootstrap baseline is recoverable: preflight runs idempotent bootstrap and re-checks.
 If bootstrap needs credentials or another external action but the existing runtime can still run plan/apply, continue
 with a warning instead of blocking desired-state reconciliation.
+After remote deploy or update apply, inspect structured apply results before closeout. If any result is `deferred` with
+reason `privilege required`, do not treat the operation as fully closed. Present the target-specific `bin/tilde sudo
+handoff --host HOST` command, explain the privilege scope and cleanup requirement, wait for the user action, rerun the
+affected repair or update path, then verify cleanup.
 For Dropbox-internal symlinks, the plan must carry a relative link value even when source and target spell the Dropbox
 root differently, such as direct `~/Dropbox` paths versus macOS File Provider paths under
 `~/Library/CloudStorage/Dropbox`.

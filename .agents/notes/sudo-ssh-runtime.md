@@ -238,6 +238,12 @@ Observed results:
   block the update, but remote macOS runs should continue surfacing it because missing offline files can turn into
   confusing later failures.
 
+Follow-up repair used `bin/tilde sudo handoff --host kant --copy`, the user ran the printed command, and `repair`
+cleared the `public/macos` deferred result. Cleanup removed `/etc/sudoers.d/tilde` and verification showed the file was
+absent. `launchctl load` emitted `Load failed: 5` while exiting successfully; `launchctl print` could see
+`system/com.apple.screensharing` and localhost port `5900` was open. The macOS module should eventually make this
+postinstall idempotence and diagnostic behavior clearer.
+
 ### 2026-06-14 spinoza update
 
 - Bootstrap with temporary sudo handoff successfully installed the Linux Homebrew baseline and recorded bootstrap state.
