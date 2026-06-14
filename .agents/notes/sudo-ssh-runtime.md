@@ -218,6 +218,26 @@ The handoff should:
 
 ## Field Notes
 
+### 2026-06-14 kant update
+
+`$tilde update ssh:kant` completed with a usable final state. Public and private data repositories were already clean
+on the target, bootstrap state was present, and the update only had to apply changed desired state plus fast refresh.
+
+Observed results:
+
+- `public/macos` Postinstall deferred because the Screen Sharing `launchctl` command needs sudo in a non-interactive
+  remote session.
+- `brew refresh` upgraded formulae and the Codex desktop cask; Homebrew quit and reopened `Codex.app` as part of the
+  cask upgrade.
+- During the long refresh action, `last-refresh-apply.json` could still show the previous completed refresh until the
+  first action result was recorded. The executor should write a fresh incomplete apply cache before starting the first
+  action when no resumable cache is active.
+- `status` reported "Last apply date" using the refresh timestamp. Deployment apply and refresh apply timestamps should
+  be displayed separately so deferred deployment results are not obscured by a later successful refresh.
+- Dropbox File Provider reported that the `home` and `home-` checkouts were not marked keep-downloaded. This did not
+  block the update, but remote macOS runs should continue surfacing it because missing offline files can turn into
+  confusing later failures.
+
 ### 2026-06-14 spinoza update
 
 - Bootstrap with temporary sudo handoff successfully installed the Linux Homebrew baseline and recorded bootstrap state.

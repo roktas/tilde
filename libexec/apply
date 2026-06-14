@@ -112,6 +112,7 @@ class Apply
     validate!
     prepare_state
     write_last_plan
+    write_last_apply unless @resume
     apply_actions
     write_state if write_state?
     puts(JSON.pretty_generate(@apply))

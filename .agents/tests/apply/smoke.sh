@@ -5,12 +5,18 @@ set -Eeuo pipefail
 unset CDPATH
 
 cleanup_tmpdir=
+cleanup_pid=
 
 # ------------------------------------------------------------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------------------------------------------------------------
 
 cleanup() {
+	if [[ -n $cleanup_pid ]]; then
+		kill "$cleanup_pid" 2>/dev/null || true
+		wait "$cleanup_pid" 2>/dev/null || true
+	fi
+
 	[[ -z $cleanup_tmpdir ]] || rm -rf "$cleanup_tmpdir"
 }
 
@@ -128,6 +134,32 @@ printf 'section\n' > "$HOME"/section/created.txt
 EOF
 }
 
+write_slow_repo() {
+	local repo=$1
+
+	mkdir -p "$repo/slow"
+
+	cat >"$repo/AGENTS.md" <<'EOF'
+---
+tilde:
+  protocol: tilde/v1
+  role: public
+---
+
+# Slow Apply Smoke
+EOF
+
+	cat >"$repo/slow/README.md" <<'EOF'
+---
+all:
+  packages:
+    - brew:slow
+---
+
+# Slow
+EOF
+}
+
 write_private_repo() {
 	local repo=$1
 
@@ -232,6 +264,11 @@ main() {
 	local skip_apply_json
 	local skip_plan_json
 	local skip_private_plan_json
+	local slow_apply_json
+	local slow_home
+	local slow_plan_json
+	local slow_repo
+	local slow_state
 	local state
 	local state_before_refresh
 	local tilde
@@ -270,6 +307,11 @@ main() {
 	skip_apply_json=$tmpdir/skip-apply.json
 	skip_plan_json=$tmpdir/skip-plan.json
 	skip_private_plan_json=$tmpdir/skip-private-plan.json
+	slow_apply_json=$tmpdir/slow-apply.json
+	slow_home=$tmpdir/slow-home
+	slow_plan_json=$tmpdir/slow-plan.json
+	slow_repo=$slow_home/Dropbox/src/home
+	slow_state=$tmpdir/slow-state
 	state_before_refresh=$tmpdir/state-before-refresh.md
 	bad_plan=$tmpdir/bad-plan.json
 	bad_condition_plan=$tmpdir/bad-condition-plan.json
@@ -287,6 +329,8 @@ main() {
 		"$private_repo" \
 		"$repo" \
 		"$align_state/tilde" \
+		"$slow_repo" \
+		"$slow_state/tilde" \
 		"$state/tilde"
 
 	cat >"$fake_bin/brew" <<'EOF'
@@ -294,6 +338,15 @@ main() {
 if [[ ${1:-} == install && ${2:-} == broken ]]; then
 	printf 'fake brew failure\n' >&2
 	exit 7
+fi
+
+if [[ ${1:-} == install && ${2:-} == slow ]]; then
+	: > "$HOME"/slow-started
+	while [[ ! -e "$HOME"/slow-release ]]; do
+		sleep 0.05
+	done
+	printf 'brew %s\n' "$*" >> "$HOME"/package-log
+	exit 0
 fi
 
 printf 'brew %s\n' "$*" >> "$HOME"/package-log
@@ -369,6 +422,7 @@ EOF
 	write_repo "$repo"
 	write_private_repo "$private_repo"
 	write_privilege_repo "$privilege_repo"
+	write_slow_repo "$slow_repo"
 	git -C "$repo" init -q
 	git -C "$repo" config user.email smoke@example.invalid
 	git -C "$repo" config user.name Smoke
@@ -384,10 +438,16 @@ EOF
 	git -C "$privilege_repo" config user.name Smoke
 	git -C "$privilege_repo" add .
 	git -C "$privilege_repo" commit -q -m init
+	git -C "$slow_repo" init -q
+	git -C "$slow_repo" config user.email smoke@example.invalid
+	git -C "$slow_repo" config user.name Smoke
+	git -C "$slow_repo" add .
+	git -C "$slow_repo" commit -q -m init
 
 	HOME=$home XDG_STATE_HOME=$state "$tilde" plan --repo "$repo" --platform linux --host "$host" >"$plan_json"
 	HOME=$home XDG_STATE_HOME=$state "$tilde" plan --repo "$private_repo" --platform linux --host "$host" >"$private_plan_json"
 	HOME=$privilege_home XDG_STATE_HOME=$privilege_state "$tilde" plan --repo "$privilege_repo" --platform linux --host "$host" >"$privilege_plan_json"
+	HOME=$slow_home XDG_STATE_HOME=$slow_state "$tilde" plan --repo "$slow_repo" --platform linux --host "$host" >"$slow_plan_json"
 	HOME=$privilege_home XDG_STATE_HOME=$privilege_state PATH=$fake_bin:$PATH TILDE_FAKE_SUDO=auth "$tilde" apply \
 		--plan "$privilege_plan_json" >"$privilege_apply_json"
 	grep -q '^after sudo$' "$privilege_home/sudo-swallowed"
@@ -400,6 +460,36 @@ EOF
 		sudo = result.fetch("diagnostics").fetch("blocks").flat_map { |block| block.fetch("sudo", []) }
 		abort "missing sudo event" unless sudo.any? { |event| event.fetch("event") == "privilege_required" }
 	'
+	HOME=$slow_home XDG_STATE_HOME=$slow_state PATH=$fake_bin:$PATH "$tilde" apply \
+		--plan "$slow_plan_json" >"$slow_apply_json" &
+	cleanup_pid=$!
+
+	for _ in {1..200}; do
+		[[ ! -e $slow_home/slow-started ]] || break
+		sleep 0.05
+	done
+	[[ -e $slow_home/slow-started ]]
+
+	SLOW_APPLY_CACHE=$slow_state/tilde/hosts/$host/last-apply.json ruby -rjson -e '
+		path = ENV.fetch("SLOW_APPLY_CACHE")
+		abort "initial apply cache missing" unless File.exist?(path)
+		apply = JSON.parse(File.read(path))
+		abort "initial apply cache should be incomplete" if apply.fetch("completed")
+		slow_done = apply.fetch("results").any? { |result| result.fetch("module_id") == "public/slow" && result.fetch("kind") == "package" }
+		abort "slow package should still be pending" if slow_done
+	'
+
+	: >"$slow_home/slow-release"
+	wait "$cleanup_pid"
+	cleanup_pid=
+
+	SLOW_APPLY_JSON=$slow_apply_json ruby -rjson -e '
+		apply = JSON.parse(File.read(ENV.fetch("SLOW_APPLY_JSON")))
+		abort "slow apply should complete" unless apply.fetch("completed")
+		slow = apply.fetch("results").find { |result| result.fetch("module_id") == "public/slow" && result.fetch("kind") == "package" }
+		abort "slow package should complete" unless slow&.fetch("status") == "ok"
+	'
+
 	HOME=$align_home XDG_STATE_HOME=$align_state "$tilde" plan --repo "$repo" --mode align --platform linux --host "$host" >"$align_plan_json"
 	HOME=$align_home XDG_STATE_HOME=$align_state PATH=/usr/bin:/bin "$tilde" apply --plan "$align_plan_json" >"$align_apply_json"
 	[[ -L $align_home/Dropbox/var/app/source-link.txt ]]
