@@ -50,8 +50,7 @@ reference file unless the task is cross-cutting.
 ## Public Commands
 
 `$tilde help` must show public commands as a GitHub-flavored Markdown table with `Command` and `Action` columns. The
-installed runtime route `bin/tilde help` emits the canonical public table; `bin/help --format markdown` remains
-available for direct helper use.
+installed runtime route `bin/tilde help` emits the canonical public table.
 
 | Command | Action |
 | --- | --- |
@@ -77,7 +76,7 @@ Detailed public and internal command semantics live in `references/specification
 - Files under `references/specification/` own detailed behavior in their routed areas.
 - `SKILL.md` owns reusable prompt workflow and should stay short.
 - `bin/tilde` owns runtime routing and shared helper environment setup.
-- `bin/` owns PATH-visible runtime entrypoints: the `tilde` router, the `sudo` shim, and direct helper wrappers.
+- `bin/` owns PATH-visible runtime entrypoints: the `tilde` router and the `sudo` shim.
 - `libexec/` owns command implementations dispatched by `bin/tilde`.
 - `references/development.md` owns repository-development workflow.
 

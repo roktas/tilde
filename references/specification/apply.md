@@ -2,15 +2,14 @@
 
 ## Purpose
 
-`bin/tilde apply` is the deterministic executor route for a confirmed provisioning plan. The direct `bin/apply` helper
-remains available for focused executor use. This executor replaces agent-generated, deployment-specific apply scripts for
-normal Tilde provisioning.
+`bin/tilde apply` is the deterministic executor route for a confirmed provisioning plan. This executor replaces
+agent-generated, deployment-specific apply scripts for normal Tilde provisioning.
 
 The executor is deliberately narrow. It does not discover repositories, regenerate plans, interpret prose, choose
 packages, repair declarations, or invent fallbacks. It may perform deterministic package-handler work described by the
 confirmed plan, including selecting an unambiguous `github:` release asset. Unexpected or unsupported conditions produce
-structured results for the agent or user to resolve. The implementation lives at `libexec/apply`; `bin/apply` is a
-focused wrapper through `bin/tilde apply`.
+structured results for the agent or user to resolve. The implementation lives at `libexec/apply` and is dispatched
+through `bin/tilde apply`.
 
 ## Interface
 

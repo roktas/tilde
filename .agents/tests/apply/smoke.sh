@@ -205,7 +205,6 @@ main() {
 	local align_home
 	local align_plan_json
 	local align_state
-	local apply
 	local apply_before_refresh
 	local apply_json
 	local bad_err
@@ -216,7 +215,6 @@ main() {
 	local fake_bin
 	local home
 	local host
-	local plan
 	local plan_before_refresh
 	local plan_json
 	local private_plan_json
@@ -236,12 +234,12 @@ main() {
 	local skip_private_plan_json
 	local state
 	local state_before_refresh
+	local tilde
 	local tmpdir
 
 	script_dir=$(cd -- "${BASH_SOURCE[0]%/*}" >/dev/null && pwd)
 	skill_root=$(cd -- "$script_dir/../../.." >/dev/null && pwd)
-	apply=$skill_root/bin/apply
-	plan=$skill_root/bin/plan
+	tilde=$skill_root/bin/tilde
 
 	tmpdir=$(mktemp -d)
 	cleanup_tmpdir=$tmpdir
@@ -387,10 +385,10 @@ EOF
 	git -C "$privilege_repo" add .
 	git -C "$privilege_repo" commit -q -m init
 
-	HOME=$home XDG_STATE_HOME=$state "$plan" --repo "$repo" --platform linux --host "$host" >"$plan_json"
-	HOME=$home XDG_STATE_HOME=$state "$plan" --repo "$private_repo" --platform linux --host "$host" >"$private_plan_json"
-	HOME=$privilege_home XDG_STATE_HOME=$privilege_state "$plan" --repo "$privilege_repo" --platform linux --host "$host" >"$privilege_plan_json"
-	HOME=$privilege_home XDG_STATE_HOME=$privilege_state PATH=$fake_bin:$PATH TILDE_FAKE_SUDO=auth "$apply" \
+	HOME=$home XDG_STATE_HOME=$state "$tilde" plan --repo "$repo" --platform linux --host "$host" >"$plan_json"
+	HOME=$home XDG_STATE_HOME=$state "$tilde" plan --repo "$private_repo" --platform linux --host "$host" >"$private_plan_json"
+	HOME=$privilege_home XDG_STATE_HOME=$privilege_state "$tilde" plan --repo "$privilege_repo" --platform linux --host "$host" >"$privilege_plan_json"
+	HOME=$privilege_home XDG_STATE_HOME=$privilege_state PATH=$fake_bin:$PATH TILDE_FAKE_SUDO=auth "$tilde" apply \
 		--plan "$privilege_plan_json" >"$privilege_apply_json"
 	grep -q '^after sudo$' "$privilege_home/sudo-swallowed"
 	PRIVILEGE_APPLY_JSON=$privilege_apply_json ruby -rjson -e '
@@ -402,8 +400,8 @@ EOF
 		sudo = result.fetch("diagnostics").fetch("blocks").flat_map { |block| block.fetch("sudo", []) }
 		abort "missing sudo event" unless sudo.any? { |event| event.fetch("event") == "privilege_required" }
 	'
-	HOME=$align_home XDG_STATE_HOME=$align_state "$plan" --repo "$repo" --mode align --platform linux --host "$host" >"$align_plan_json"
-	HOME=$align_home XDG_STATE_HOME=$align_state PATH=/usr/bin:/bin "$apply" --plan "$align_plan_json" >"$align_apply_json"
+	HOME=$align_home XDG_STATE_HOME=$align_state "$tilde" plan --repo "$repo" --mode align --platform linux --host "$host" >"$align_plan_json"
+	HOME=$align_home XDG_STATE_HOME=$align_state PATH=/usr/bin:/bin "$tilde" apply --plan "$align_plan_json" >"$align_apply_json"
 	[[ -L $align_home/Dropbox/var/app/source-link.txt ]]
 	grep -q '^copy$' "$align_home/.config/sample/copy.txt"
 	grep -q '^configured$' "$align_home/.config/missing-command/configured.txt"
@@ -444,17 +442,17 @@ EOF
 	'
 
 	cp -a "$repo" "$bad_repo"
-	HOME=$home XDG_STATE_HOME=$state "$plan" --repo "$bad_repo" --platform linux --host "$host" >"$bad_plan"
+	HOME=$home XDG_STATE_HOME=$state "$tilde" plan --repo "$bad_repo" --platform linux --host "$host" >"$bad_plan"
 	rm -f "$bad_repo/aaa-link/source.txt"
 
-	if HOME=$home XDG_STATE_HOME=$state "$apply" --plan "$bad_plan" >"$tmpdir/bad.out" 2>"$bad_err"; then
+	if HOME=$home XDG_STATE_HOME=$state "$tilde" apply --plan "$bad_plan" >"$tmpdir/bad.out" 2>"$bad_err"; then
 		echo "expected validation failure to block apply" >&2
 		exit 1
 	fi
 	grep -q "repository dirty state mismatch\\|source is not readable" "$bad_err"
 	[[ ! -e $home/manual-ran ]]
 
-	if HOME=$home XDG_STATE_HOME=$state "$apply" --plan "$bad_condition_plan" >"$tmpdir/bad-condition.out" 2>"$bad_condition_err"; then
+	if HOME=$home XDG_STATE_HOME=$state "$tilde" apply --plan "$bad_condition_plan" >"$tmpdir/bad-condition.out" 2>"$bad_condition_err"; then
 		echo "expected unsupported nested condition to fail validation" >&2
 		exit 1
 	fi
@@ -467,9 +465,9 @@ not a mapping
 ---
 EOF
 
-	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH TILDE_APPLY_STOP_AFTER=3 "$apply" \
+	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH TILDE_APPLY_STOP_AFTER=3 "$tilde" apply \
 		--plan "$private_plan_json" --plan "$plan_json" >"$tmpdir/partial.out"
-	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH TILDE_FAKE_SYSTEMCTL=graphical.target "$apply" \
+	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH TILDE_FAKE_SYSTEMCTL=graphical.target "$tilde" apply \
 		--plan "$private_plan_json" --plan "$plan_json" >"$apply_json"
 
 	[[ -L $home/Dropbox/var/app/source-link.txt ]]
@@ -572,7 +570,7 @@ EOF
 		write_skip_plan(ENV.fetch("PRIVATE_PLAN_JSON"), ENV.fetch("SKIP_PRIVATE_PLAN_JSON"))
 	'
 
-	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH "$apply" \
+	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH "$tilde" apply \
 		--plan "$skip_private_plan_json" --plan "$skip_plan_json" >"$skip_apply_json"
 
 	SKIP_APPLY_JSON=$skip_apply_json LAST_PLAN=$state/tilde/hosts/$host/last-plan.json STATE_FILE=$state/tilde/hosts/$host/state.md ruby -rjson -ryaml -e '
@@ -594,9 +592,9 @@ EOF
 	cp "$state/tilde/hosts/$host/state.md" "$state_before_refresh"
 	cp "$state/tilde/hosts/$host/last-plan.json" "$plan_before_refresh"
 	cp "$state/tilde/hosts/$host/last-apply.json" "$apply_before_refresh"
-	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH "$plan" \
+	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH "$tilde" plan \
 		--repo "$repo" --mode refresh --platform linux --host "$host" >"$refresh_plan_json"
-	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH "$apply" \
+	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH "$tilde" apply \
 		--plan "$refresh_plan_json" >"$refresh_apply_json"
 	cmp -s "$state_before_refresh" "$state/tilde/hosts/$host/state.md"
 	cmp -s "$plan_before_refresh" "$state/tilde/hosts/$host/last-plan.json"

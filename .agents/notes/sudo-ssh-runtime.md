@@ -81,8 +81,7 @@ libexec/
 ```
 
 The canonical command surface is `bin/tilde COMMAND ...`. Prefix executables such as `bin/tilde-apply`,
-`bin/tilde-plan`, `bin/tilde-ssh`, or `bin/tilde-sudo` are not the preferred public model. Direct helper wrappers, when
-present, are focused entrypoints, not separate command families.
+`bin/tilde-plan`, `bin/tilde-ssh`, or `bin/tilde-sudo` are not the preferred public model.
 
 `bin/tilde` is the public dispatcher and router hub. It resolves the Tilde root, sets the Tilde execution environment,
 normalizes global flags and diagnostics, and dispatches to `libexec/*`.
@@ -206,7 +205,7 @@ The handoff should:
 
 ## Implementation Sketch
 
-1. `bin/tilde` is the canonical router hub while direct helper paths remain valid wrappers.
+1. `bin/tilde` is the canonical router hub.
 2. Command implementations live under `libexec/`.
 3. `boot` is the bootstrap route name; `bootstrap` remains a valid alias.
 4. `bin/sudo` and `libexec/sudo` are guarded by `TILDE_SUDO=intercept`.
@@ -218,9 +217,8 @@ The handoff should:
 
 Prefer `bin/tilde COMMAND ...` as the canonical routed surface. The public shape should be one controlled entrypoint,
 not a family of prefixed executables. This keeps the command vocabulary short, gives future commands a shared runtime
-envelope, and makes aliases, help, structured output, trace setup, and error normalization central. Direct `bin/plan`,
-`bin/apply`, or other helper entrypoints may remain available for focused use. Direct `libexec/*` execution is useful
-for tests and development, but not as the normal agent-facing contract.
+envelope, and makes aliases, help, structured output, trace setup, and error normalization central. Direct `libexec/*`
+execution is useful for tests and development, but not as the normal agent-facing contract.
 
 Prefer fail-closed behavior for accidental `bin/sudo` use outside the Tilde execution environment. If `bin/sudo` is
 visible but `TILDE_SUDO=intercept` is missing, that is either a Tilde runtime setup bug or an accidental PATH leak.

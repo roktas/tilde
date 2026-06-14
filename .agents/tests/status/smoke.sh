@@ -34,12 +34,12 @@ main() {
 	local script_dir
 	local skill_root
 	local state
-	local status
 	local tmpdir
+	local tilde
 
 	script_dir=$(cd -- "${BASH_SOURCE[0]%/*}" >/dev/null && pwd)
 	skill_root=$(cd -- "$script_dir/../../.." >/dev/null && pwd)
-	status=$skill_root/bin/status
+	tilde=$skill_root/bin/tilde
 
 	tmpdir=$(mktemp -d)
 	cleanup_tmpdir=$tmpdir
@@ -130,8 +130,8 @@ EOF
 }
 EOF
 
-	HOME=$home XDG_STATE_HOME=$state "$status" --format json --state-dir "$state/tilde" >"$out"
-	HOME=$home XDG_STATE_HOME=$state "$status" --format markdown --state-dir "$state/tilde" >"$markdown"
+	HOME=$home XDG_STATE_HOME=$state "$tilde" status --format json --state-dir "$state/tilde" >"$out"
+	HOME=$home XDG_STATE_HOME=$state "$tilde" status --format markdown --state-dir "$state/tilde" >"$markdown"
 
 	STATUS_JSON=$out ruby -rjson -e '
 		data = JSON.parse(File.read(ENV.fetch("STATUS_JSON")))

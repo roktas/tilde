@@ -62,7 +62,6 @@ EOF
 
 main() {
 	local auto_home
-	local bootstrap
 	local bootstrap_bin
 	local bootstrap_home
 	local bootstrap_out
@@ -72,17 +71,16 @@ main() {
 	local err
 	local fake_bin
 	local object
-	local preflight
 	local repo
 	local script_dir
 	local skill_root
+	local tilde
 	local tree
 	local tmpdir
 
 	script_dir=$(cd -- "${BASH_SOURCE[0]%/*}" >/dev/null && pwd)
 	skill_root=$(cd -- "$script_dir/../../.." >/dev/null && pwd)
-	bootstrap=$skill_root/bin/bootstrap
-	preflight=$skill_root/bin/preflight
+	tilde=$skill_root/bin/tilde
 
 	tmpdir=$(mktemp -d)
 	cleanup_tmpdir=$tmpdir
@@ -118,20 +116,20 @@ main() {
 	git -C "$repo" commit -q -m init
 
 	write_bootstrap_state "$bootstrap_home" "$(platform_name)"
-	HOME=$bootstrap_home "$preflight" --require README.md "$repo" >/dev/null
+	HOME=$bootstrap_home "$tilde" preflight --require README.md "$repo" >/dev/null
 
 	cat >"$cold_bin/xcode-select" <<'EOF'
 #!/usr/bin/env bash
 exit 1
 EOF
 	chmod +x "$cold_bin/xcode-select"
-	if HOME=$cold_home PATH=$cold_bin:/usr/bin:/bin "$bootstrap" --check macos >/dev/null 2>"$err"; then
+	if HOME=$cold_home PATH=$cold_bin:/usr/bin:/bin "$tilde" boot --check macos >/dev/null 2>"$err"; then
 		echo "expected bootstrap check detail to fail" >&2
 		exit 1
 	fi
 	grep -q "xcode-command-line-tools-missing" "$err"
 
-	if HOME=$bootstrap_home "$preflight" --require missing "$repo" >/dev/null 2>"$err"; then
+	if HOME=$bootstrap_home "$tilde" preflight --require missing "$repo" >/dev/null 2>"$err"; then
 		echo "expected missing required path to fail" >&2
 		exit 1
 	fi
@@ -152,7 +150,7 @@ EOF
 	chmod +x "$fake_bin/fileproviderctl" "$fake_bin/uname"
 
 	write_bootstrap_state "$bootstrap_home" macos
-	HOME=$bootstrap_home PATH=$fake_bin:$PATH "$preflight" "$repo" >/dev/null 2>"$err"
+	HOME=$bootstrap_home PATH=$fake_bin:$PATH "$tilde" preflight "$repo" >/dev/null 2>"$err"
 	grep -q "checkout is downloading" "$err"
 	grep -q "checkout is not marked keep downloaded" "$err"
 	grep -q "checkout is not recursively downloaded" "$err"
@@ -211,23 +209,23 @@ EOF
 		"$bootstrap_home/.linuxbrew/opt/git/bin/git" \
 		"$bootstrap_home/.linuxbrew/opt/ruby/bin/ruby"
 
-	HOME=$bootstrap_home PATH=$bootstrap_bin:/usr/bin:/bin "$bootstrap" linux >"$bootstrap_out"
+	HOME=$bootstrap_home PATH=$bootstrap_bin:/usr/bin:/bin "$tilde" boot linux >"$bootstrap_out"
 	grep -q "ruby fake-homebrew" "$bootstrap_out"
 	grep -q "git fake-homebrew" "$bootstrap_out"
 	grep -q "curl fake-homebrew" "$bootstrap_out"
 	grep -Fq "$bootstrap_home/.linuxbrew/bin/brew shellenv" "$bootstrap_home/.profile"
 	grep -q "bootstrap:" "$bootstrap_home/.local/state/tilde/hosts/$(host_name)/state.md"
-	HOME=$bootstrap_home PATH=$bootstrap_bin:/usr/bin:/bin "$bootstrap" --check linux >"$bootstrap_out"
+	HOME=$bootstrap_home PATH=$bootstrap_bin:/usr/bin:/bin "$tilde" boot --check linux >"$bootstrap_out"
 	grep -q "OK: bootstrap state" "$bootstrap_out"
 	rm -f "$bootstrap_home/.local/state/tilde/hosts/$(host_name)/state.md"
-	HOME=$bootstrap_home PATH=$bootstrap_bin:/usr/bin:/bin "$preflight" --require README.md "$repo" >/dev/null
+	HOME=$bootstrap_home PATH=$bootstrap_bin:/usr/bin:/bin "$tilde" preflight --require README.md "$repo" >/dev/null
 	grep -q "bootstrap:" "$bootstrap_home/.local/state/tilde/hosts/$(host_name)/state.md"
 	cat >"$bootstrap_home/.local/state/tilde/hosts/$(host_name)/state.md" <<'EOF'
 ---
 [
 ---
 EOF
-	HOME=$bootstrap_home PATH=$bootstrap_bin:/usr/bin:/bin "$preflight" --require README.md "$repo" >/dev/null
+	HOME=$bootstrap_home PATH=$bootstrap_bin:/usr/bin:/bin "$tilde" preflight --require README.md "$repo" >/dev/null
 	grep -q "bootstrap:" "$bootstrap_home/.local/state/tilde/hosts/$(host_name)/state.md"
 
 	mkdir -p \
@@ -300,7 +298,7 @@ EOF
 		"$auto_home/.linuxbrew/opt/curl/bin/curl" \
 		"$auto_home/.linuxbrew/opt/git/bin/git" \
 		"$auto_home/.linuxbrew/opt/ruby/bin/ruby"
-	HOME=$auto_home PATH=$bootstrap_bin:/usr/bin:/bin "$preflight" --require README.md "$repo" >/dev/null 2>"$err"
+	HOME=$auto_home PATH=$bootstrap_bin:/usr/bin:/bin "$tilde" preflight --require README.md "$repo" >/dev/null 2>"$err"
 	grep -q "bootstrap check failed; running bootstrap" "$err"
 	grep -q "bootstrap:" "$auto_home/.local/state/tilde/hosts/$(host_name)/state.md"
 
@@ -335,7 +333,7 @@ EOF
 		"$defer_home/.linuxbrew/opt/curl/bin/curl" \
 		"$defer_home/.linuxbrew/opt/git/bin/git" \
 		"$defer_home/.linuxbrew/opt/ruby/bin/ruby"
-	HOME=$defer_home PATH=$bootstrap_bin:/usr/bin:/bin "$preflight" --require README.md "$repo" >/dev/null 2>"$err"
+	HOME=$defer_home PATH=$bootstrap_bin:/usr/bin:/bin "$tilde" preflight --require README.md "$repo" >/dev/null 2>"$err"
 	grep -q "bootstrap check failed; running bootstrap" "$err"
 	grep -q "bootstrap remains incomplete; continuing with existing runtime" "$err"
 
@@ -344,7 +342,7 @@ EOF
 	rm -f "$object"
 
 	write_bootstrap_state "$bootstrap_home" "$(platform_name)"
-	if HOME=$bootstrap_home "$preflight" "$repo" >/dev/null 2>"$err"; then
+	if HOME=$bootstrap_home "$tilde" preflight "$repo" >/dev/null 2>"$err"; then
 		echo "expected missing Git tree object to fail" >&2
 		exit 1
 	fi

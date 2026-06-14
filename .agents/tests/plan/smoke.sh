@@ -41,7 +41,6 @@ main() {
 	local macos_plan_json
 	local normal_plan_json
 	local platform_module
-	local plan
 	local plan_impl
 	local plan_json
 	local private_macos_plan_json
@@ -56,12 +55,13 @@ main() {
 	local state_skip_plan_json
 	local target_module
 	local target_plan_json
+	local tilde
 	local tmpdir
 	local upgrade_plan_json
 
 	script_dir=$(cd -- "${BASH_SOURCE[0]%/*}" >/dev/null && pwd)
 	skill_root=$(cd -- "$script_dir/../../.." >/dev/null && pwd)
-	plan=$skill_root/bin/plan
+	tilde=$skill_root/bin/tilde
 	plan_impl=$skill_root/libexec/plan
 	repo=${REPO_ROOT:-$(cd -- "$skill_root/../home" >/dev/null && pwd)}
 	private_repo=${PRIVATE_REPO_ROOT:-}
@@ -116,7 +116,7 @@ main() {
 # Dirty Guard Smoke
 EOF
 
-	if "$plan" --repo "$repo" >"$plan_json" 2>"$dirty_plan_err"; then
+	if "$tilde" plan --repo "$repo" >"$plan_json" 2>"$dirty_plan_err"; then
 		echo "expected dirty worktree guard to fail" >&2
 		exit 1
 	fi
@@ -124,7 +124,7 @@ EOF
 	grep -q "Dirty worktree" "$dirty_plan_err"
 	rm -rf "$dirty_module"
 
-	"$plan" --repo "$repo" --allow-dirty --platform linux --host smoke >"$plan_json"
+	"$tilde" plan --repo "$repo" --allow-dirty --platform linux --host smoke >"$plan_json"
 
 	PLAN_JSON=$plan_json ruby -rjson -e '
 		plan = JSON.parse(File.read(ENV.fetch("PLAN_JSON")))
@@ -211,8 +211,8 @@ done:
 ---
 EOF
 
-	"$plan" --repo "$repo" --allow-dirty --platform linux --host smoke >"$state_skip_plan_json"
-	"$plan" --repo "$repo" --allow-dirty --mode align --platform linux --host smoke >"$align_state_plan_json"
+	"$tilde" plan --repo "$repo" --allow-dirty --platform linux --host smoke >"$state_skip_plan_json"
+	"$tilde" plan --repo "$repo" --allow-dirty --mode align --platform linux --host smoke >"$align_state_plan_json"
 
 	STATE_SKIP_PLAN_JSON=$state_skip_plan_json ALIGN_STATE_PLAN_JSON=$align_state_plan_json ruby -rjson -e '
 		plan = JSON.parse(File.read(ENV.fetch("STATE_SKIP_PLAN_JSON")))
@@ -237,8 +237,8 @@ EOF
 	rm -f "$XDG_STATE_HOME/tilde/hosts/smoke/state.md"
 
 	if [[ -n $private_repo ]]; then
-		"$plan" --repo "$private_repo" --allow-dirty --platform linux --host smoke >"$private_plan_json"
-		"$plan" --repo "$private_repo" --allow-dirty --platform macos --host smoke >"$private_macos_plan_json"
+		"$tilde" plan --repo "$private_repo" --allow-dirty --platform linux --host smoke >"$private_plan_json"
+		"$tilde" plan --repo "$private_repo" --allow-dirty --platform macos --host smoke >"$private_macos_plan_json"
 
 		PRIVATE_PLAN_JSON=$private_plan_json PRIVATE_MACOS_PLAN_JSON=$private_macos_plan_json ruby -rjson -e '
 			linux = JSON.parse(File.read(ENV.fetch("PRIVATE_PLAN_JSON")))
@@ -320,7 +320,7 @@ EOF
 	git -C "$file_provider_repo" add AGENTS.md codex
 	git -C "$file_provider_repo" commit -q -m init
 
-	HOME=$tmpdir/file-provider "$plan" --repo "$file_provider_repo" --platform macos --host smoke >"$file_provider_plan_json"
+	HOME=$tmpdir/file-provider "$tilde" plan --repo "$file_provider_repo" --platform macos --host smoke >"$file_provider_plan_json"
 
 	FILE_PROVIDER_PLAN_JSON=$file_provider_plan_json ruby -rjson -e '
 		plan = JSON.parse(File.read(ENV.fetch("FILE_PROVIDER_PLAN_JSON")))
@@ -355,7 +355,7 @@ all:
 # Target List Smoke
 EOF
 
-	"$plan" --repo "$repo" --allow-dirty --platform linux --host smoke >"$target_plan_json"
+	"$tilde" plan --repo "$repo" --allow-dirty --platform linux --host smoke >"$target_plan_json"
 
 	TARGET_PLAN_JSON=$target_plan_json ruby -rjson -e '
 		plan = JSON.parse(File.read(ENV.fetch("TARGET_PLAN_JSON")))
@@ -402,7 +402,7 @@ EOF
 	git -C "$companion_public" add AGENTS.md
 	git -C "$companion_public" commit -q -m init
 
-	"$plan" --repo "$companion_public" --platform linux --host smoke >"$companion_plan_json"
+	"$tilde" plan --repo "$companion_public" --platform linux --host smoke >"$companion_plan_json"
 
 	COMPANION_PLAN_JSON=$companion_plan_json ruby -rjson -e '
 		plan = JSON.parse(File.read(ENV.fetch("COMPANION_PLAN_JSON")))
@@ -420,8 +420,8 @@ all:
 # Extra Smoke
 EOF
 
-	"$plan" --repo "$repo" --allow-dirty --platform linux --host smoke >"$normal_plan_json"
-	"$plan" --repo "$repo" --allow-dirty --level extra --platform linux --host smoke >"$extra_plan_json"
+	"$tilde" plan --repo "$repo" --allow-dirty --platform linux --host smoke >"$normal_plan_json"
+	"$tilde" plan --repo "$repo" --allow-dirty --level extra --platform linux --host smoke >"$extra_plan_json"
 
 	NORMAL_PLAN_JSON=$normal_plan_json EXTRA_PLAN_JSON=$extra_plan_json ruby -rjson -e '
 		normal_plan = JSON.parse(File.read(ENV.fetch("NORMAL_PLAN_JSON")))
@@ -488,7 +488,7 @@ echo macos
 ```
 EOF
 
-	"$plan" --repo "$repo" --allow-dirty --platform macos --host smoke >"$macos_plan_json"
+	"$tilde" plan --repo "$repo" --allow-dirty --platform macos --host smoke >"$macos_plan_json"
 
 	MACOS_PLAN_JSON=$macos_plan_json ruby -rjson -e '
 		plan = JSON.parse(File.read(ENV.fetch("MACOS_PLAN_JSON")))
@@ -522,7 +522,7 @@ all:
 # Invalid Package Smoke
 EOF
 
-	if "$plan" --repo "$repo" --allow-dirty --platform linux --host smoke >"$invalid_plan_json" 2>"$invalid_plan_err"; then
+	if "$tilde" plan --repo "$repo" --allow-dirty --platform linux --host smoke >"$invalid_plan_json" 2>"$invalid_plan_err"; then
 		echo "expected invalid package name guard to fail" >&2
 		exit 1
 	fi
@@ -531,10 +531,10 @@ EOF
 
 	rm -rf "$platform_module"
 
-	"$plan" --repo "$repo" --allow-dirty --mode align --platform linux --host smoke >"$align_plan_json"
-	"$plan" --repo "$repo" --mode refresh --platform linux --host smoke >"$refresh_plan_json"
-	"$plan" --repo "$repo" --mode refresh --scope full --platform linux --host smoke >"$full_refresh_plan_json"
-	"$plan" --repo "$repo" --mode upgrade --platform linux --host smoke >"$upgrade_plan_json"
+	"$tilde" plan --repo "$repo" --allow-dirty --mode align --platform linux --host smoke >"$align_plan_json"
+	"$tilde" plan --repo "$repo" --mode refresh --platform linux --host smoke >"$refresh_plan_json"
+	"$tilde" plan --repo "$repo" --mode refresh --scope full --platform linux --host smoke >"$full_refresh_plan_json"
+	"$tilde" plan --repo "$repo" --mode upgrade --platform linux --host smoke >"$upgrade_plan_json"
 
 	ALIGN_PLAN_JSON=$align_plan_json ruby -rjson -e '
 		plan = JSON.parse(File.read(ENV.fetch("ALIGN_PLAN_JSON")))
@@ -640,7 +640,7 @@ done:
 ---
 EOF
 
-	"$plan" --repo "$repair_repo" --allow-dirty --mode repair --platform linux --host smoke-repair >"$repair_plan_json"
+	"$tilde" plan --repo "$repair_repo" --allow-dirty --mode repair --platform linux --host smoke-repair >"$repair_plan_json"
 
 	REPAIR_PLAN_JSON=$repair_plan_json ruby -rjson -e '
 		plan = JSON.parse(File.read(ENV.fetch("REPAIR_PLAN_JSON")))

@@ -12,7 +12,8 @@ of truth.
 
 Read `references/specification.md` first, then only the relevant routed specification file before changing behavior or
 executing nontrivial commands. Keep `SKILL.md` short; durable semantics belong in `references/specification.md` and
-`references/specification/`. Runtime entrypoints belong in `bin/`; command implementations belong in `libexec/`.
+`references/specification/`. The PATH-visible runtime surface is `bin/tilde` plus the `bin/sudo` shim; command
+implementations belong in `libexec/`.
 
 ## Specification Map
 
@@ -49,10 +50,9 @@ Bare `$tilde` means `help`. It is read-only and must behave like `$tilde help`.
 `$tilde help` prints the public command inventory as a GitHub-flavored Markdown table with `Command` and `Action`
 columns, then shows the general prompt format, detailed-help form, bare-command default, and a short example prompt
 section. `$tilde help COMMAND` shows only that public command. `$tilde help custom.NAME` must resolve configured
-data-layer policy before answering; `bin/help` can only provide the built-in public table. If `COMMAND` is unknown or
-internal, say so and then show the public command table. Prefer `bin/tilde help` when available for bare `$tilde` and
-`$tilde help`; `bin/help --format markdown` remains available for direct helper use. Present the output as rendered
-Markdown (GFM table, etc.), not as raw code-block text.
+data-layer policy before answering. If `COMMAND` is unknown or internal, say so and then show the public command table.
+Prefer `bin/tilde help` when available for bare `$tilde` and `$tilde help`. Present the output as rendered Markdown
+(GFM table, etc.), not as raw code-block text.
 
 Use proposal-first behavior for writes, moves, removals, repository edits, package changes, home-entrypoint writes, state
 writes, and remote-host actions. Prefer structured confirmation and choice UI over raw prompts such as `[Y/n]`. In
@@ -82,9 +82,8 @@ equivalent. If only text is available, present explicit choices with target, eff
 Internal semantic commands live under `internal.` with `.name` shorthand during Tilde development. Do not show them in
 ordinary help. Treat `plan` and `dry-run` as qualifiers on public commands, not as public commands.
 
-For local helper execution, prefer `bin/tilde COMMAND ...` when a runtime route exists. Direct helper paths such as
-`bin/plan`, `bin/apply`, `bin/status`, `bin/doctor`, `bin/bootstrap`, `bin/preflight`, and `bin/checkout` remain valid
-focused wrappers. `bin/sudo` is a Tilde execution shim, not a user-facing command.
+For local helper execution, use `bin/tilde COMMAND ...` when a runtime route exists. Command-specific implementation
+files under `libexec/` are internal route targets. `bin/sudo` is a Tilde execution shim, not a user-facing command.
 
 ## Common Prompt Shapes
 

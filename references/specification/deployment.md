@@ -264,10 +264,9 @@ when a private data repository is configured.
 
 ### Bootstrap
 
-The bootstrap preparation route is `bin/tilde boot` in the installed skill, with `bin/bootstrap` as a focused wrapper.
-Its implementation is `libexec/boot`. It prepares the smallest baseline needed for normal provisioning: transport tools,
-Homebrew, Ruby, `curl`, and `git`. Bootstrap must be Bash, must not require Ruby, must be idempotent, and must remain
-outside normal module state.
+The bootstrap preparation route is `bin/tilde boot` in the installed skill. Its implementation is `libexec/boot`. It
+prepares the smallest baseline needed for normal provisioning: transport tools, Homebrew, Ruby, `curl`, and `git`.
+Bootstrap must be Bash, must not require Ruby, must be idempotent, and must remain outside normal module state.
 
 Bootstrap has two separate concerns:
 

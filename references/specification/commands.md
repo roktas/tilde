@@ -35,10 +35,8 @@ prompt command.
 The router accepts dotted internal aliases for development, such as `tilde .plan` and `tilde internal.plan`, when a
 matching runtime route exists. Dotted aliases are not shown in ordinary public help.
 
-Prefer `bin/tilde COMMAND ...` for runtime helper access. Command implementations live under `libexec/`. Direct helper
-entrypoints such as `bin/plan`, `bin/apply`, `bin/status`, `bin/doctor`, `bin/bootstrap`, `bin/preflight`, and
-`bin/checkout` remain valid focused wrappers. `bin/sudo` is a PATH shim for Tilde-controlled execution only; ordinary
-help must not present it as a public command.
+Use `bin/tilde COMMAND ...` for runtime helper access. Command implementations live under `libexec/`. `bin/sudo` is a
+PATH shim for Tilde-controlled execution only; ordinary help must not present it as a public command.
 
 ### Public Commands
 
@@ -48,8 +46,7 @@ GitHub-flavored Markdown table with `Command` and `Action` columns. With one pub
 help for only that command. If the subject is a configured custom data-layer command, use the custom-help behavior below.
 If the subject is neither a public Tilde command nor a configured custom command, say that no such Tilde command exists,
 then behave like bare `$tilde help`. Agents should prefer the installed `bin/tilde help` runtime route for built-in
-public help when available; `bin/help --format markdown` remains available for direct helper use. Custom command help
-requires reading configured data-layer policy.
+public help when available. Custom command help requires reading configured data-layer policy.
 
 Use this public action inventory for help output:
 
@@ -159,7 +156,7 @@ command semantics and do not bypass proposal-first confirmation.
 
 Default `status` must not:
 
-- run `bin/tilde plan` or `bin/plan` to regenerate desired state;
+- run `bin/tilde plan` to regenerate desired state;
 - read every module `README.md` just to compute managed-surface counts;
 - walk all managed targets to validate live links;
 - query package managers, Dropbox, network remotes, or SSH targets unless the user explicitly requested that target.

@@ -13,8 +13,6 @@ Load this reference when editing this repository, the Tilde skill, helper script
 - Tilde skill: `SKILL.md`
 - Runtime router helper: `bin/tilde`
 - Sudo PATH shim: `bin/sudo`
-- Direct helper wrappers: `bin/apply`, `bin/bootstrap`, `bin/checkout`, `bin/doctor`, `bin/help`, `bin/plan`,
-  `bin/preflight`, `bin/smoke`, `bin/status`
 - Runtime implementations: `libexec/`
 - Bootstrap implementation: `libexec/boot`
 - SSH transport implementation: `libexec/ssh`
@@ -100,31 +98,31 @@ commands that depend on `.envrc`.
 Run the normal Tilde smoke script inside the Lima instance:
 
 ```bash
-bin/smoke
+bin/tilde smoke
 ```
 
 Run the bootstrap helper inside the Lima instance:
 
 ```bash
-bin/smoke boot
+bin/tilde smoke boot
 ```
 
 For fast repeated tests, stop the instance instead of destroying it:
 
 ```bash
-bin/smoke stop
+bin/tilde smoke stop
 ```
 
 For a fresh-host test, destroy the instance explicitly:
 
 ```bash
-bin/smoke destroy
+bin/tilde smoke destroy
 ```
 
 Clean Lima's image cache only when explicitly requested:
 
 ```bash
-bin/smoke prune
+bin/tilde smoke prune
 ```
 
 ### Direct There Commands

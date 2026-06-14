@@ -305,8 +305,7 @@ Git-backed target, Tilde clones or fetches the public repository, normally under
 `$tilde help` shows public commands as a Markdown table. Internal semantic commands such as `internal.apply` are for
 Tilde development and are not shown in ordinary help.
 
-The installed runtime router `bin/tilde help` emits the same public table. Direct helper wrappers such as
-`bin/help --format markdown` remain available for focused helper use.
+The installed runtime router `bin/tilde help` emits the same public table.
 
 Bare `$tilde` means `help`.
 

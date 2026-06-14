@@ -1,8 +1,0 @@
-#!/usr/bin/env bash
-
-set -Eeuo pipefail
-[[ -z ${TRACE:-} ]] || set -x
-unset CDPATH
-
-root=$(cd -- "${BASH_SOURCE[0]%/*}/.." >/dev/null && pwd)
-exec "$root/bin/tilde" apply "$@"

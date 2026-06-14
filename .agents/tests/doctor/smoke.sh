@@ -27,18 +27,18 @@ host_name() {
 # ------------------------------------------------------------------------------------------------------------------------
 
 main() {
-	local doctor
 	local home
 	local host
 	local out
 	local script_dir
 	local skill_root
 	local state
+	local tilde
 	local tmpdir
 
 	script_dir=$(cd -- "${BASH_SOURCE[0]%/*}" >/dev/null && pwd)
 	skill_root=$(cd -- "$script_dir/../../.." >/dev/null && pwd)
-	doctor=$skill_root/bin/doctor
+	tilde=$skill_root/bin/tilde
 
 	tmpdir=$(mktemp -d)
 	cleanup_tmpdir=$tmpdir
@@ -76,7 +76,7 @@ main() {
 }
 EOF
 
-	HOME=$home XDG_STATE_HOME=$state "$doctor" --format json --state-dir "$state/tilde" >"$out"
+	HOME=$home XDG_STATE_HOME=$state "$tilde" doctor --format json --state-dir "$state/tilde" >"$out"
 
 	DOCTOR_JSON=$out ruby -rjson -e '
 		data = JSON.parse(File.read(ENV.fetch("DOCTOR_JSON")))

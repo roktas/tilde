@@ -23,13 +23,13 @@ commit_all() {
 }
 
 pack() {
-	local checkout=$1
+	local tilde=$1
 	local repo=$2
 	local bundle=$3
 	shift 3
 
 	rm -f "$bundle"
-	"$checkout" pack --repo "$repo" --bundle "$bundle" "$@"
+	"$tilde" checkout pack --repo "$repo" --bundle "$bundle" "$@"
 }
 
 write_private_repo() {
@@ -60,15 +60,15 @@ EOF
 main() {
 	local bare
 	local bundle
-	local checkout
 	local err
 	local script_dir
 	local source
 	local target
+	local tilde
 	local tmpdir
 
 	script_dir=$(cd -- "${BASH_SOURCE[0]%/*}" >/dev/null && pwd)
-	checkout=$(cd -- "$script_dir/../../.." >/dev/null && pwd)/bin/checkout
+	tilde=$(cd -- "$script_dir/../../.." >/dev/null && pwd)/bin/tilde
 
 	tmpdir=$(mktemp -d)
 	cleanup_tmpdir=$tmpdir
@@ -86,20 +86,20 @@ main() {
 	git -C "$source" remote add origin "$bare"
 	git -C "$source" push -q -u origin main
 
-	pack "$checkout" "$source" "$bundle"
-	"$checkout" receive --repo "$target" --bundle "$bundle" --origin "$bare"
+	pack "$tilde" "$source" "$bundle"
+	"$tilde" checkout receive --repo "$target" --bundle "$bundle" --origin "$bare"
 	grep -qx one "$target/value.txt"
 	git -C "$target" rev-parse --abbrev-ref --symbolic-full-name '@{u}' | grep -qx origin/main
 
 	printf 'two\n' >"$source/value.txt"
 	commit_all "$source" update
 	git -C "$source" push -q origin main
-	pack "$checkout" "$source" "$bundle"
-	"$checkout" receive --repo "$target" --bundle "$bundle" --origin "$bare"
+	pack "$tilde" "$source" "$bundle"
+	"$tilde" checkout receive --repo "$target" --bundle "$bundle" --origin "$bare"
 	grep -qx two "$target/value.txt"
 
 	printf 'dirty\n' >"$target/dirty.txt"
-	if "$checkout" receive --repo "$target" --bundle "$bundle" --origin "$bare" >/dev/null 2>"$err"; then
+	if "$tilde" checkout receive --repo "$target" --bundle "$bundle" --origin "$bare" >/dev/null 2>"$err"; then
 		echo "expected dirty target to fail" >&2
 		exit 1
 	fi
@@ -108,14 +108,14 @@ main() {
 
 	printf 'three\n' >"$source/value.txt"
 	commit_all "$source" unpushed
-	if pack "$checkout" "$source" "$bundle" >/dev/null 2>"$err"; then
+	if pack "$tilde" "$source" "$bundle" >/dev/null 2>"$err"; then
 		echo "expected unpushed source to fail" >&2
 		exit 1
 	fi
 	grep -q "branch is not at upstream" "$err"
 
-	pack "$checkout" "$source" "$bundle" --allow-unpushed
-	"$checkout" receive --repo "$target" --bundle "$bundle" --origin "$bare"
+	pack "$tilde" "$source" "$bundle" --allow-unpushed
+	"$tilde" checkout receive --repo "$target" --bundle "$bundle" --origin "$bare"
 	grep -qx three "$target/value.txt"
 }
 
