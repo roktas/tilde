@@ -27,6 +27,18 @@ The `chrome` module declares only macOS packages but includes a Linux `Install` 
 
 **Recommendation:** Make the `chrome` module macOS-only, add a `hosts` filter that excludes headless hosts, or move the Linux apt repository setup into the `linux` module under the existing `graphical_host` guard.
 
+### 4. Root cause: VPS image defaulted to `graphical.target`
+
+The headless ondokuz VPS (Ubuntu 24.04.4 LTS Server, ARM64, likely Oracle Cloud) had `systemctl get-default` set to `graphical.target` even though no desktop environment was running. Because Tilde's `graphical` condition and the `linux` module's `graphical_host()` helper only check `systemctl get-default`, Tilde treated the machine as graphical and installed desktop packages (`remmina`, `wl-clipboard`, `fonts-spleen`, `flatpak`) plus Flatpak apps (`Obsidian`, `Inkscape`).
+
+**Recommendation:** Do not rely solely on `systemctl get-default` to detect graphical hosts. Add at least one secondary signal, such as:
+
+- `XDG_CURRENT_DESKTOP` being set in the active session, or
+- `DISPLAY` / `WAYLAND_DISPLAY` being present, or
+- an actual display manager service being enabled/running.
+
+For the data repositories, the `linux` module's `graphical_host()` check should be strengthened (for example: `[[ $(systemctl get-default) == graphical.target && -n ${XDG_CURRENT_DESKTOP:-} ]]`). Alternatively, set `systemctl set-default multi-user.target` explicitly in the Linux baseline for headless hosts and let GUI modules remain no-ops when the target is headless.
+
 ## Outstanding item
 
 - `private/codex` module on ondokuz remains `notok` because its `github:Lampese/codex-switcher` package requires `gh auth login`. On `remote-git` hosts with controller-side bundle transport for private repos, target-side GitHub CLI authentication is unavailable by design. Consider excluding the `codex` module from headless/remote-git hosts or using a different transport for that asset.
