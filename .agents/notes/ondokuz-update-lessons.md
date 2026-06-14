@@ -31,13 +31,18 @@ The `chrome` module declares only macOS packages but includes a Linux `Install` 
 
 The headless ondokuz VPS (Ubuntu 24.04.4 LTS Server, ARM64, likely Oracle Cloud) had `systemctl get-default` set to `graphical.target` even though no desktop environment was running. Because Tilde's `graphical` condition and the `linux` module's `graphical_host()` helper only check `systemctl get-default`, Tilde treated the machine as graphical and installed desktop packages (`remmina`, `wl-clipboard`, `fonts-spleen`, `flatpak`) plus Flatpak apps (`Obsidian`, `Inkscape`).
 
-**Recommendation:** Do not rely solely on `systemctl get-default` to detect graphical hosts. Add at least one secondary signal, such as:
+**Recommendation:** Do not rely solely on `systemctl get-default` to detect graphical hosts, because some VPS images ship with `graphical.target` as the default even though they are headless. Also, do not rely on session environment variables such as `XDG_CURRENT_DESKTOP` or `DISPLAY` during SSH-based provisioning, because those variables are normally unset in non-interactive SSH shells even on real GUI machines.
 
-- `XDG_CURRENT_DESKTOP` being set in the active session, or
-- `DISPLAY` / `WAYLAND_DISPLAY` being present, or
-- an actual display manager service being enabled/running.
+A better check combines the systemd default target with the presence of an enabled display manager:
 
-For the data repositories, the `linux` module's `graphical_host()` check should be strengthened (for example: `[[ $(systemctl get-default) == graphical.target && -n ${XDG_CURRENT_DESKTOP:-} ]]`). Alternatively, set `systemctl set-default multi-user.target` explicitly in the Linux baseline for headless hosts and let GUI modules remain no-ops when the target is headless.
+```bash
+graphical_host() {
+    [[ $(systemctl get-default 2>/dev/null || true) == graphical.target ]] || return 1
+    systemctl is-enabled gdm3 sddm lightdm display-manager 2>/dev/null | grep -q enabled
+}
+```
+
+For the data repositories, the `linux` module's `graphical_host()` helper should be strengthened this way. Alternatively, set `systemctl set-default multi-user.target` explicitly in the Linux baseline for headless hosts and let GUI modules remain no-ops when the target is headless.
 
 ## Outstanding item
 
