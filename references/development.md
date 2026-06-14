@@ -53,6 +53,10 @@ checkpoint after requested commits or pushes when practical.
   `misc-` exists, it must be `extra`.
 - Prefer short contextual file, directory, and helper names. Avoid encoding implementation details in names unless they
   disambiguate real siblings or are part of an established external interface.
+- Keep `bin/` minimal because it is the PATH-visible runtime surface. It contains `tilde`, `sudo`, and only future
+  entries that need PATH lookup or a stable executable name. Do not add `bin/` wrappers for normal `libexec/` routes;
+  dispatch those routes through `bin/tilde`, and update the spec, development docs, and router tests before adding any
+  future `bin/` entry.
 - In the public home data repository, `agents` is the shared agent module. `codex` and `opencode` are agent-specific
   modules. Keep agent-specific modules equivalent in feature set when practical; the intended difference is tone and
   weight.
