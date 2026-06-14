@@ -56,15 +56,6 @@ Only the Tilde execution environment prepends `bin/` to `PATH`.
 bin/
   tilde
   sudo
-  apply
-  bootstrap
-  checkout
-  doctor
-  help
-  plan
-  preflight
-  smoke
-  status
 
 libexec/
   apply
@@ -202,6 +193,49 @@ The handoff should:
 - Create a temporary `/etc/sudoers.d/tilde` rule only after validation.
 - Provide a matching cleanup command.
 - Warn that the rule grants broad root privilege and must be removed after the run.
+
+## Future Work
+
+- `tilde sudo handoff` should support SSH transport options for targets that are not reachable through a plain SSH
+  alias. Lima and `there` targets may require an SSH config file such as `ssh -F PATH HOST`. Prefer a small explicit
+  option surface such as `--ssh-config PATH` and repeatable `--ssh-option OPTION`, while keeping the printed command
+  short, visible, and copyable.
+- Runtime routes such as `tilde ssh` are intentionally hidden from public help, but developer discovery should be
+  clearer. Document route-specific help, such as `bin/tilde ssh --help` and `bin/tilde sudo --help`, without making
+  internal runtime routes part of ordinary public `$tilde help`.
+- Apply section execution should gain bounded runtime diagnostics for long-running or stuck commands. The spinoza update
+  showed that a README section can appear silent while a child process is blocked. A lightweight heartbeat, current
+  action marker, or configurable timeout would make remote recovery safer.
+- Keep regression coverage for multiple Tilde path aliases in `PATH`. Dropbox, installed-skill symlinks, and explicit
+  `tilde ssh --root` values can expose more than one `bin/sudo` shim to the same process; sudo resolution must skip all
+  Tilde shims and select the real system sudo.
+- Add a clearer repair path for completed apply runs that still contain `notok` results. The spinoza retry generated a
+  smaller apply plan for failed modules and overwrote the deployment apply cache with that retry-sized result; status
+  still had module state, but the apply cache no longer represented the full original action stream.
+- Improve privilege-handoff ergonomics for multi-step repair sessions. Current cleanup behavior is correct and removes
+  `/etc/sudoers.d/tilde` after each remote script, but package-repair failures required repeated handoff cycles. A
+  future routed repair flow should keep cleanup strict while reducing repeated manual copy/paste.
+
+## Field Notes
+
+### 2026-06-14 spinoza update
+
+- Bootstrap with temporary sudo handoff successfully installed the Linux Homebrew baseline and recorded bootstrap state.
+- Desired-state apply then reached `public/linux:Install` and blocked in the first intercepted `sudo` call because
+  `libexec/sudo` resolved another Tilde sudo shim as the real sudo through a different path alias.
+- The sudo resolution fix let apply continue through the Linux, public, and private module actions. The later retry
+  changed the previous `public/chrome:section:Install` and `private/codex:package:install:github:Lampese/codex-switcher`
+  failures to `ok`.
+- The fast refresh initially failed because apt was in a broken dependency state: `yazi` required Debian `fd-find`, while
+  an existing unmanaged `fd` package owned `/usr/share/zsh/vendor-completions/_fd`. `apt-get -f install` could not
+  resolve the file conflict until `dpkg -r fd` removed the unmanaged package.
+- After `fd` was removed, `apt-get -f install` installed `fd-find`, configured the previously half-installed packages,
+  and `apt-get check` passed inside the sudo handoff window.
+- Final retry results were clean: deployment apply retry completed with `4 ok` and `7 unchanged`; fast refresh completed
+  with `2 ok`; final checks reported `/etc/sudoers.d/tilde` absent, `sudo -n` requiring a password, and no stuck apply
+  processes.
+- Residual warnings remained: duplicate Chrome apt sources under `chrome.list` and `google-chrome.list`, and repeated
+  `LC_ALL=C.UTF-8` locale warnings in remote shell output.
 
 ## Implementation Sketch
 

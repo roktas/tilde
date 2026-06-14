@@ -25,12 +25,15 @@ main() {
 	local fake_bin
 	local handoff
 	local help
+	local real_bin
 	local ssh_args
 	local ssh_body
 	local script_dir
 	local skill_root
 	local status_help
+	local sudo_alias_root
 	local sudo_err
+	local sudo_out
 	local tilde
 	local tmpdir
 
@@ -48,17 +51,25 @@ main() {
 	deploy_err=$tmpdir/deploy.err
 	fake_bin=$tmpdir/bin
 	handoff=$tmpdir/handoff.txt
+	real_bin=$tmpdir/real-bin
 	ssh_args=$tmpdir/ssh.args
 	ssh_body=$tmpdir/ssh.body
+	sudo_alias_root=$tmpdir/alias-root
 	sudo_err=$tmpdir/sudo.err
+	sudo_out=$tmpdir/sudo.out
 
-	mkdir -p "$fake_bin"
+	mkdir -p "$fake_bin" "$real_bin" "$sudo_alias_root/bin"
 	cat >"$fake_bin/ssh" <<'EOF'
 #!/usr/bin/env sh
 printf '%s\n' "$@" > "$TILDE_FAKE_SSH_ARGS"
 cat > "$TILDE_FAKE_SSH_BODY"
 EOF
-	chmod +x "$fake_bin/ssh"
+	cat >"$real_bin/sudo" <<'EOF'
+#!/usr/bin/env sh
+printf 'real sudo %s\n' "$*"
+EOF
+	cp "$skill_root/bin/sudo" "$sudo_alias_root/bin/sudo"
+	chmod +x "$fake_bin/ssh" "$real_bin/sudo" "$sudo_alias_root/bin/sudo"
 
 	[[ -x $skill_root/libexec/apply ]]
 	[[ -x $skill_root/libexec/boot ]]
@@ -85,6 +96,8 @@ EOF
 		exit 1
 	fi
 	grep -Fq "Tilde sudo shim is only available" "$sudo_err"
+	PATH=$sudo_alias_root/bin:$skill_root/bin:$real_bin:/usr/bin:/bin "$tilde" sudo -- true >"$sudo_out"
+	grep -Fxq "real sudo -n true" "$sudo_out"
 
 	TILDE_FAKE_SSH_ARGS=$ssh_args TILDE_FAKE_SSH_BODY=$ssh_body PATH=$fake_bin:$PATH "$tilde" ssh --no-root target -- arg <<'EOF'
 printf 'remote\n'

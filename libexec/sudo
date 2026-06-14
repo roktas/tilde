@@ -20,6 +20,19 @@ warn() {
 # Helpers
 # ------------------------------------------------------------------------------------------------------------------------
 
+canonical_path() {
+	local path=$1
+
+	local base
+	local dir
+
+	[[ -n $path ]] || return 1
+	dir=${path%/*}
+	base=${path##*/}
+	[[ $dir != "$path" ]] || dir=.
+	cd -P -- "$dir" >/dev/null 2>&1 && printf '%s/%s\n' "$(pwd -P)" "$base"
+}
+
 copy_clipboard() {
 	local text=$1
 
@@ -64,27 +77,25 @@ emit_privilege() {
 real_sudo() {
 	local dir
 	local IFS=:
-	local shim
 	local sudo
 
-	if [[ -n ${TILDE_REAL_SUDO:-} && -x ${TILDE_REAL_SUDO:-} ]]; then
+	if [[ -n ${TILDE_REAL_SUDO:-} && -x ${TILDE_REAL_SUDO:-} ]] && ! tilde_sudo_shim "$TILDE_REAL_SUDO"; then
 		printf '%s\n' "$TILDE_REAL_SUDO"
 		return
 	fi
 
-	shim=${TILDE_ROOT:-}/bin/sudo
 	for dir in $PATH; do
 		[[ -n $dir ]] || dir=.
 		sudo=$dir/sudo
 		[[ -x $sudo ]] || continue
-		[[ $sudo != "$shim" ]] || continue
+		tilde_sudo_shim "$sudo" && continue
 		printf '%s\n' "$sudo"
 		return
 	done
 
 	for sudo in /usr/bin/sudo /bin/sudo /usr/local/bin/sudo; do
 		[[ -x $sudo ]] || continue
-		[[ $sudo != "$shim" ]] || continue
+		tilde_sudo_shim "$sudo" && continue
 		printf '%s\n' "$sudo"
 		return
 	done
@@ -110,6 +121,24 @@ sudo_privilege_failure() {
 		[[ $stderr =~ [Aa]uthentication ]] ||
 		[[ $stderr =~ [Nn]ot[[:space:]]+allowed ]] ||
 		[[ $stderr =~ [Mm]ay[[:space:]]+not[[:space:]]+run[[:space:]]+sudo ]]
+}
+
+tilde_sudo_shim() {
+	local sudo=$1
+
+	local candidate
+	local root
+	local shim
+
+	candidate=$(canonical_path "$sudo" 2>/dev/null || true)
+	root=$(cd -P -- "${BASH_SOURCE[0]%/*}/.." >/dev/null && pwd)
+
+	for shim in "$root/bin/sudo" "${TILDE_ROOT:-}/bin/sudo"; do
+		[[ -n $shim && -e $shim ]] || continue
+		[[ $candidate == "$(canonical_path "$shim" 2>/dev/null || true)" ]] && return 0
+	done
+
+	LC_ALL=C grep -aq "Tilde sudo shim" "$sudo" 2>/dev/null
 }
 
 write_rule() {
