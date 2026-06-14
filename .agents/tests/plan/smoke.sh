@@ -53,6 +53,7 @@ main() {
 	local script_dir
 	local skill_root
 	local state_skip_plan_json
+	local stored_level_plan_json
 	local target_module
 	local target_plan_json
 	local tilde
@@ -100,6 +101,7 @@ main() {
 	refresh_plan_json=$tmpdir/refresh-plan.json
 	repair_plan_json=$tmpdir/repair-plan.json
 	state_skip_plan_json=$tmpdir/state-skip-plan.json
+	stored_level_plan_json=$tmpdir/stored-level-plan.json
 	target_plan_json=$tmpdir/target-plan.json
 	upgrade_plan_json=$tmpdir/upgrade-plan.json
 
@@ -178,6 +180,7 @@ EOF
 		abort "agents should link shared instructions under ~/.agents" unless agents.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.agents/AGENTS.md" }
 		abort "agents should keep common skills under ~/.agents" unless agents.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.agents/skills/colon" }
 		abort "agents should expose common commits skill under ~/.agents" unless agents.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.agents/skills/commits" }
+		abort "agents should not expose the tilde control plane" if agents.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.agents/skills/tilde" }
 		abort "agents should not expose system skills globally" if agents.fetch("links_to_create").any? { |link| link.fetch("target").include?("/.system") }
 		abort "agents colon skill should be the common source" if File.symlink?("agents/skills/colon")
 		abort "agents TILDE alias should be removed" if File.exist?("agents/TILDE.md")
@@ -233,6 +236,25 @@ EOF
 		abort "missing align git module" unless align_git
 		abort "align should ignore ok state skip" if align_git.fetch("skipped")
 		abort "align should keep git links" if align_git.fetch("links_to_create").empty?
+	'
+	rm -f "$XDG_STATE_HOME/tilde/hosts/smoke/state.md"
+
+	cat >"$XDG_STATE_HOME/tilde/hosts/smoke/state.md" <<EOF
+---
+host: smoke
+level: minimal
+head: $head
+public:
+  commit: $head
+done: {}
+---
+EOF
+	"$tilde" plan --repo "$repo" --allow-dirty --platform linux --host smoke >"$stored_level_plan_json"
+	STORED_LEVEL_PLAN_JSON=$stored_level_plan_json ruby -rjson -e '
+		plan = JSON.parse(File.read(ENV.fetch("STORED_LEVEL_PLAN_JSON")))
+		abort "plan should reuse stored level" unless plan.fetch("level") == "minimal"
+		abort "target should reuse stored level" unless plan.fetch("target").fetch("level") == "minimal"
+		abort "stored minimal level should exclude normal modules" if plan.fetch("modules").any? { |mod| mod.fetch("level") == "normal" }
 	'
 	rm -f "$XDG_STATE_HOME/tilde/hosts/smoke/state.md"
 

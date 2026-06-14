@@ -50,7 +50,7 @@ class Plan
     @allow_dirty = options.fetch(:allow_dirty)
     @format = options.fetch(:format)
     @host = options[:host] || short_hostname
-    @level = options.fetch(:level)
+    @level = options[:level]
     @mode = options.fetch(:mode)
     @platform = options[:platform] || detect_platform
     @repo = Pathname.new(options.fetch(:repo)).expand_path
@@ -59,14 +59,15 @@ class Plan
 
   def run
     validate_repo!
-    validate_level!
     validate_mode!
     validate_platform!
-    validate_scope!
     validate_worktree!
 
     @head = git("rev-parse", "HEAD")
     @previous_state = previous_state
+    @level = resolved_level
+    validate_level!
+    validate_scope!
 
     modules = planned_modules
     core = core_plan(modules)
@@ -854,6 +855,15 @@ class Plan
     frontmatter.merge("body" => body.strip)
   end
 
+  def resolved_level
+    return @level if @level
+
+    state_level = @previous_state && @previous_state["level"].to_s
+    return state_level if LEVELS.key?(state_level)
+
+    "normal"
+  end
+
   def apply?
     @mode == "apply"
   end
@@ -1116,7 +1126,7 @@ def main(argv)
   options = {
     allow_dirty: false,
     format: "json",
-    level: "normal",
+    level: nil,
     mode: "apply",
     repo: Dir.pwd
   }

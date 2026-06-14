@@ -18,6 +18,7 @@ readonly -a AGENT_COMMANDS=(
 )
 
 readonly -a ROUTES=(
+	align
 	apply
 	boot
 	checkout
@@ -81,6 +82,9 @@ resolve_route() {
 	case $name in
 	.bootstrap | bootstrap | internal.bootstrap | boot)
 		printf '%s\n' boot
+		;;
+	.align | internal.align)
+		printf '%s\n' align
 		;;
 	.apply | internal.apply)
 		printf '%s\n' apply

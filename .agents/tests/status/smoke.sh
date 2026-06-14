@@ -57,6 +57,7 @@ main() {
 ---
 host: $host
 date: 2026-06-05T00:00:00+03:00
+level: minimal
 done:
   public/app: ok
 ---
@@ -139,6 +140,8 @@ EOF
 		apply = data.fetch("caches").fetch("last_apply")
 		refresh_plan = data.fetch("caches").fetch("last_refresh_plan")
 		refresh_apply = data.fetch("caches").fetch("last_refresh_apply")
+		host_state = data.fetch("host_state")
+		abort "wrong deployment level" unless host_state.fetch("level") == "minimal"
 		abort "wrong plan schema" unless plan.fetch("schema") == "tilde.cache/v1"
 		abort "wrong plan mode" unless plan.fetch("mode") == "apply"
 		abort "wrong module count" unless plan.fetch("module_count") == 1
@@ -160,6 +163,7 @@ EOF
 
 	grep -Fq "Last deployment plan cache: present" "$markdown"
 	grep -Fq "Deployment state date: \`2026-06-05 00:00:00 +0300\`" "$markdown"
+	grep -Fq "Deployment level: \`minimal\`" "$markdown"
 	grep -Fq "Last deployment apply date: \`2026-06-05T00:00:01+03:00\`" "$markdown"
 	grep -Fq "Last refresh apply date: \`2026-06-05T00:00:03+03:00\`" "$markdown"
 	grep -Fq "Last refresh plan cache: present" "$markdown"

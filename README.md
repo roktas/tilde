@@ -13,10 +13,10 @@ Install this repository as:
 ~/.agents/skills/tilde
 ```
 
-Local development may install it through an ordinary symlink from a home data module, for example:
+Local development may point the installed skill path directly at this checkout, for example:
 
 ```text
-home/agents/skills/tilde -> ../../../tilde
+~/.agents/skills/tilde -> ~/Dropbox/tilde
 ```
 
 Managed user installs may use the Tilde package declaration:
@@ -299,6 +299,8 @@ public/private repository paths under ~/.local/src
 Machine runtime state lives outside the skill and data repositories, under `~/.local/state/tilde` by default. For a
 Dropbox-backed target, Tilde uses the target's synced repository copy and keeps runtime state on the target. For a
 Git-backed target, Tilde clones or fetches the public repository, normally under `~/.local/src/<repo-name>`.
+Host deployment state records the active provisioning `level`; later plans reuse that level unless a command explicitly
+chooses another one.
 
 ## Command Inventory
 
@@ -327,6 +329,9 @@ applying it.
 | `status` | Show a short deployment, home-entrypoint, and managed-surface summary. |
 | `update` | Reconcile desired state, then run the fast update path. |
 | `upgrade` | Run `update full`, then broad package-manager upgrades after explicit confirmation. |
+
+The installed runtime router includes `bin/tilde align` for local configured or explicit repositories. It creates
+`--mode align` plans and applies only managed links and copies, without bootstrap, packages, or module scripts.
 
 Example prompts shown by help:
 

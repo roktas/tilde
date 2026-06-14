@@ -139,6 +139,7 @@ Host state frontmatter records enough provenance to explain what was applied:
 
 - `host`: short host name.
 - `date`: provisioning time.
+- `level`: active provisioning scope, one of `minimal`, `normal`, or `extra`.
 - `bootstrap`: bootstrap baseline status when it has been checked or installed.
 - `skill`: installed skill path or version.
 - `head`: public repository `HEAD` at provisioning time, available to plan helpers and status readers.

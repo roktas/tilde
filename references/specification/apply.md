@@ -114,8 +114,9 @@ event makes the current action `deferred` with reason `privilege required`, even
 swallowing the sudo failure.
 
 Package actions may include supported conditions. When a condition is not met, the executor records the action as
-`ignored` and does not run the package command. The `graphical` condition is always true on macOS, true on Linux only
-when `systemctl get-default` is `graphical.target`, and false elsewhere.
+`ignored` and does not run the package command. The `graphical` condition is always true on macOS. On Linux it is true
+only when `systemctl get-default` is `graphical.target` and a known display manager unit such as `gdm3`, `sddm`,
+`lightdm`, or `display-manager` is enabled. It is false elsewhere.
 
 ## Determinism
 
@@ -183,8 +184,8 @@ state represent the same combined public/private deployment. Independent public 
 each other's cached plan or apply results. Partial or external-resource caches use the same cache schema and are kept in
 mode-specific files such as `last-align-plan.json`, `last-refresh-plan.json`, and `last-refresh-apply.json`.
 
-When writing host deployment state, apply preserves the previous `bootstrap` frontmatter entry if one exists. Desired
-state deployment must not erase the bootstrap baseline cache.
+When writing host deployment state, apply records the active provisioning `level` and preserves the previous `bootstrap`
+frontmatter entry if one exists. Desired state deployment must not erase the bootstrap baseline cache.
 
 ## Non-Goals
 

@@ -677,11 +677,30 @@ class Apply
     when "macos"
       true
     when "linux"
-      stdout, _stderr, status = Open3.capture3("systemctl", "get-default")
-      status.success? && stdout.strip == "graphical.target"
+      stdout, _stderr, status = systemctl("get-default")
+      return false unless status&.success? && stdout.strip == "graphical.target"
+
+      display_manager_enabled?
     else
       false
     end
+  end
+
+  def display_manager_enabled?
+    stdout, _stderr, _status = systemctl(
+      "is-enabled",
+      "gdm3",
+      "sddm",
+      "lightdm",
+      "display-manager"
+    )
+    stdout.lines.any? { |line| line.strip == "enabled" }
+  end
+
+  def systemctl(*args)
+    Open3.capture3("systemctl", *args)
+  rescue Errno::ENOENT
+    ["", "", nil]
   end
 
   def host
@@ -1199,6 +1218,7 @@ class Apply
     frontmatter = {
       "host" => target.fetch("host"),
       "date" => Time.now.iso8601,
+      "level" => target.fetch("level"),
       "bootstrap" => previous_bootstrap,
       "public" => role_repository("public"),
       "private" => role_repository("private"),

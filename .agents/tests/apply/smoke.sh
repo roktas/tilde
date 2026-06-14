@@ -409,9 +409,17 @@ EOF
 if [[ ${1:-} == get-default ]]; then
 	printf '%s\n' "${TILDE_FAKE_SYSTEMCTL:-multi-user.target}"
 	exit 0
-	fi
+fi
 
+if [[ ${1:-} == is-enabled ]]; then
+	if [[ ${TILDE_FAKE_DISPLAY_MANAGER:-} == enabled ]]; then
+		printf 'enabled\n'
+		exit 0
+	fi
 	exit 1
+fi
+
+exit 1
 EOF
 	chmod +x "$fake_bin/apt-get" "$fake_bin/brew" "$fake_bin/gh"
 	chmod +x "$fake_bin/flatpak" "$fake_bin/sudo" "$fake_bin/systemctl"
@@ -557,7 +565,7 @@ EOF
 
 	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH TILDE_APPLY_STOP_AFTER=3 "$tilde" apply \
 		--plan "$private_plan_json" --plan "$plan_json" >"$tmpdir/partial.out"
-	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH TILDE_FAKE_SYSTEMCTL=graphical.target "$tilde" apply \
+	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH TILDE_FAKE_DISPLAY_MANAGER=enabled TILDE_FAKE_SYSTEMCTL=graphical.target "$tilde" apply \
 		--plan "$private_plan_json" --plan "$plan_json" >"$apply_json"
 
 	[[ -L $home/Dropbox/var/app/source-link.txt ]]
@@ -595,6 +603,7 @@ EOF
 		frontmatter = YAML.safe_load(state)
 		abort "state should include public metadata" unless frontmatter.fetch("public").fetch("role") == "public"
 		abort "state should include private metadata" unless frontmatter.fetch("private").fetch("role") == "private"
+		abort "state should include deployment level" unless frontmatter.fetch("level") == "normal"
 		abort "state should not invent bootstrap" if frontmatter.key?("bootstrap")
 		done = frontmatter.fetch("done")
 		abort "link module should be ok" unless done.fetch("public/aaa-link") == "ok"

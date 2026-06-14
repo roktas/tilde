@@ -139,10 +139,10 @@ put a guarded command in a special README section such as `Install` or `Preinsta
 met, the command may exit `0` as an intentional no-op.
 
 Flatpak package declarations are the exception: `flatpak:<app-id>` actions always carry the `graphical` condition and
-are ignored when that condition is not met. `graphical` is always true on macOS, true on Linux only when
-`systemctl get-default` is `graphical.target`, and false elsewhere. Keep session checks such as `DISPLAY`,
-`WAYLAND_DISPLAY`, and `XDG_CURRENT_DESKTOP` for commands that truly require an active GUI session, such as `gsettings`,
-MIME association, or launching GUI programs.
+are ignored when that condition is not met. `graphical` is always true on macOS. On Linux it is true only when
+`systemctl get-default` is `graphical.target` and a known display manager unit such as `gdm3`, `sddm`, `lightdm`, or
+`display-manager` is enabled. Keep session checks such as `DISPLAY`, `WAYLAND_DISPLAY`, and `XDG_CURRENT_DESKTOP` for
+commands that truly require an active GUI session, such as `gsettings`, MIME association, or launching GUI programs.
 
 **`level`** is the provisioning scope level. Valid values are `minimal`, `normal`, and `extra`. The default is `normal`.
 Plan selection uses threshold semantics: `minimal` includes only `minimal`; `normal` includes `minimal` and `normal`;

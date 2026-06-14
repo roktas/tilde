@@ -20,6 +20,7 @@ explicit non-C locale selected by the caller.
 
 The router may expose implemented helper routes such as:
 
+- `tilde align`
 - `tilde help`
 - `tilde status`
 - `tilde doctor`
@@ -31,10 +32,10 @@ The router may expose implemented helper routes such as:
 - `tilde ssh`
 - `tilde sudo`
 
-The public prompt commands `adopt`, `align`, `clean`, `create`, `deploy`, `init`, `organize`, `repair`, `update`, and
-`upgrade` are agent-orchestrated unless a matching runtime route is explicitly defined. If those names are invoked
-directly through `bin/tilde` without a matching route, the router must fail clearly instead of pretending to apply the
-prompt command.
+The public prompt commands `adopt`, `clean`, `create`, `deploy`, `init`, `organize`, `repair`, `update`, and `upgrade`
+are agent-orchestrated unless a matching runtime route is explicitly defined. If those names are invoked directly
+through `bin/tilde` without a matching route, the router must fail clearly instead of pretending to apply the prompt
+command.
 
 The router accepts dotted internal aliases for development, such as `tilde .plan` and `tilde internal.plan`, when a
 matching runtime route exists. Dotted aliases are not shown in ordinary public help.
@@ -101,7 +102,8 @@ Public command semantics:
   phase.
 - `align`: reconcile managed links and copies from public/private repositories without bootstrap, package installs,
   package refreshes, or module special sections. It is the low-side-effect path for hosts that already have enough
-  runtime to plan/apply but lack package managers such as Homebrew.
+  runtime to plan/apply but lack package managers such as Homebrew. The local runtime route `bin/tilde align` generates
+  `--mode align` plans for configured or explicit repositories and applies them through `bin/tilde apply`.
 - `update`: run the returning-user maintenance flow after confirmation. Plain `update` means
   `internal.install`, then `internal.refresh` with fast scope. `update full` means `internal.install`, then
   `internal.refresh` with full managed scope.

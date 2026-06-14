@@ -64,7 +64,7 @@ usage_suffix_for() {
 		printf '%s\n' ' <app|config|package|path>'
 		;;
 	align)
-		printf '%s\n' ' [ssh:<host>] [dry-run|plan-only]'
+		printf '%s\n' ' [--repo PATH] [--public PUBLIC_REPO] [--private PRIVATE_REPO] [dry-run|plan-only]'
 		;;
 	clean | organize)
 		printf '%s\n' ' [subject] [dry-run|plan-only]'

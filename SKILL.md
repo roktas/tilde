@@ -61,7 +61,8 @@ equivalent. If only text is available, present explicit choices with target, eff
 
 ## Commands
 
-- `align`: reconcile links and copies without running bootstrap, packages, or module scripts.
+- `align`: reconcile links and copies without running bootstrap, packages, or module scripts. For local configured
+  repositories, prefer `bin/tilde align` when a direct runtime command is useful.
 - `help`: show public commands or one public command's usage.
 - `create`: create public/private home repository skeletons.
 - `init`: register existing public/private repositories on this host.
@@ -94,6 +95,8 @@ files under `libexec/` are internal route targets. `bin/sudo` is a Tilde executi
 - `$tilde deploy ssh:<host> --public PUBLIC_REPO`: minimal `remote-git` VPS deployment.
 - `$tilde deploy ssh:<host> --public PUBLIC_REPO --private PRIVATE_REPO`: remote deployment with private modules and
   policy.
+- `$tilde align`: reconcile managed links and copies for configured local repositories without bootstrap or packages.
+- `$tilde align ssh:<host>`: reconcile managed links and copies on an already reachable remote host.
 - `$tilde update`: update an already deployed local host.
 - `$tilde update ssh:<host>`: update an already deployed remote host.
 - `$tilde update full`: run full managed update for an already deployed local host.
@@ -140,10 +143,13 @@ uses the fast path and missing or stale bootstrap state is probed before deploym
 preflight, missing or incomplete bootstrap baseline is recoverable: preflight runs idempotent bootstrap and re-checks.
 If bootstrap needs credentials or another external action but the existing runtime can still run plan/apply, continue
 with a warning instead of blocking desired-state reconciliation.
+When a host state records a provisioning level, keep that level for later plans unless the user explicitly asks for
+another level. A host deployed as `minimal` should stay `minimal` during update.
 After remote deploy or update apply, inspect structured apply results before closeout. If any result is `deferred` with
 reason `privilege required`, do not treat the operation as fully closed. Present the target-specific `bin/tilde sudo
-handoff --host HOST` command, explain the privilege scope and cleanup requirement, wait for the user action, rerun the
-affected repair or update path, then verify cleanup.
+handoff --host HOST --copy` command, explain the privilege scope and cleanup requirement, tell the user that the helper
+attempts to copy the exact command to the clipboard, wait for the user action, rerun the affected repair or update path,
+then verify cleanup.
 For Dropbox-internal symlinks, the plan must carry a relative link value even when source and target spell the Dropbox
 root differently, such as direct `~/Dropbox` paths versus macOS File Provider paths under
 `~/Library/CloudStorage/Dropbox`.

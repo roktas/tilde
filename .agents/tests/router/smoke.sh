@@ -25,6 +25,12 @@ main() {
 	local fake_bin
 	local handoff
 	local help
+	local align_help
+	local align_home
+	local align_host
+	local align_out
+	local align_repo
+	local align_state
 	local real_bin
 	local ssh_args
 	local ssh_body
@@ -52,13 +58,20 @@ main() {
 	fake_bin=$tmpdir/bin
 	handoff=$tmpdir/handoff.txt
 	real_bin=$tmpdir/real-bin
+	align_help=$tmpdir/align-help.txt
+	align_home=$tmpdir/align-home
+	align_host=$(hostname -f 2>/dev/null || hostname)
+	align_host=${align_host%%.*}
+	align_out=$tmpdir/align.out
+	align_repo=$tmpdir/align-repo
+	align_state=$tmpdir/align-state
 	ssh_args=$tmpdir/ssh.args
 	ssh_body=$tmpdir/ssh.body
 	sudo_alias_root=$tmpdir/alias-root
 	sudo_err=$tmpdir/sudo.err
 	sudo_out=$tmpdir/sudo.out
 
-	mkdir -p "$fake_bin" "$real_bin" "$sudo_alias_root/bin"
+	mkdir -p "$align_home" "$align_repo/config" "$align_repo/app" "$align_state/tilde" "$fake_bin" "$real_bin" "$sudo_alias_root/bin"
 	cat >"$fake_bin/ssh" <<'EOF'
 #!/usr/bin/env sh
 printf '%s\n' "$@" > "$TILDE_FAKE_SSH_ARGS"
@@ -72,6 +85,7 @@ EOF
 	chmod +x "$fake_bin/ssh" "$real_bin/sudo" "$sudo_alias_root/bin/sudo"
 
 	[[ -x $skill_root/libexec/apply ]]
+	[[ -x $skill_root/libexec/align ]]
 	[[ -x $skill_root/libexec/boot ]]
 	[[ -x $skill_root/libexec/ssh ]]
 	[[ -x $skill_root/libexec/sudo ]]
@@ -87,6 +101,39 @@ EOF
 	grep -Fq 'Usage: boot' "$boot_help"
 	"$tilde" bootstrap --help >"$boot_help"
 	grep -Fq 'Usage: boot' "$boot_help"
+	"$tilde" align --help >"$align_help"
+	grep -Fq 'Usage: tilde align' "$align_help"
+
+	cat >"$align_repo/AGENTS.md" <<'EOF'
+---
+tilde:
+  protocol: tilde/v1
+  role: public
+---
+
+# Align Smoke
+EOF
+	printf 'configured\n' >"$align_repo/config/app.conf"
+	cat >"$align_repo/app/README.md" <<'EOF'
+---
+all:
+  links:
+    ../config/app.conf: ~/.config/app.conf
+---
+
+# App
+EOF
+	git -C "$align_repo" init -q
+	git -C "$align_repo" config user.email smoke@example.invalid
+	git -C "$align_repo" config user.name Smoke
+	git -C "$align_repo" add .
+	git -C "$align_repo" commit -q -m init
+	HOME=$align_home XDG_STATE_HOME=$align_state "$tilde" align --repo "$align_repo" >"$align_out"
+	[[ -L $align_home/.config/app.conf ]]
+	grep -Fxq 'configured' "$align_home/.config/app.conf"
+	[[ -f $align_state/tilde/hosts/$align_host/last-align-plan.json ]]
+	[[ -f $align_state/tilde/hosts/$align_host/last-align-apply.json ]]
+	[[ ! -f $align_state/tilde/hosts/$align_host/state.md ]]
 
 	"$tilde" sudo handoff --host spinoza >"$handoff"
 	grep -Fq "ssh -t 'spinoza' '\$HOME/.agents/skills/tilde/bin/tilde sudo allow'" "$handoff"

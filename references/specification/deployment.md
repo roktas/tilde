@@ -158,6 +158,10 @@ When the host already has enough runtime to read repositories and run the planne
 not available, use `align` to reconcile only links and copies. This keeps environment files and other managed symlinks
 current without running bootstrap, Homebrew, apt, casks, GitHub release installers, or module scripts.
 
+If deployment state records a provisioning `level`, `update`, `align`, `refresh`, and `repair` plans inherit that level
+unless the request explicitly supplies another level. A host deployed with `minimal` therefore remains on `minimal`
+during later returning-user updates.
+
 Use `update full` when the user wants full managed refresh: fast update plus managed non-system package declarations and
 module `Update` sections. Use `upgrade` when the user wants the widest update: `update full` plus broad or aggressive
 package-manager upgrades that may affect packages not declared by Tilde.
@@ -342,7 +346,7 @@ After a remote deploy or update apply, inspect the structured apply results befo
 instead of collecting a password, unless the user explicitly chooses to leave those actions deferred. Generate it with:
 
 ```bash
-bin/tilde sudo handoff --host HOST
+bin/tilde sudo handoff --host HOST --copy
 ```
 
 The printed command runs the target's `bin/tilde sudo allow` in the user's terminal. That command validates and installs
@@ -352,8 +356,9 @@ The printed command runs the target's `bin/tilde sudo allow` in the user's termi
 sudo rm -f /etc/sudoers.d/tilde
 ```
 
-This rule grants broad root privilege to the target user and must be removed after the run. `bin/tilde sudo handoff
---copy` may copy the printed command to the local clipboard when a clipboard tool is available.
+This rule grants broad root privilege to the target user and must be removed after the run. Use `--copy` when presenting
+the command so the helper attempts to place the exact handoff command on the local clipboard; if no clipboard tool is
+available, print the command verbatim and ask the user to run it manually.
 
 After the user confirms that the handoff command completed, rerun the affected repair or update path, then remove the
 temporary rule with the printed cleanup command and verify that `/etc/sudoers.d/tilde` is absent. If the same privilege

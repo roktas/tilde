@@ -57,6 +57,8 @@ desired state and normal system package managers can both be brought current. `u
   updates only after explicit confirmation.
 - Save deployment state for `apply` and `repair`. `align`, `refresh`, and `upgrade` update mode-specific apply/plan
   caches but do not overwrite deployment state or deployment surface caches.
+- When a host state records a provisioning `level`, later plans use that level unless the caller explicitly supplies
+  another `--level`.
 
 ### Ordering
 

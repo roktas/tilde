@@ -44,6 +44,13 @@ graphical_host() {
 
 For the data repositories, the `linux` module's `graphical_host()` helper should be strengthened this way. Alternatively, set `systemctl set-default multi-user.target` explicitly in the Linux baseline for headless hosts and let GUI modules remain no-ops when the target is headless.
 
+## Resolution
+
+- The Tilde `graphical` condition now requires both `graphical.target` and an enabled display manager on Linux.
+- The public `home/linux` and `home/chrome` module guards use the same display-manager check.
+- The public `home/agents` module no longer carries the `tilde` skill symlink; the control-plane skill is installed separately from the data repository skill fan-in.
+- Host deployment state records the provisioning `level`, and later plans reuse that level unless a request explicitly chooses another one.
+
 ## Outstanding item
 
 - `private/codex` module on ondokuz remains `notok` because its `github:Lampese/codex-switcher` package requires `gh auth login`. On `remote-git` hosts with controller-side bundle transport for private repos, target-side GitHub CLI authentication is unavailable by design. Consider excluding the `codex` module from headless/remote-git hosts or using a different transport for that asset.
