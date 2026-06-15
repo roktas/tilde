@@ -25,9 +25,32 @@ When existing docs, code, habits, or memory conflict with `references/specificat
 The PATH-visible runtime surface is `bin/tilde`, `bin/sudo`, and helper commands intentionally exposed in the Tilde
 runtime PATH. Normal command implementations live in `libexec/` and are dispatched through `bin/tilde`.
 
-Use `bin/tilde ssh HOST` for Tilde-controlled remote script delivery when available. It sends a script body through
-`ssh HOST sh -s --`; do not compose multi-command remote work with `ssh HOST 'set -e; ...'`, `sh -c`, or `bash -lc`
-unless the target entrypoint explicitly requires Bash.
+## Remote Script Delivery
+
+Use `bin/tilde ssh HOST` for all remote script execution. It sets up the
+correct Tilde runtime environment (PATH, TILDE_ROOT, TILDE_SUDO, locale) and
+delivers the script body through `ssh HOST sh -s --`.
+
+Do not use raw `ssh`, `sh -c`, or `bash -lc` for multi-command remote work.
+These bypass Tilde's PATH setup and sudo interceptor.
+
+```bash
+tilde ssh HOST << 'SCRIPT'
+tilde .plan --repo ~/Dropbox/home --host HOST ... > /tmp/tilde-plan.json
+tilde .apply --plan /tmp/tilde-plan.json
+SCRIPT
+```
+
+When the script needs Bash features, pass the interpreter as an argument:
+
+```bash
+tilde ssh HOST -- bash << 'SCRIPT'
+# bash-specific syntax here
+SCRIPT
+```
+
+Use `tilde ssh --tty HOST` for interactive remote sessions that require a
+pseudo-terminal (e.g., `sudo` password prompts).
 
 ## Public Commands
 

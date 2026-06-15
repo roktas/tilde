@@ -793,6 +793,25 @@ A controller may inspect or mirror remote status, but the target host's own stat
 
 The host-local lock is also target-local.
 
+### 19.1 Agent Remote-Work Pattern
+
+Agents delivering remote work MUST use `tilde ssh HOST` for script delivery.
+This guarantees the Tilde runtime and sudo intercept environment are active on
+the target.
+
+Agent-orchestrated remote workflows that generate plan files and apply them
+MUST deliver the full workflow as a single piped script body:
+
+```text
+tilde ssh HOST << 'SCRIPT'
+tilde .plan ... > /tmp/tilde-plan.json
+tilde .apply --plan /tmp/tilde-plan.json
+SCRIPT
+```
+
+Exception: one-liner status checks such as `tilde doctor` may use direct
+`ssh HOST tilde doctor` when no multi-command sequencing is needed.
+
 ## 20. Security and Proposal-First Behavior
 
 Tilde must propose before:
