@@ -7,6 +7,15 @@ unset CDPATH
 
 cleanup_tmpdir=
 
+abort() {
+	warn "E: $*"
+	exit 1
+}
+
+warn() {
+	printf '%s\n' "$*" >&2
+}
+
 # ------------------------------------------------------------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------------------------------------------------------------
@@ -164,8 +173,7 @@ EOF
 	grep -Fq "ssh -t 'spinoza' '\$HOME/.agents/skills/tilde/bin/tilde sudo allow'" "$handoff_clipboard"
 
 	if env -u TILDE_SUDO "$skill_root/bin/sudo" true >/dev/null 2>"$sudo_err"; then
-		echo "expected sudo shim to fail outside Tilde execution" >&2
-		exit 1
+		abort "expected sudo shim to fail outside Tilde execution"
 	fi
 	grep -Fq "Tilde sudo shim is only available" "$sudo_err"
 	PATH=$sudo_alias_root/bin:$skill_root/bin:$real_bin:/usr/bin:/bin "$tilde" sudo -- true >"$sudo_out"
@@ -189,8 +197,7 @@ EOF
 	grep -Fq 'TILDE_SUDO=intercept' "$ssh_body"
 
 	if "$tilde" deploy >/dev/null 2>"$deploy_err"; then
-		echo "expected agent-orchestrated prompt command to fail as a runtime route" >&2
-		exit 1
+		abort "expected agent-orchestrated prompt command to fail as a runtime route"
 	fi
 	grep -Fq 'no direct runtime route is defined' "$deploy_err"
 }

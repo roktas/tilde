@@ -6,6 +6,15 @@ unset CDPATH
 
 cleanup_tmpdir=
 
+abort() {
+	warn "E: $*"
+	exit 1
+}
+
+warn() {
+	printf '%s\n' "$*" >&2
+}
+
 # ------------------------------------------------------------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------------------------------------------------------------
@@ -100,8 +109,7 @@ main() {
 
 	printf 'dirty\n' >"$target/dirty.txt"
 	if "$tilde" checkout receive --repo "$target" --bundle "$bundle" --origin "$bare" >/dev/null 2>"$err"; then
-		echo "expected dirty target to fail" >&2
-		exit 1
+		abort "expected dirty target to fail"
 	fi
 	grep -q "dirty repository" "$err"
 	rm -f "$target/dirty.txt"
@@ -109,8 +117,7 @@ main() {
 	printf 'three\n' >"$source/value.txt"
 	commit_all "$source" unpushed
 	if pack "$tilde" "$source" "$bundle" >/dev/null 2>"$err"; then
-		echo "expected unpushed source to fail" >&2
-		exit 1
+		abort "expected unpushed source to fail"
 	fi
 	grep -q "branch is not at upstream" "$err"
 

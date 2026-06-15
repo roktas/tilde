@@ -7,6 +7,15 @@ unset CDPATH
 
 cleanup_tmpdir=
 
+abort() {
+	warn "E: $*"
+	exit 1
+}
+
+warn() {
+	printf '%s\n' "$*" >&2
+}
+
 # ------------------------------------------------------------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------------------------------------------------------------
@@ -68,8 +77,7 @@ EOF
 
 	printf '# >>> tilde:bad\nx\n' >"$target"
 	if printf 'x\n' | HOME=$tmpdir "$skill_root/bin/span" ensure "$target" bad >"$span_conflict" 2>/dev/null; then
-		echo "expected malformed span conflict" >&2
-		exit 1
+		abort "expected malformed span conflict"
 	fi
 
 	SPAN_CONFLICT=$span_conflict ruby -rjson -e '

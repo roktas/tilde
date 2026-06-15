@@ -300,6 +300,11 @@ command.remote() {
 	pack_bundle "$repo" "$bundle" "$branch" "$allow_unpushed"
 	scp "$bundle" "$host:$remote_bundle"
 	"$(tilde_root)/bin/tilde" ssh --no-root "$host" -- "$target" "$remote_bundle" "$branch" "$remote" "$origin" <<'SH'
+abort() {
+	printf 'E: %s\n' "$*" >&2
+	exit 1
+}
+
 repo=$1
 bundle=$2
 branch=$3
@@ -308,29 +313,24 @@ origin=$5
 trap 'rm -f "$bundle"' EXIT HUP INT QUIT TERM
 
 if [ ! -r "$bundle" ]; then
-	printf 'E: bundle is missing or unreadable: %s\n' "$bundle" >&2
-	exit 1
+	abort "bundle is missing or unreadable: $bundle"
 fi
 git bundle verify "$bundle" >/dev/null 2>&1 || {
-	printf 'E: invalid bundle: %s\n' "$bundle" >&2
-	exit 1
+	abort "invalid bundle: $bundle"
 }
 
 if [ -e "$repo" ] && [ ! -d "$repo/.git" ]; then
-	printf 'E: target exists but is not a Git checkout: %s\n' "$repo" >&2
-	exit 1
+	abort "target exists but is not a Git checkout: $repo"
 fi
 
 if [ -d "$repo/.git" ]; then
 	status=$(git -C "$repo" status --porcelain=v1)
 	if [ -n "$status" ]; then
-		printf 'E: dirty repository: %s\n' "$repo" >&2
-		exit 1
+		abort "dirty repository: $repo"
 	fi
 	current=$(git -C "$repo" branch --show-current)
 	if [ "$current" != "$branch" ]; then
-		printf 'E: target branch is %s, expected %s\n' "$current" "$branch" >&2
-		exit 1
+		abort "target branch is $current, expected $branch"
 	fi
 	if [ -n "$origin" ]; then
 		if git -C "$repo" remote get-url "$remote" >/dev/null 2>&1; then

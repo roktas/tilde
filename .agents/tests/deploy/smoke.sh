@@ -6,6 +6,15 @@ unset CDPATH
 
 cleanup_tmpdir=
 
+abort() {
+	warn "E: $*"
+	exit 1
+}
+
+warn() {
+	printf '%s\n' "$*" >&2
+}
+
 # ------------------------------------------------------------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------------------------------------------------------------
@@ -112,8 +121,7 @@ main() {
 	[[ ! -e $state/tilde/state.yml ]]
 
 	if HOME=$home XDG_STATE_HOME=$state "$tilde" preflight --bootstrap skip --require missing "$repo" >"$out" 2>&1; then
-		echo "expected missing required path to fail" >&2
-		exit 1
+		abort "expected missing required path to fail"
 	fi
 	grep -Fq "required checkout path is missing" "$out"
 

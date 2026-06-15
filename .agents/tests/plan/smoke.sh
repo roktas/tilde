@@ -11,6 +11,15 @@ cleanup_repair_repo=
 cleanup_target_module=
 cleanup_tmpdir=
 
+abort() {
+	warn "E: $*"
+	exit 1
+}
+
+warn() {
+	printf '%s\n' "$*" >&2
+}
+
 # ------------------------------------------------------------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------------------------------------------------------------
@@ -132,8 +141,7 @@ EOF
 	printf '\n' >>"$dirty_repo/AGENTS.md"
 
 	if "$tilde" plan --repo "$dirty_repo" >"$plan_json" 2>"$dirty_plan_err"; then
-		echo "expected dirty worktree guard to fail" >&2
-		exit 1
+		abort "expected dirty worktree guard to fail"
 	fi
 
 	grep -q "Dirty worktree" "$dirty_plan_err"
@@ -550,8 +558,7 @@ all:
 EOF
 
 	if "$tilde" plan --repo "$repo" --allow-dirty --platform linux --host smoke >"$invalid_plan_json" 2>"$invalid_plan_err"; then
-		echo "expected invalid package name guard to fail" >&2
-		exit 1
+		abort "expected invalid package name guard to fail"
 	fi
 
 	grep -q "Package name must not be empty" "$invalid_plan_err"
