@@ -17,6 +17,7 @@ The provisioning model is:
 - Planning evaluates current manifests and targeted live facts on every run.
 - Every run compares current desired manifests with targeted live checks and idempotent actions.
 - Failed, conflicted, or deferred runs do not advance `applied` anchors.
+- The host-local lock is process coordination, not cleanup state.
 
 When existing docs, code, habits, or memory conflict with `references/specification.md`, the specification wins.
 
@@ -287,6 +288,11 @@ conflicting target, and rerun apply so the normal declarative action recreates i
 default conflict result to overwrite the target. Broad cleanup, such as clearing an entire font directory after
 package-manager file conflicts, requires a separate explicit approval that names the directory and effect.
 
+If an apply command times out or reports `state lock busy`, do not delete the lock file as a first response. A lock held
+with `flock` belongs to a process, and removing the pathname does not prove the process stopped. Treat this as
+`deferred` or an active-run check: use bounded read-only process inspection on the target, wait when a Tilde/apply
+process is still active, and remove a leftover lock only after proving no process holds it and getting explicit approval.
+
 If sudo is required and noninteractive sudo fails, report `deferred` and present:
 
 ```bash
@@ -307,6 +313,8 @@ For weaker or low-context agents:
 - Treat `Prerequisites` as read-only checks.
 - Advance `applied` anchors only after every required action succeeds.
 - Keep `applied` anchors unchanged after `deferred`, `conflict`, or `notok`.
+- On timeout or `state lock busy`, do not remove `~/.local/state/tilde/lock` blindly. Check whether an apply process is
+  still active and treat uncertainty as `deferred`.
 - Never plan a remote host from the controller.
 - Never read controller `~/.local/state/tilde/state.yml` for a remote target.
 - Never execute `/tilde ...` or `$tilde ...` in a shell; they are prompt markers, not runtime commands.

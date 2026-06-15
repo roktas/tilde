@@ -121,6 +121,11 @@ The lock is runtime coordination, not desired-state memory.
 
 If a lock cannot be acquired because another Tilde process is active, Tilde MUST return a clear lock-busy or `deferred` result and MUST NOT mutate targets.
 
+Agents MUST NOT remove the lock file merely because a command timed out or because the path exists. With process-held
+locks such as `flock`, deleting the pathname does not prove the owning process has stopped and may allow a second run to
+start while the first run is still active. Lock cleanup requires bounded read-only process inspection and explicit
+operator approval when the owning process cannot be proven absent.
+
 `state.yml` MUST be written atomically:
 
 1. write a temporary file in the same directory,

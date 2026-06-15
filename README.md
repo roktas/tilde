@@ -183,6 +183,9 @@ optimizations only.
 
 One-off operator workflows stay outside the desired-state model. Tilde may assist with checks and execution.
 
+If a run times out or reports `state lock busy`, do not remove the lock file blindly. First verify that no Tilde/apply
+process is active on the target; otherwise treat the run as deferred and retry later.
+
 ## References
 
 - [Specification](references/specification.md)
