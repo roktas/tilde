@@ -352,6 +352,19 @@ separate command.
 
 ## 8. Module Sections
 
+Module README frontmatter may declare module-level properties and platform-scoped desired state.
+
+`level` is a module-level property. Prefer declaring it at the top level of the module frontmatter:
+
+```yaml
+level: extra
+all:
+  packages:
+    - brew:foo
+```
+
+When top-level `level` is absent, `all.level` has the same meaning.
+
 Recommended module README section order:
 
 ```text

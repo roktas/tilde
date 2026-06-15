@@ -52,6 +52,8 @@ main() {
 	local platform_module
 	local plan_impl
 	local plan_json
+	local private_extra_plan_json
+	local private_macos_extra_plan_json
 	local private_macos_plan_json
 	local private_plan_json
 	local private_repo
@@ -106,6 +108,8 @@ main() {
 	macos_plan_json=$tmpdir/macos-plan.json
 	normal_plan_json=$tmpdir/normal-plan.json
 	plan_json=$tmpdir/plan.json
+	private_extra_plan_json=$tmpdir/private-extra-plan.json
+	private_macos_extra_plan_json=$tmpdir/private-macos-extra-plan.json
 	private_macos_plan_json=$tmpdir/private-macos-plan.json
 	private_plan_json=$tmpdir/private-plan.json
 	refresh_plan_json=$tmpdir/refresh-plan.json
@@ -273,18 +277,22 @@ EOF
 
 	if [[ -n $private_repo ]]; then
 		"$tilde" plan --repo "$private_repo" --allow-dirty --platform linux --host smoke >"$private_plan_json"
+		"$tilde" plan --repo "$private_repo" --allow-dirty --level extra --platform linux --host smoke >"$private_extra_plan_json"
 		"$tilde" plan --repo "$private_repo" --allow-dirty --platform macos --host smoke >"$private_macos_plan_json"
+		"$tilde" plan --repo "$private_repo" --allow-dirty --level extra --platform macos --host smoke >"$private_macos_extra_plan_json"
 
-		PRIVATE_PLAN_JSON=$private_plan_json PRIVATE_MACOS_PLAN_JSON=$private_macos_plan_json ruby -rjson -e '
+		PRIVATE_PLAN_JSON=$private_plan_json PRIVATE_EXTRA_PLAN_JSON=$private_extra_plan_json PRIVATE_MACOS_PLAN_JSON=$private_macos_plan_json PRIVATE_MACOS_EXTRA_PLAN_JSON=$private_macos_extra_plan_json ruby -rjson -e '
 			linux = JSON.parse(File.read(ENV.fetch("PRIVATE_PLAN_JSON")))
-			codex = linux.fetch("modules").find { |mod| mod.fetch("name") == "codex" }
+			abort "linux codex should be extra-only" if linux.fetch("modules").any? { |mod| mod.fetch("name") == "codex" }
+			linux_extra = JSON.parse(File.read(ENV.fetch("PRIVATE_EXTRA_PLAN_JSON")))
+			codex = linux_extra.fetch("modules").find { |mod| mod.fetch("name") == "codex" }
 			abort "missing private codex module" unless codex
 			abort "missing linux codex-switcher package" unless codex.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "github:Lampese/codex-switcher" }
 			abort "linux codex should not install codex cask" if codex.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "cask:codex" }
 			abort "codex wrappers should be removed" if codex.fetch("links_to_create").any? { |link| link.fetch("source") == "bin/codex" || link.fetch("target") == "~/Dropbox/allos/bin/codex" || link.fetch("source") == "bin/codex-switcher" || link.fetch("target") == "~/Dropbox/allos/bin/codex-switcher" }
 			abort "codex should export CODEX_HOME through environment.d" unless codex.fetch("links_to_create").any? { |link| link.fetch("source") == "environment.d/codex.conf" && link.fetch("target") == "~/.config/environment.d/codex.conf" }
 			abort "codex should link hooks into shared codex state" unless codex.fetch("links_to_create").any? { |link| link.fetch("source") == "hooks/shellcheck" && link.fetch("target") == "~/Dropbox/allos/var/codex/hooks/shellcheck" && link.fetch("fan_in") == true }
-			hook_action = linux.fetch("actions").find { |action| action.fetch("kind") == "link" && action.fetch("target") == "~/Dropbox/allos/var/codex/hooks/shellcheck" }
+			hook_action = linux_extra.fetch("actions").find { |action| action.fetch("kind") == "link" && action.fetch("target") == "~/Dropbox/allos/var/codex/hooks/shellcheck" }
 			abort "missing codex hook action" unless hook_action
 			abort "codex hook should use a relative Dropbox link value" unless hook_action.fetch("link_value") == "../../../../home-/codex/hooks/shellcheck"
 			abort "codex should use shared agent instructions" unless codex.fetch("special_sections").dig("Install", "body").include?("Dropbox/allos/var/codex/AGENTS.md")
@@ -309,7 +317,9 @@ EOF
 			abort "opencode should not link skills directly" if opencode.fetch("links_to_create").any? { |link| link.fetch("target").include?("/skills/") }
 
 			macos = JSON.parse(File.read(ENV.fetch("PRIVATE_MACOS_PLAN_JSON")))
-			macos_codex = macos.fetch("modules").find { |mod| mod.fetch("name") == "codex" }
+			abort "macos codex should be extra-only" if macos.fetch("modules").any? { |mod| mod.fetch("name") == "codex" }
+			macos_extra = JSON.parse(File.read(ENV.fetch("PRIVATE_MACOS_EXTRA_PLAN_JSON")))
+			macos_codex = macos_extra.fetch("modules").find { |mod| mod.fetch("name") == "codex" }
 			abort "missing macos codex module" unless macos_codex
 			abort "missing macos codex cask" unless macos_codex.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "cask:codex" }
 			abort "macos codex should not install codex-switcher release" if macos_codex.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "github:Lampese/codex-switcher" }
@@ -448,8 +458,10 @@ EOF
 	mkdir -p "$extra_module"
 	cat >"$extra_module/README.md" <<'EOF'
 ---
+level: extra
 all:
-  level: extra
+  packages:
+    - brew:extra-smoke
 ---
 
 # Extra Smoke
@@ -474,6 +486,7 @@ EOF
 		extra = extra_plan.fetch("modules").find { |mod| mod.fetch("name") == "zz-extra-smoke" }
 		abort "missing extra module at extra level" unless extra
 		abort "wrong extra module level" unless extra.fetch("level") == "extra"
+		abort "missing top-level extra module package" unless extra.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "brew:extra-smoke" }
 		c = extra_plan.fetch("modules").find { |mod| mod.fetch("name") == "c" }
 		abort "missing c extra module" unless c
 		abort "missing c llvm package" unless c.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "brew:llvm" }
@@ -670,13 +683,15 @@ EOF
 		abort "upgrade actions should run after full refresh" unless upgrade_indexes.min > update_indexes.max
 	'
 
-	NORMAL_PLAN_JSON=$normal_plan_json EXTRA_PLAN_JSON=$extra_plan_json MACOS_PLAN_JSON=$macos_plan_json PRIVATE_PLAN_JSON=$private_plan_json PRIVATE_MACOS_PLAN_JSON=$private_macos_plan_json ALIGN_PLAN_JSON=$align_plan_json REFRESH_PLAN_JSON=$refresh_plan_json FULL_REFRESH_PLAN_JSON=$full_refresh_plan_json UPGRADE_PLAN_JSON=$upgrade_plan_json ruby -rjson -ropen3 -e '
+	NORMAL_PLAN_JSON=$normal_plan_json EXTRA_PLAN_JSON=$extra_plan_json MACOS_PLAN_JSON=$macos_plan_json PRIVATE_PLAN_JSON=$private_plan_json PRIVATE_EXTRA_PLAN_JSON=$private_extra_plan_json PRIVATE_MACOS_PLAN_JSON=$private_macos_plan_json PRIVATE_MACOS_EXTRA_PLAN_JSON=$private_macos_extra_plan_json ALIGN_PLAN_JSON=$align_plan_json REFRESH_PLAN_JSON=$refresh_plan_json FULL_REFRESH_PLAN_JSON=$full_refresh_plan_json UPGRADE_PLAN_JSON=$upgrade_plan_json ruby -rjson -ropen3 -e '
 		%w[
 			NORMAL_PLAN_JSON
 			EXTRA_PLAN_JSON
 			MACOS_PLAN_JSON
 			PRIVATE_PLAN_JSON
+			PRIVATE_EXTRA_PLAN_JSON
 			PRIVATE_MACOS_PLAN_JSON
+			PRIVATE_MACOS_EXTRA_PLAN_JSON
 			ALIGN_PLAN_JSON
 			REFRESH_PLAN_JSON
 			FULL_REFRESH_PLAN_JSON

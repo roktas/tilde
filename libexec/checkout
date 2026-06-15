@@ -104,13 +104,13 @@ receive_bundle() {
 	local current
 
 	[[ -r $bundle ]] || abort "bundle is missing or unreadable: $bundle"
-	git bundle verify "$bundle" >/dev/null 2>&1 || abort "invalid bundle: $bundle"
 
 	if [[ -e $repo && ! -d $repo/.git ]]; then
 		abort "target exists but is not a Git checkout: $repo"
 	fi
 
 	if [[ -d $repo/.git ]]; then
+		git -C "$repo" bundle verify "$bundle" >/dev/null 2>&1 || abort "invalid bundle: $bundle"
 		check_clean "$repo"
 		current=$(git -C "$repo" branch --show-current)
 		[[ $current = "$branch" ]] || abort "target branch is $current, expected $branch"
@@ -121,6 +121,7 @@ receive_bundle() {
 		ensure_parent "$repo"
 		mkdir -p "$repo"
 		git -C "$repo" init -q
+		git -C "$repo" bundle verify "$bundle" >/dev/null 2>&1 || abort "invalid bundle: $bundle"
 		ensure_remote "$repo" "$remote" "$origin"
 		git -C "$repo" fetch "$bundle" "refs/heads/$branch:refs/remotes/$remote/$branch"
 		git -C "$repo" checkout -q -B "$branch" "$remote/$branch"
@@ -315,15 +316,15 @@ trap 'rm -f "$bundle"' EXIT HUP INT QUIT TERM
 if [ ! -r "$bundle" ]; then
 	abort "bundle is missing or unreadable: $bundle"
 fi
-git bundle verify "$bundle" >/dev/null 2>&1 || {
-	abort "invalid bundle: $bundle"
-}
 
 if [ -e "$repo" ] && [ ! -d "$repo/.git" ]; then
 	abort "target exists but is not a Git checkout: $repo"
 fi
 
 if [ -d "$repo/.git" ]; then
+	git -C "$repo" bundle verify "$bundle" >/dev/null 2>&1 || {
+		abort "invalid bundle: $bundle"
+	}
 	status=$(git -C "$repo" status --porcelain=v1)
 	if [ -n "$status" ]; then
 		abort "dirty repository: $repo"
@@ -345,6 +346,9 @@ else
 	parent=$(dirname -- "$repo")
 	mkdir -p "$parent" "$repo"
 	git -C "$repo" init -q
+	git -C "$repo" bundle verify "$bundle" >/dev/null 2>&1 || {
+		abort "invalid bundle: $bundle"
+	}
 	if [ -n "$origin" ]; then
 		git -C "$repo" remote add "$remote" "$origin"
 	fi

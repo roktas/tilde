@@ -71,13 +71,15 @@ main() {
 	local bundle
 	local err
 	local script_dir
+	local skill_root
 	local source
 	local target
 	local tilde
 	local tmpdir
 
 	script_dir=$(cd -- "${BASH_SOURCE[0]%/*}" >/dev/null && pwd)
-	tilde=$(cd -- "$script_dir/../../.." >/dev/null && pwd)/bin/tilde
+	skill_root=$(cd -- "$script_dir/../../.." >/dev/null && pwd)
+	tilde=$skill_root/bin/tilde
 
 	tmpdir=$(mktemp -d)
 	cleanup_tmpdir=$tmpdir
@@ -99,6 +101,9 @@ main() {
 	"$tilde" checkout receive --repo "$target" --bundle "$bundle" --origin "$bare"
 	grep -qx one "$target/value.txt"
 	git -C "$target" rev-parse --abbrev-ref --symbolic-full-name '@{u}' | grep -qx origin/main
+	if grep -nE '(^|[[:space:]])git bundle verify' "$skill_root/libexec/checkout"; then
+		abort "bundle verify must run with repository context"
+	fi
 
 	printf 'two\n' >"$source/value.txt"
 	commit_all "$source" update

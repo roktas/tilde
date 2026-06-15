@@ -428,8 +428,8 @@ class Plan
     end
   end
 
-  def module_level(config)
-    level = (config["level"] || "normal").to_s
+  def module_level(frontmatter, config)
+    level = (frontmatter["level"] || config["level"] || "normal").to_s
     raise "Unsupported level: #{level}" unless LEVELS.key?(level)
 
     level
@@ -618,7 +618,7 @@ class Plan
     return nil unless module_applicable?(frontmatter, body)
 
     config = active_config(frontmatter)
-    level = module_level(config)
+    level = module_level(frontmatter, config)
     module_name = dir.relative_path_from(@repo).to_s
 
     validate_module_level(module_name, level)
