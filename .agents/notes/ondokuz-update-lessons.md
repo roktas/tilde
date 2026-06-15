@@ -54,3 +54,6 @@ For the data repositories, the `linux` module's `graphical_host()` helper should
 ## Outstanding item
 
 - `private/codex` module on ondokuz remains `notok` because its `github:Lampese/codex-switcher` package requires `gh auth login`. On `remote-git` hosts with controller-side bundle transport for private repos, target-side GitHub CLI authentication is unavailable by design. Consider excluding the `codex` module from headless/remote-git hosts or using a different transport for that asset.
+
+- done: {} olarak kaydedilmiş — state modül listesi boş. Bir sonraki update tüm modülleri baştan işler (çoğu unchanged olacaktır). Bu daha önce ondokuz'da da
+     karşılaştığımız bir durum; nedenini repair'in boş apply sonucu yazması olabilir.
