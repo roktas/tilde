@@ -817,6 +817,10 @@ For remote deployment, `state.yml` and `applied` anchors live on the target host
 
 Controller-side paths MUST NOT be written as target bindings.
 
+For an `ssh:<host>` target, the controller's `~/.local/state/tilde/state.yml` MUST NOT be used to discover or infer the
+target host's repository bindings, applied anchors, level, platform, bootstrap state, or desired-state status. That file
+belongs only to the controller host.
+
 A controller may inspect or mirror remote status, but the target host's own state file is authoritative for that host:
 
 ```text
@@ -836,6 +840,15 @@ piped script body. Planning and apply MUST both run on the target host. Platform
 repository bindings, and live checks come from the target host.
 
 Generating a plan on the controller for a remote host is invalid.
+
+Reading controller deployment state before a remote workflow is also invalid. The first target-state read for
+`ssh:<host>` work MUST be delivered to the target:
+
+```text
+tilde ssh HOST << 'SCRIPT'
+tilde status --format markdown
+SCRIPT
+```
 
 ```text
 tilde ssh HOST << 'SCRIPT'

@@ -100,9 +100,11 @@ EOF
 	grep -Fq '| `status` | `runtime` | Show compact repository bindings and last fully converged anchors. |' "$help"
 	grep -Fq '| `update` | `agent` | Run explicit update behavior from the current desired state. |' "$help"
 	grep -Fq 'For remote targets, generate plans and run live checks on the target host through `tilde ssh HOST`.' "$help"
+	grep -Fq 'Do not read controller `~/.local/state/tilde/state.yml` for remote targets; target state lives on the target host.' "$help"
 
 	"$tilde" .help status >"$status_help"
 	grep -Fq '## `status`' "$status_help"
+	grep -Fq 'Remote state note: do not read controller `~/.local/state/tilde/state.yml`' "$status_help"
 
 	"$tilde" boot --help >"$boot_help"
 	grep -Fq 'Usage: boot' "$boot_help"

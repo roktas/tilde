@@ -173,12 +173,15 @@ print_command_help() {
 	case $name in
 	deploy | update | repair | upgrade)
 		printf '\nRemote note: generate and apply plans on the target host through `tilde ssh HOST`.\n'
+		printf 'Remote state note: do not read controller `~/.local/state/tilde/state.yml`; target bindings and anchors come from the target host.\n'
 		;;
 	align)
 		printf '\nRemote note: `ssh:<host>` align is agent-orchestrated; deliver the target-side workflow with `tilde ssh HOST`.\n'
+		printf 'Remote state note: do not read controller `~/.local/state/tilde/state.yml`; target bindings and anchors come from the target host.\n'
 		;;
 	doctor | status)
 		printf '\nRemote note: deliver remote diagnostics through `tilde ssh HOST`; do not run target checks on the controller.\n'
+		printf 'Remote state note: do not read controller `~/.local/state/tilde/state.yml`; target bindings and anchors come from the target host.\n'
 		;;
 	esac
 }
@@ -202,6 +205,7 @@ print_help() {
 	printf '\n'
 	printf 'Kinds: `agent` means interpreted by the loaded Tilde skill; `runtime` means a direct `bin/tilde` route; `dual` means both local runtime route and prompt workflow.\n'
 	printf 'For remote targets, generate plans and run live checks on the target host through `tilde ssh HOST`.\n'
+	printf 'Do not read controller `~/.local/state/tilde/state.yml` for remote targets; target state lives on the target host.\n'
 	printf '\n'
 	printf 'Detailed command help: `$tilde help <command>`\n'
 	printf 'Bare `$tilde` means `help`.\n'

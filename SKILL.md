@@ -36,6 +36,10 @@ When the user invokes `$tilde <command> [ssh:<host>] [qualifiers...]`:
 If a direct runtime call says a command is agent-orchestrated, stop trying shell variants of that command. Load this
 skill, classify the command, and run the appropriate agent workflow.
 
+For `ssh:<host>` targets, the first target-state read must happen on the target through `tilde ssh HOST`. Do not inspect
+the controller's `~/.local/state/tilde/state.yml` to discover a remote host's repository bindings, applied anchors,
+level, platform, or bootstrap state. That file belongs only to the controller host.
+
 ## Runtime
 
 The PATH-visible runtime surface is `bin/tilde`, `bin/sudo`, and helper commands intentionally exposed in the Tilde
@@ -121,6 +125,16 @@ These bypass Tilde's PATH setup and sudo interceptor.
 Always plan and execute on the target host. Platform detection, package inventory, repository bindings, and live checks
 come from the target. A controller-side plan for a remote host is invalid.
 
+Remote state is target-local. For `$tilde update ssh:HOST`, `$tilde deploy ssh:HOST`, `$tilde doctor ssh:HOST`,
+`$tilde status ssh:HOST`, and `$tilde align ssh:HOST`, do not read the controller's
+`~/.local/state/tilde/state.yml`. If state or repository bindings are needed, read them on the target:
+
+```bash
+tilde ssh HOST << 'SCRIPT'
+tilde status --format markdown
+SCRIPT
+```
+
 ```bash
 tilde ssh HOST << 'SCRIPT'
 tmpdir=$(mktemp -d)
@@ -192,6 +206,7 @@ For weaker or low-context agents:
 - Advance `applied` anchors only after every required action succeeds.
 - Keep `applied` anchors unchanged after `deferred`, `conflict`, or `notok`.
 - Never plan a remote host from the controller.
+- Never read controller `~/.local/state/tilde/state.yml` for an `ssh:<host>` target.
 - Do not run `tilde update`, `tilde deploy`, or `tilde repair` as direct shell routes; these are prompt workflows.
 - Use `tilde plan --mode refresh` for the implementation of the `update` prompt command.
 - Remove packages, copies, files, or spans only with explicit managedness proof and proposal-first confirmation.

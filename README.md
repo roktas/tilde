@@ -120,6 +120,10 @@ Kind meanings:
 For agent workflows, `update` maps to planning mode `refresh`. Plans for remote hosts must be generated and applied on
 the target host.
 
+For `ssh:<host>` workflows, target state is also read on the target host. Do not use the controller's
+`~/.local/state/tilde/state.yml` to discover remote repository bindings, applied anchors, level, platform, or bootstrap
+state.
+
 Example prompts:
 
 ```text
