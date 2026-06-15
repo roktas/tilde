@@ -44,8 +44,8 @@ Persistent state is intentionally compact:
 `state.yml` stores repository bindings and the last fully converged commit anchors. Planning evaluates current manifests
 and targeted live facts on every run.
 
-If `state.yml` is missing, Tilde treats the host as fresh, applies current desired state idempotently, and skips
-commit-diff cleanup because there is no old anchor.
+If `state.yml` is missing, Tilde uses fresh-run semantics, applies current desired state idempotently, and skips
+commit-diff cleanup because there is no old anchor. Missing state alone does not prove that the host was never deployed.
 
 ## Data Repositories
 
@@ -132,9 +132,10 @@ no `applied` anchors, use `repair` mode for that run so state recovery writes re
 remote hosts must be generated and applied on the target host. After a successful mutating remote apply, read final
 status on the target before closeout.
 
-For host-aware prompt commands, omitted target means current host, bare `host` means `ssh:host`, and bare all-caps targets
-such as `ALL`, `HOME`, and `WORK` are host groups defined by the active home policy. For remote workflows, target state
-is also read on the target host. Do not use the controller's
+For host-aware prompt commands, omitted target means current host. A bare host means `ssh:host`, except when it names the
+current host; use explicit `ssh:host` to force SSH transport. Bare all-caps targets such as `ALL`, `HOME`, and `WORK`
+are host groups defined by the active home policy. For remote workflows, target state is also read on the target host.
+Do not use the controller's
 `~/.local/state/tilde/state.yml` to discover remote repository bindings, applied anchors, level, platform, or bootstrap
 state.
 

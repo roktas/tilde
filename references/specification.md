@@ -229,10 +229,13 @@ Host-aware prompt commands accept these target forms:
 
 ```text
 no target   current host, also called localhost
-host        remote host shorthand for ssh:host
+host        remote host shorthand for ssh:host, except when it names the current host
 ssh:host    explicit remote host target
 GROUP       bare all-caps host group defined by the active home policy
 ```
+
+If a bare host token equals the current host name, such as `hostname -s`, agents MUST treat it as the current host and
+run the local workflow. Explicit `ssh:host` is required to force SSH transport to that host, including self-SSH.
 
 The host-aware prompt commands are:
 
@@ -291,7 +294,9 @@ prompt command -> plan mode
 
 The prompt command is `update`; the ordinary planning mode is `refresh`. Implementations MUST NOT invent a
 `--mode update`. If target status shows missing `state.yml` or no `applied` anchors, an update workflow MUST recover
-state with `repair` mode for that run because refresh-only work does not establish fully converged anchors.
+state with `repair` mode for that run because refresh-only work does not establish fully converged anchors. Missing
+state is not proof that the host was never deployed; agents SHOULD describe this as state recovery unless bounded
+evidence proves otherwise.
 
 ```text
 apply / install:
@@ -884,13 +889,14 @@ If a run fails or is deferred:
 - show the failure in command output,
 - allow the next run to retry idempotently.
 
-If `state.yml` is missing or has no `applied` section, Tilde treats the host as fresh:
+If `state.yml` is missing or has no `applied` section, Tilde uses fresh-run semantics:
 
 - generate the current desired manifest,
 - apply idempotently,
 - skip commit-diff cleanup because no old anchor exists.
 
-Fresh hosts run only declared desired-state actions automatically.
+Fresh-run semantics are not proof that the host was never deployed. They only mean no fully converged anchor is
+available for this run. Hosts without anchors run only declared desired-state actions automatically.
 
 ## 19. Remote Hosts
 
@@ -1007,12 +1013,17 @@ explicit user response before replacing files, forcing links, copying repository
 apply. Consent is not implied by silence, by the existence of a conflict, or by the agent's own question. If resolving
 one conflict reveals another conflict in a later apply, the later conflict requires a separate explicit response.
 
+When the user chooses repository replacement for a conflict, agents SHOULD preserve a backup when practical, remove only
+the exact conflicting target, and rerun apply so the declarative action recreates it. Agents MUST NOT treat a replacement
+choice as permission for broader cleanup. Broad cleanup, such as clearing an entire font directory after package-manager
+file conflicts, requires a separate explicit approval that names the directory and effect.
+
 ## 21. State Recovery
 
 If the persistent state file is missing or malformed, Tilde recovers repository bindings from explicit command
 arguments, repository frontmatter, and bounded target discovery. A successful desired-state recovery run writes
 `state.yml` with the recovered bindings and fully converged anchors. Refresh-only package and update-section runs do not
-establish fully converged anchors.
+establish fully converged anchors. Missing state alone does not prove that the host was never deployed.
 
 ## 22. Summary
 

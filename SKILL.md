@@ -27,7 +27,8 @@ When the user invokes a Tilde prompt such as `/tilde <command> [target] [qualifi
 1. Treat `/tilde`, `$tilde`, and similar Tilde prompt markers as agent prompt contracts. They are not shell commands.
 2. Resolve the controller-side runtime entrypoint before shell execution. Use the loaded skill directory's `bin/tilde`;
    if that path is not available, use `~/.agents/skills/tilde/bin/tilde`. Do not rely on bare `tilde` being on `PATH`.
-3. Identify the target: current host, `host`, `ssh:host`, or an all-caps host group such as `ALL`, `HOME`, or `WORK`.
+3. Identify the target: current host, the current host name, `host`, `ssh:host`, or an all-caps host group such as
+   `ALL`, `HOME`, or `WORK`.
 4. Classify the command from the Command Reference below.
 5. Map agent-orchestrated commands to the Workflow Matrix before running helpers.
 6. For remote targets, use the resolved runtime entrypoint for script delivery. Generate plans, run live checks, and
@@ -61,9 +62,12 @@ anchors, level, platform, or bootstrap state. That file belongs only to the cont
 Host-aware prompt commands accept these target forms:
 
 - no target: current host, also called localhost.
-- `host`: remote host shorthand for `ssh:host`.
+- `host`: remote host shorthand for `ssh:host`, except when it names the current host.
 - `ssh:host`: explicit remote host target.
 - `GROUP`: a bare all-caps host group defined by the active home policy, such as `ALL`, `HOME`, or `WORK`.
+
+If a bare host token equals the current host name, such as `hostname -s`, treat it as the current host and run the local
+workflow. Use explicit `ssh:host` only when the user really wants SSH transport to that host, including self-SSH.
 
 The host-aware prompt commands are `deploy`, `update`, `repair`, `upgrade`, `align`, `status`, and `doctor`.
 Commands with their own subject syntax, such as `adopt APP_OR_PATH`, `clean SUBJECT`, `organize SUBJECT`, `create`, and
@@ -164,7 +168,9 @@ explicitly documented for the requested step.
 
 The prompt command is `update`; the ordinary plan mode is `refresh`. Do not call or invent `--mode update`. If target
 status shows missing `state.yml` or no `applied` anchors, recover state with `plan --mode repair` for that run; do not
-use refresh merely to recreate state, and do not tell the user to run deploy solely to initialize state.
+use refresh merely to recreate state, and do not tell the user to run deploy solely to initialize state. Missing
+`state.yml` is not proof that the host was never deployed; describe it as missing state and state recovery unless
+bounded evidence proves otherwise.
 
 ## Remote Script Execution
 
@@ -276,6 +282,11 @@ before replacing files, forcing links, copying repository versions over targets,
 from silence, from the fact that a conflict exists, or from the agent's own question. Conflict resolution may reveal
 additional conflicts in a later apply; repeat the same explicit-approval step for each newly revealed conflict.
 
+If the user chooses repository replacement for a conflict, back up the exact target when practical, remove only the exact
+conflicting target, and rerun apply so the normal declarative action recreates it. Do not rerun apply expecting a
+default conflict result to overwrite the target. Broad cleanup, such as clearing an entire font directory after
+package-manager file conflicts, requires a separate explicit approval that names the directory and effect.
+
 If sudo is required and noninteractive sudo fails, report `deferred` and present:
 
 ```bash
@@ -306,7 +317,9 @@ For weaker or low-context agents:
 - Use the `plan --mode refresh` implementation route for the `update` prompt command only when target status has
   existing `applied` anchors. If target status shows missing `state.yml` or no `applied` anchors, use
   `plan --mode repair` for state recovery.
-- For host-aware prompt commands, treat bare `host` as `ssh:host`; omitted target means current host.
+- For host-aware prompt commands, omitted target means current host. Treat bare `host` as `ssh:host`, except when it
+  names the current host; then run the local workflow. Use explicit `ssh:host` to force SSH transport.
+- Missing `state.yml` or missing `applied` anchors means state recovery, not proof that the host was never deployed.
 - Treat bare all-caps targets such as `ALL`, `HOME`, and `WORK` as home-policy host groups, not hostnames; ask the user
   if the active home policy does not define the requested group.
 - When traversing a host group, skip unreachable hosts after a bounded reachability check and continue with reachable
@@ -318,6 +331,8 @@ For weaker or low-context agents:
   `local`.
 - After an apply conflict, stop and wait for an explicit user answer before copying repo files over targets, forcing
   links, or rerunning apply. Newly revealed conflicts need a new explicit answer.
+- After the user chooses repository replacement for a conflict, back up and remove only the exact conflicted target, then
+  rerun apply. Broad directory cleanup needs a separate explicit approval.
 - Run `"$TILDE" handoff --host HOST --copy` on the controller after sudo deferral. Do not run handoff through
   `"$TILDE" ssh`, do not invent a two-line `TILDE=...` command, and do not rewrite the printed `Handoff command:`.
 - Remove packages, copies, files, or spans only with explicit managedness proof and proposal-first confirmation.

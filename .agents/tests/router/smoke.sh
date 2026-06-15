@@ -115,10 +115,10 @@ EOF
 	grep -Fq '| `update` | `agent` | Run explicit update behavior from the current desired state. |' "$help"
 	grep -Fq 'Runtime entrypoint: set `TILDE` to the loaded skill root `bin/tilde`; fallback `~/.agents/skills/tilde/bin/tilde`.' "$help"
 	grep -Fq 'Do not search `PATH` after `tilde: command not found`; retry with `"$TILDE"`.' "$help"
-	grep -Fq 'Target shorthand: omitted target means current host; bare `host` means `ssh:host`; bare all-caps targets such as `ALL`, `HOME`, and `WORK` expand from the active home policy.' "$help"
+	grep -Fq 'Target shorthand: omitted target means current host; bare `host` means `ssh:host` except when it names the current host; bare all-caps targets such as `ALL`, `HOME`, and `WORK` expand from the active home policy.' "$help"
 	grep -Fq 'When traversing a host group, skip hosts that fail a bounded noninteractive reachability check and continue with reachable hosts.' "$help"
 	grep -Fq 'For remote targets, generate plans and run live checks on the target host through Tilde SSH transport.' "$help"
-	grep -Fq 'For update targets with missing `state.yml` or no `applied` anchors, use `plan --mode repair` for state recovery instead of refresh.' "$help"
+	grep -Fq 'For update targets with missing `state.yml` or no `applied` anchors, use `plan --mode repair` for state recovery instead of refresh; missing state is not proof the host was never deployed.' "$help"
 	grep -Fq 'After successful mutating remote apply, run a final target status read and report target HEAD separately from applied anchors.' "$help"
 	grep -Fq 'Do not read controller `~/.local/state/tilde/state.yml` for remote targets; target state lives on the target host.' "$help"
 
