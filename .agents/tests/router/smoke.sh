@@ -173,11 +173,14 @@ EOF
 	[[ -f $align_state/tilde/lock ]]
 
 	"$tilde" sudo handoff --host spinoza --no-copy >"$handoff"
-	grep -Fq "ssh -t 'spinoza' '\$HOME/.agents/skills/tilde/bin/tilde sudo allow'" "$handoff"
-	TILDE_FAKE_CLIPBOARD=$handoff_clipboard WAYLAND_DISPLAY=wayland-1 PATH=$fake_bin:$PATH \
+	grep -Fq "ssh -t spinoza '~/.agents/skills/tilde/bin/tilde sudo allow'" "$handoff"
+	if grep -Fq "TILDE=" "$handoff"; then
+		abort "handoff command should not require a TILDE assignment"
+	fi
+	env -u WAYLAND_DISPLAY -u DISPLAY TILDE_FAKE_CLIPBOARD="$handoff_clipboard" PATH="$fake_bin:$PATH" \
 		"$tilde" handoff --host spinoza >"$handoff"
 	grep -Fq "Clipboard: copied with wl-copy." "$handoff"
-	grep -Fq "ssh -t 'spinoza' '\$HOME/.agents/skills/tilde/bin/tilde sudo allow'" "$handoff_clipboard"
+	grep -Fq "ssh -t spinoza '~/.agents/skills/tilde/bin/tilde sudo allow'" "$handoff_clipboard"
 
 	if env -u TILDE_SUDO "$skill_root/bin/sudo" true >/dev/null 2>"$sudo_err"; then
 		abort "expected sudo shim to fail outside Tilde execution"

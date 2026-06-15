@@ -334,9 +334,11 @@ Privilege handoff:
 handoff
 ```
 
-`handoff` prints the exact privilege-preparation command for the local or selected remote host and attempts to copy it
-to the controller clipboard using a platform-appropriate clipboard command. Agents MUST run `handoff` on the controller,
-not through Tilde SSH transport, and MUST present the printed `Handoff command:` line exactly.
+`handoff` prints one shell-neutral privilege-preparation command line for the local or selected remote host and attempts
+to copy it to the controller clipboard using a platform-appropriate clipboard command. The command must be suitable for
+direct paste into bash, zsh, or fish. Agents MUST run `handoff` on the controller, not through Tilde SSH transport, and
+MUST present the printed `Handoff command:` line exactly. Agents MUST NOT split it into environment assignments and a
+separate command.
 
 ## 8. Module Sections
 

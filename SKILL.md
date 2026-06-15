@@ -275,10 +275,11 @@ If sudo is required and noninteractive sudo fails, report `deferred` and present
 "$TILDE" handoff --host spinoza --copy
 ```
 
-Run the helper on the controller, not inside `"$TILDE" ssh`. The helper prints the exact command and reports whether it
-copied the command to the controller clipboard. Copy or present the `Handoff command:` line exactly; do not rewrite it,
-replace the remote path with a local variable, or add extra quoting. Wait for the user to run it, then rerun the
-affected action and verify cleanup. Do not collect passwords in chat.
+Run the helper on the controller, not inside `"$TILDE" ssh`. The helper prints one shell-neutral command line and
+reports whether it copied the command to the controller clipboard. The command must work when pasted into bash, zsh, or
+fish. Copy or present the `Handoff command:` line exactly; do not rewrite it, split it into a `TILDE=...` assignment
+plus an `ssh` command, replace the remote path with a local variable, or add extra quoting. Wait for the user to run it,
+then rerun the affected action and verify cleanup. Do not collect passwords in chat.
 
 ## Weak-Model Guardrails
 
@@ -307,6 +308,6 @@ For weaker or low-context agents:
 - In remote summaries, distinguish `target HEAD` from `applied anchor`; do not call the target repository commit
   `local`.
 - Run `"$TILDE" handoff --host HOST --copy` on the controller after sudo deferral. Do not run handoff through
-  `"$TILDE" ssh`, and do not rewrite the printed `Handoff command:`.
+  `"$TILDE" ssh`, do not invent a two-line `TILDE=...` command, and do not rewrite the printed `Handoff command:`.
 - Remove packages, copies, files, or spans only with explicit managedness proof and proposal-first confirmation.
 - Prefer a safe `deferred` or `conflict` result over guessing.

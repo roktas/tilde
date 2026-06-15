@@ -38,53 +38,69 @@ copy_clipboard() {
 
 	local tool
 
-	tool=$(clipboard_tool) || return 1
+	while IFS= read -r tool; do
+		command -v "$tool" >/dev/null 2>&1 || continue
 
-	case ${tool##*/} in
-	pbcopy | wl-copy | clip.exe)
-		printf '%s' "$text" | "$tool" || return 1
-		;;
-	xclip)
-		printf '%s' "$text" | "$tool" -selection clipboard || return 1
-		;;
-	xsel)
-		printf '%s' "$text" | "$tool" --clipboard --input || return 1
-		;;
-	*)
-		return 1
-		;;
-	esac
+		case ${tool##*/} in
+		pbcopy | wl-copy | clip.exe)
+			printf '%s' "$text" | "$tool" >/dev/null 2>&1 || continue
+			;;
+		xclip)
+			printf '%s' "$text" | "$tool" -selection clipboard >/dev/null 2>&1 || continue
+			;;
+		xsel)
+			printf '%s' "$text" | "$tool" --clipboard --input >/dev/null 2>&1 || continue
+			;;
+		*)
+			continue
+			;;
+		esac
 
-	printf '%s\n' "${tool##*/}"
+		printf '%s\n' "${tool##*/}"
+		return
+	done < <(clipboard_candidates)
+
+	return 1
 }
 
-clipboard_tool() {
+clipboard_candidates() {
 	local os
 
 	os=$(uname -s 2>/dev/null || printf unknown)
 
 	case $os in
 	Darwin)
-		command -v pbcopy 2>/dev/null && return
+		printf '%s\n' pbcopy
 		;;
 	Linux)
-		if [[ -n ${WAYLAND_DISPLAY:-} ]]; then
-			command -v wl-copy 2>/dev/null && return
-		fi
-		if [[ -n ${DISPLAY:-} ]]; then
-			command -v xclip 2>/dev/null && return
-			command -v xsel 2>/dev/null && return
-		fi
+		printf '%s\n' wl-copy xclip xsel
 		if [[ -r /proc/version ]] && grep -qi microsoft /proc/version; then
-			command -v clip.exe 2>/dev/null && return
+			printf '%s\n' clip.exe
 		fi
 		;;
 	MINGW* | MSYS* | CYGWIN*)
-		command -v clip.exe 2>/dev/null && return
+		printf '%s\n' clip.exe
 		;;
 	esac
+}
 
-	return 1
+clipboard_tools() {
+	local joined
+	local tool
+
+	local -a tools=()
+
+	while IFS= read -r tool; do
+		command -v "$tool" >/dev/null 2>&1 || continue
+		tools+=("$tool")
+	done < <(clipboard_candidates)
+
+	((${#tools[@]} > 0)) || return 1
+	joined=${tools[0]}
+	for tool in "${tools[@]:1}"; do
+		joined+=", $tool"
+	done
+	printf '%s\n' "$joined"
 }
 
 emit_privilege() {
@@ -136,6 +152,16 @@ shell_quote() {
 	printf "'"
 	printf '%s' "$value" | sed "s/'/'\\\\''/g"
 	printf "'"
+}
+
+shell_word() {
+	local value=$1
+
+	if [[ $value =~ ^[A-Za-z0-9_@%+=:,./-]+$ ]]; then
+		printf '%s\n' "$value"
+	else
+		shell_quote "$value"
+	fi
 }
 
 sudo_privilege_failure() {
@@ -257,10 +283,11 @@ command.cleanup() {
 command.handoff() {
 	local copy=1
 	local host=
-	local root=\$HOME/.agents/skills/tilde
+	local root=\~/.agents/skills/tilde
 
 	local command
 	local tool
+	local tools
 	local remote
 
 	while (($# > 0)); do
@@ -299,7 +326,7 @@ command.handoff() {
 
 	remote="$root/bin/tilde sudo allow"
 	if [[ -n $host ]]; then
-		command="ssh -t $(shell_quote "$host") $(shell_quote "$remote")"
+		command="ssh -t $(shell_word "$host") $(shell_quote "$remote")"
 	else
 		command=$remote
 	fi
@@ -310,7 +337,11 @@ command.handoff() {
 		if tool=$(copy_clipboard "$command"); then
 			printf 'Clipboard: copied with %s.\n' "$tool"
 		else
-			printf 'Clipboard: unavailable on this controller; copy the command manually.\n'
+			if tools=$(clipboard_tools); then
+				printf 'Clipboard: unavailable on this controller after trying %s; copy the command manually.\n' "$tools"
+			else
+				printf 'Clipboard: unavailable on this controller; copy the command manually.\n'
+			fi
 		fi
 	fi
 }
