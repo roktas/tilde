@@ -191,7 +191,35 @@ The manifest may include:
 
 ## 7. Command Matrix
 
-Tilde command modes execute module sections according to this matrix.
+Tilde has three command surfaces:
+
+- Prompt commands are user/agent workflows written as `$tilde COMMAND ...`.
+- Runtime routes are direct `bin/tilde` helper commands.
+- Implementation routes are runtime primitives used inside an agent workflow.
+
+Prompt commands such as `deploy`, `update`, `repair`, `upgrade`, `adopt`, `create`, `init`, `clean`, and `organize` are
+interpreted by the loaded Tilde skill. They are not guaranteed to have a direct runtime route.
+
+Direct runtime commands such as `help`, `doctor`, `handoff`, and `status` may be run through `bin/tilde`. For remote
+targets, the command must run on the target host through the Tilde SSH transport.
+
+`align` is both a local runtime command and a prompt workflow. Remote align is agent-orchestrated.
+
+Implementation routes such as `ssh`, `plan`, `apply`, `sudo`, `boot`, `checkout`, `preflight`, and `smoke` are stable
+runtime primitives. They are not user-facing prompt commands.
+
+Tilde planning modes execute module sections according to this matrix.
+
+```text
+prompt command -> plan mode
+  deploy  -> apply
+  update  -> refresh
+  repair  -> repair
+  upgrade -> upgrade
+  align   -> align
+```
+
+The prompt command is `update`; the planning mode is `refresh`. Implementations MUST NOT invent a `--mode update`.
 
 ```text
 apply / install:
@@ -200,7 +228,7 @@ apply / install:
   Post Install, only if Install changed in the current run
   Configure
 
-update:
+refresh / update:
   Prerequisites
   Update
   Configure
@@ -210,6 +238,10 @@ repair:
   Install
   Post Install, only if Install changed in the current run
   Configure
+
+align:
+  links and copies only
+  no bootstrap, packages, or module code
 
 doctor:
   execute nothing
@@ -799,18 +831,32 @@ Agents delivering remote work MUST use `tilde ssh HOST` for script delivery.
 This guarantees the Tilde runtime and sudo intercept environment are active on
 the target.
 
-Agent-orchestrated remote workflows that generate plan files and apply them
-MUST deliver the full workflow as a single piped script body:
+Agent-orchestrated remote workflows that generate plan files and apply them MUST deliver the full workflow as a single
+piped script body. Planning and apply MUST both run on the target host. Platform detection, package inventory,
+repository bindings, and live checks come from the target host.
+
+Generating a plan on the controller for a remote host is invalid.
 
 ```text
 tilde ssh HOST << 'SCRIPT'
-tilde .plan ... > /tmp/tilde-plan.json
-tilde .apply --plan /tmp/tilde-plan.json
+tmpdir=$(mktemp -d)
+trap 'rm -rf "$tmpdir"' EXIT
+
+tilde plan --mode refresh --repo ~/Dropbox/home --host HOST --format json > "$tmpdir/public.json"
+tilde plan --mode refresh --repo ~/Dropbox/home- --host HOST --format json > "$tmpdir/private.json"
+tilde apply --plan "$tmpdir/public.json" --plan "$tmpdir/private.json"
 SCRIPT
 ```
 
-Exception: one-liner status checks such as `tilde doctor` may use direct
-`ssh HOST tilde doctor` when no multi-command sequencing is needed.
+Repository paths in remote scripts are the target host's configured bindings. Public-only targets omit the private plan.
+
+Single-command remote checks still use the same transport:
+
+```text
+tilde ssh HOST << 'SCRIPT'
+tilde doctor
+SCRIPT
+```
 
 ## 20. Security and Proposal-First Behavior
 

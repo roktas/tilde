@@ -30,8 +30,10 @@ write_prelude() {
 
 	cat <<'SH'
 set -eu
+LC_ALL=en_US.UTF-8
+LANG=en_US.UTF-8
 PATH="/opt/homebrew/bin:/usr/local/bin:/home/linuxbrew/.linuxbrew/bin:$HOME/.local/bin:$PATH"
-export PATH
+export LC_ALL LANG PATH
 SH
 	if [[ -n $root ]]; then
 		if [[ $root == "\$HOME/.agents/skills/tilde" ]]; then

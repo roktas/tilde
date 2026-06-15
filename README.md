@@ -93,22 +93,32 @@ a prerequisite, note, or explicit proposal-first operator action.
 ## Commands
 
 `$tilde` is a prompt contract. The installed runtime router also provides implemented helper routes through `bin/tilde`.
+Some commands are interpreted by the agent; some are direct runtime routes.
 
-| Command | Action |
-| --- | --- |
-| `help` | Show public commands or one command's usage. |
-| `deploy` | Prepare a local or remote host and apply desired state. |
-| `update` | Run explicit update behavior from the current desired state. |
-| `repair` | Apply current desired state again. |
-| `doctor` | Diagnose without executing module code or mutating targets. |
-| `handoff` | Copy and print the privilege handoff command for the local or remote host. |
-| `align` | Reconcile links and copies without bootstrap, packages, or module code. |
-| `adopt` | Propose adopting an app, config, package, or path. |
-| `create` | Propose public/private home repository creation. |
-| `init` | Bind existing public/private repositories. |
-| `clean` | Propose conservative cleanup. |
-| `organize` | Propose organization changes. |
-| `upgrade` | Run the widest explicitly requested update path. |
+| Command | Kind | Action |
+| --- | --- | --- |
+| `help` | runtime | Show public commands or one command's usage. |
+| `deploy` | agent | Prepare a local or remote host and apply desired state. |
+| `update` | agent | Run explicit update behavior from the current desired state. |
+| `repair` | agent | Apply current desired state again. |
+| `doctor` | runtime | Diagnose without executing module code or mutating targets. |
+| `handoff` | runtime | Copy and print the privilege handoff command for the local or remote host. |
+| `align` | dual | Reconcile links and copies without bootstrap, packages, or module code. |
+| `adopt` | agent | Propose adopting an app, config, package, or path. |
+| `create` | agent | Propose public/private home repository creation. |
+| `init` | agent | Bind existing public/private repositories. |
+| `clean` | agent | Propose conservative cleanup. |
+| `organize` | agent | Propose organization changes. |
+| `upgrade` | agent | Run the widest explicitly requested update path. |
+
+Kind meanings:
+
+- `agent`: interpreted by the loaded Tilde skill; no direct runtime route.
+- `runtime`: direct `bin/tilde` route. For remote targets, run it on the target through `tilde ssh HOST`.
+- `dual`: direct local runtime route plus prompt workflow. Remote targets are agent-orchestrated.
+
+For agent workflows, `update` maps to planning mode `refresh`. Plans for remote hosts must be generated and applied on
+the target host.
 
 Example prompts:
 
@@ -116,6 +126,7 @@ Example prompts:
 $tilde deploy
 $tilde deploy ssh:<host>
 $tilde update
+$tilde update ssh:<host>
 $tilde repair
 $tilde doctor
 $tilde align

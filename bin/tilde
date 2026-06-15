@@ -48,7 +48,7 @@ warn() {
 
 configure_locale() {
 	case ${LC_ALL:-${LANG:-}} in
-	"" | C | POSIX | C.UTF-8 | C.utf8)
+	"" | C | POSIX | C.*)
 		export LC_ALL=en_US.UTF-8
 		export LANG=en_US.UTF-8
 		;;
@@ -160,7 +160,7 @@ dispatch() {
 	fi
 
 	if is_agent_command "$route"; then
-		abort "\`$route\` is an agent-orchestrated Tilde prompt command; no direct runtime route is defined"
+		abort "\`$route\` is an agent-orchestrated Tilde prompt command; no direct runtime route is defined. Load the Tilde skill, read \`tilde help $route\`, and run the documented workflow."
 	fi
 
 	abort "unknown Tilde runtime route: $command"

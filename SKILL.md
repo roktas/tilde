@@ -20,12 +20,96 @@ The provisioning model is:
 
 When existing docs, code, habits, or memory conflict with `references/specification.md`, the specification wins.
 
+## Agent Quickstart
+
+When the user invokes `$tilde <command> [ssh:<host>] [qualifiers...]`:
+
+1. Treat `$tilde` as an agent prompt contract. Do not assume every command is a direct shell route.
+2. Identify the target: local host or `ssh:<host>`.
+3. Classify the command from the Command Reference below.
+4. Map agent-orchestrated commands to the Workflow Matrix before running helpers.
+5. For remote targets, use `tilde ssh HOST` for script delivery. Generate plans, run live checks, and apply results on
+   the target host, not on the controller.
+6. Keep proposal-first behavior for destructive, preference-sensitive, privilege-requiring, or remote mutations.
+7. After the run, summarize successful, changed, deferred, conflicted, and failed work.
+
+If a direct runtime call says a command is agent-orchestrated, stop trying shell variants of that command. Load this
+skill, classify the command, and run the appropriate agent workflow.
+
 ## Runtime
 
 The PATH-visible runtime surface is `bin/tilde`, `bin/sudo`, and helper commands intentionally exposed in the Tilde
 runtime PATH. Normal command implementations live in `libexec/` and are dispatched through `bin/tilde`.
 
-## Remote Script Delivery
+`bin/tilde` has direct runtime routes for helper and diagnostic commands. It intentionally refuses prompt commands such
+as `update`, `deploy`, and `repair`; those commands are interpreted and orchestrated by the loaded Tilde skill.
+
+Implementation routes such as `plan` and `apply` are stable primitives for agent workflows. They are not user-facing
+prompt commands. Use them only inside the workflow patterns in this skill and the specification.
+
+## Command Reference
+
+Commands are grouped by execution model.
+
+### Agent-Orchestrated Prompt Commands
+
+The agent interprets these high-level commands and orchestrates the workflow. They have no direct runtime route.
+
+- `deploy`: prepare a local or remote host and apply desired state.
+- `update`: run explicit update behavior from the current desired state.
+- `repair`: apply the current desired state again; it does not read a repair queue or module-level state.
+- `upgrade`: run the widest explicitly requested upgrade path.
+- `adopt`: inspect a requested app, config, package, or path and propose public/private repository placement.
+- `create`, `init`, `clean`, and `organize`: follow the specification and user policy; keep destructive or
+  preference-sensitive work proposal-first.
+
+Treat `dry-run` and `plan-only` as qualifiers. Do not invent a separate stateful planning model for them.
+
+### Direct Runtime Commands
+
+These commands have direct `bin/tilde` runtime routes. For remote targets, deliver the command through `tilde ssh HOST`
+so the target host supplies live facts.
+
+- `help`: show public commands or one command's usage.
+- `doctor`: diagnose state, repository, target, and managedness problems without executing module code or mutating
+  targets.
+- `handoff`: copy and print the privilege handoff command for the local or remote host.
+- `status`: show compact repository bindings and last fully converged anchors.
+
+### Dual Command
+
+- `align`: local link/copy reconciliation can run directly as `tilde align`. Remote align remains agent-orchestrated:
+  use `$tilde align ssh:<host>` semantics and deliver the target-side workflow through `tilde ssh HOST`.
+
+### Implementation Routes
+
+- `ssh`: deliver scripts to a remote host with the Tilde runtime environment active.
+- `plan`: produce a plan from current committed repository content and target-host facts.
+- `apply`: apply one or more plan files.
+- `sudo`: classify privilege needs and support handoff.
+- `boot`, `checkout`, `preflight`, and `smoke`: specialized runtime helpers.
+
+Do not present implementation routes as user-facing `$tilde` commands. When using them, prefer undotted route names such
+as `tilde plan` and `tilde apply`.
+
+## Workflow Matrix
+
+Agent commands map to planning modes and module sections as follows.
+
+| Prompt command | Plan mode | Module behavior |
+| --- | --- | --- |
+| `deploy` | `apply` | `Prerequisites`, `Install`, `Post Install` when `Install` changed, then `Configure` |
+| `update` | `refresh` | `Prerequisites`, `Update`, then `Configure` |
+| `repair` | `repair` | `Prerequisites`, `Install`, `Post Install` when `Install` changed, then `Configure` |
+| `upgrade` | `upgrade` | explicit broad update/upgrade behavior |
+| `align` | `align` | links and copies only; no bootstrap, packages, or module code |
+
+`create`, `init`, `clean`, `organize`, and `adopt` are proposal-first operator workflows unless a direct helper is
+explicitly documented for the requested step.
+
+The prompt command is `update`; the plan mode is `refresh`. Do not call or invent `--mode update`.
+
+## Remote Script Execution
 
 Use `bin/tilde ssh HOST` for all remote script execution. It sets up the
 correct Tilde runtime environment (PATH, TILDE_ROOT, TILDE_SUDO, locale) and
@@ -34,12 +118,22 @@ delivers the script body through `ssh HOST sh -s --`.
 Do not use raw `ssh`, `sh -c`, or `bash -lc` for multi-command remote work.
 These bypass Tilde's PATH setup and sudo interceptor.
 
+Always plan and execute on the target host. Platform detection, package inventory, repository bindings, and live checks
+come from the target. A controller-side plan for a remote host is invalid.
+
 ```bash
 tilde ssh HOST << 'SCRIPT'
-tilde .plan --repo ~/Dropbox/home --host HOST ... > /tmp/tilde-plan.json
-tilde .apply --plan /tmp/tilde-plan.json
+tmpdir=$(mktemp -d)
+trap 'rm -rf "$tmpdir"' EXIT
+
+tilde plan --mode refresh --repo ~/Dropbox/home --host HOST --format json > "$tmpdir/public.json"
+tilde plan --mode refresh --repo ~/Dropbox/home- --host HOST --format json > "$tmpdir/private.json"
+tilde apply --plan "$tmpdir/public.json" --plan "$tmpdir/private.json"
 SCRIPT
 ```
+
+Replace repository paths with the target host's configured bindings. Omit the private plan when the target has no
+private repository.
 
 When the script needs Bash features, pass the interpreter as an argument:
 
@@ -51,22 +145,6 @@ SCRIPT
 
 Use `tilde ssh --tty HOST` for interactive remote sessions that require a
 pseudo-terminal (e.g., `sudo` password prompts).
-
-## Public Commands
-
-- `help`: show public commands or one command's usage.
-- `deploy`: prepare a local or remote host and apply desired state.
-- `update`: run explicit update behavior from the current desired state.
-- `repair`: apply the current desired state again; it does not read a repair queue or module-level state.
-- `doctor`: diagnose state, repository, target, and managedness problems without executing module code or mutating
-  targets.
-- `handoff`: copy and print the privilege handoff command for the local or remote host.
-- `align`: reconcile links and copies without bootstrap, packages, or module code.
-- `adopt`: inspect a requested app, config, package, or path and propose public/private repository placement.
-- `create`, `init`, `clean`, `organize`, and `upgrade`: follow the specification and user policy; keep destructive or
-  preference-sensitive work proposal-first.
-
-Treat `dry-run` and `plan-only` as qualifiers. Do not invent a separate stateful planning model for them.
 
 ## Module Model
 
@@ -99,7 +177,7 @@ Managedness must be proven before destructive cleanup. No proof means no destruc
 If sudo is required and noninteractive sudo fails, report `deferred` and present:
 
 ```bash
-bin/tilde handoff --host HOST
+bin/tilde handoff --host HOST --copy
 ```
 
 The helper prints the exact command and reports whether it copied the command to the controller clipboard. Wait for the
@@ -113,5 +191,8 @@ For weaker or low-context agents:
 - Treat `Prerequisites` as read-only checks.
 - Advance `applied` anchors only after every required action succeeds.
 - Keep `applied` anchors unchanged after `deferred`, `conflict`, or `notok`.
+- Never plan a remote host from the controller.
+- Do not run `tilde update`, `tilde deploy`, or `tilde repair` as direct shell routes; these are prompt workflows.
+- Use `tilde plan --mode refresh` for the implementation of the `update` prompt command.
 - Remove packages, copies, files, or spans only with explicit managedness proof and proposal-first confirmation.
 - Prefer a safe `deferred` or `conflict` result over guessing.

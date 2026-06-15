@@ -96,8 +96,10 @@ EOF
 
 	"$tilde" >"$help"
 	grep -Fq 'Format: `$tilde <command> [<arguments>...]`' "$help"
-	grep -Fq '| `handoff` | Copy and print the privilege handoff command for the local or remote host. |' "$help"
-	grep -Fq '| `status` | Show compact repository bindings and last fully converged anchors. |' "$help"
+	grep -Fq '| `handoff` | `runtime` | Copy and print the privilege handoff command for the local or remote host. |' "$help"
+	grep -Fq '| `status` | `runtime` | Show compact repository bindings and last fully converged anchors. |' "$help"
+	grep -Fq '| `update` | `agent` | Run explicit update behavior from the current desired state. |' "$help"
+	grep -Fq 'For remote targets, generate plans and run live checks on the target host through `tilde ssh HOST`.' "$help"
 
 	"$tilde" .help status >"$status_help"
 	grep -Fq '## `status`' "$status_help"
@@ -161,6 +163,8 @@ EOF
 printf 'remote\n'
 EOF
 	tr '\n' ' ' <"$ssh_args" | grep -Fq 'target sh -s -- arg '
+	grep -Fq 'LC_ALL=en_US.UTF-8' "$ssh_body"
+	grep -Fq 'LANG=en_US.UTF-8' "$ssh_body"
 	grep -Fq 'PATH="/opt/homebrew/bin:/usr/local/bin:/home/linuxbrew/.linuxbrew/bin:$HOME/.local/bin:$PATH"' "$ssh_body"
 	grep -Fq "printf 'remote\\n'" "$ssh_body"
 	TILDE_FAKE_SSH_ARGS=$ssh_args TILDE_FAKE_SSH_BODY=$ssh_body PATH=$fake_bin:$PATH "$tilde" ssh target <<'EOF'

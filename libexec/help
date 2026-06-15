@@ -6,26 +6,28 @@ set -Eeuo pipefail
 unset CDPATH
 
 readonly -a COMMANDS=(
-	'adopt|Adopt an app, config, package, or path into the public or private data repository.'
-	'align|Reconcile links and copies without bootstrap, packages, or module scripts.'
-	'clean|Propose conservative cleanup, including duplicate candidates when relevant.'
-	'create|Create public/private home repository skeletons.'
-	'deploy|Prepare a host and install desired state.'
-	'doctor|Diagnose state, repository, target, and managedness problems without executing module code.'
-	'handoff|Copy and print the privilege handoff command for the local or remote host.'
-	'help|Show public commands or detailed help for one public command.'
-	'init|Register existing public/private repositories on this host.'
-	'organize|Propose organization changes, including archive moves when relevant.'
-	'repair|Apply the current desired state again.'
-	'status|Show compact repository bindings and last fully converged anchors.'
-	'update|Run explicit update behavior from the current desired state.'
-	'upgrade|Run the widest explicitly requested update path.'
+	'adopt|agent|Adopt an app, config, package, or path into the public or private data repository.'
+	'align|dual|Reconcile links and copies without bootstrap, packages, or module scripts.'
+	'clean|agent|Propose conservative cleanup, including duplicate candidates when relevant.'
+	'create|agent|Create public/private home repository skeletons.'
+	'deploy|agent|Prepare a host and install desired state.'
+	'doctor|runtime|Diagnose state, repository, target, and managedness problems without executing module code.'
+	'handoff|runtime|Copy and print the privilege handoff command for the local or remote host.'
+	'help|runtime|Show public commands or detailed help for one public command.'
+	'init|agent|Register existing public/private repositories on this host.'
+	'organize|agent|Propose organization changes, including archive moves when relevant.'
+	'repair|agent|Apply the current desired state again.'
+	'status|runtime|Show compact repository bindings and last fully converged anchors.'
+	'update|agent|Run explicit update behavior from the current desired state.'
+	'upgrade|agent|Run the widest explicitly requested update path.'
 )
 
 readonly -a EXAMPLES=(
 	'$tilde deploy|Discover local repositories and deploy this host.'
 	'$tilde deploy ssh:<host>|Deploy a remote host using target discovery.'
 	'$tilde deploy ssh:<host> --public PUBLIC_REPO|Deploy a Git-backed VPS with the public data repository.'
+	'$tilde update ssh:<host>|Update a remote host by planning and applying on that target.'
+	'$tilde doctor ssh:<host>|Run diagnostics on the remote target through Tilde SSH transport.'
 	'$tilde adopt APP_OR_PATH|Propose adopting a new app, config, package, or path.'
 	'$tilde repair|Apply current desired state again after a failed or deferred run.'
 )
@@ -43,18 +45,48 @@ warn() {
 # Helpers
 # ------------------------------------------------------------------------------------------------------------------------
 
-action_for() {
+entry_for() {
 	local name=$1
 
 	local item
 	for item in "${COMMANDS[@]}"; do
 		if [[ ${item%%|*} = "$name" ]]; then
-			printf '%s\n' "${item#*|}"
+			printf '%s\n' "$item"
 			return 0
 		fi
 	done
 
 	return 1
+}
+
+action_from() {
+	local entry=$1
+
+	entry=${entry#*|}
+	printf '%s\n' "${entry#*|}"
+}
+
+kind_from() {
+	local entry=$1
+
+	entry=${entry#*|}
+	printf '%s\n' "${entry%%|*}"
+}
+
+kind_note_for() {
+	local kind=$1
+
+	case $kind in
+	agent)
+		printf '%s\n' 'agent-orchestrated prompt command; the loaded Tilde skill runs the workflow'
+		;;
+	dual)
+		printf '%s\n' 'direct local runtime route plus prompt workflow; remote targets are agent-orchestrated'
+		;;
+	runtime)
+		printf '%s\n' 'direct bin/tilde runtime route for local targets; remote targets run through Tilde SSH transport'
+		;;
+	esac
 }
 
 usage_suffix_for() {
@@ -108,6 +140,8 @@ print_command_help() {
 	local name=$1
 
 	local action
+	local entry
+	local kind
 	local suffix
 
 	if [[ $name == custom.* ]]; then
@@ -117,33 +151,57 @@ print_command_help() {
 		return
 	fi
 
-	if ! action=$(action_for "$name"); then
+	if ! entry=$(entry_for "$name"); then
 		printf 'No such public Tilde command: `%s`.\n\n' "$name"
 		print_help
 		return
 	fi
 
+	action=$(action_from "$entry")
+	kind=$(kind_from "$entry")
 	suffix=$(usage_suffix_for "$name")
 
 	printf '## `%s`\n\n' "$name"
 	printf 'Usage: `$tilde %s%s`\n\n' "$name" "$suffix"
+	printf 'Kind: `%s` - %s.\n\n' "$kind" "$(kind_note_for "$kind")"
 	printf '%s\n' "$action"
+
+	if [[ $name = update ]]; then
+		printf '\nImplementation note: `%s` uses planning mode `refresh`; do not use `--mode update`.\n' "$name"
+	fi
+
+	case $name in
+	deploy | update | repair | upgrade)
+		printf '\nRemote note: generate and apply plans on the target host through `tilde ssh HOST`.\n'
+		;;
+	align)
+		printf '\nRemote note: `ssh:<host>` align is agent-orchestrated; deliver the target-side workflow with `tilde ssh HOST`.\n'
+		;;
+	doctor | status)
+		printf '\nRemote note: deliver remote diagnostics through `tilde ssh HOST`; do not run target checks on the controller.\n'
+		;;
+	esac
 }
 
 print_help() {
 	local example
 	local item
+	local kind
 	local name
 
 	printf 'Format: `$tilde <command> [<arguments>...]`\n\n'
-	printf '| Command | Action |\n'
-	printf '| --- | --- |\n'
+	printf '| Command | Kind | Action |\n'
+	printf '| --- | --- | --- |\n'
 
 	for item in "${COMMANDS[@]}"; do
 		name=${item%%|*}
-		printf '| `%s` | %s |\n' "$name" "${item#*|}"
+		kind=$(kind_from "$item")
+		printf '| `%s` | `%s` | %s |\n' "$name" "$kind" "$(action_from "$item")"
 	done
 
+	printf '\n'
+	printf 'Kinds: `agent` means interpreted by the loaded Tilde skill; `runtime` means a direct `bin/tilde` route; `dual` means both local runtime route and prompt workflow.\n'
+	printf 'For remote targets, generate plans and run live checks on the target host through `tilde ssh HOST`.\n'
 	printf '\n'
 	printf 'Detailed command help: `$tilde help <command>`\n'
 	printf 'Bare `$tilde` means `help`.\n'
