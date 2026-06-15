@@ -200,6 +200,11 @@ EOF
 	grep -Fq 'LANG=en_US.UTF-8' "$ssh_body"
 	grep -Fq 'PATH="/opt/homebrew/bin:/usr/local/bin:/home/linuxbrew/.linuxbrew/bin:$HOME/.local/bin:$PATH"' "$ssh_body"
 	grep -Fq "printf 'remote\\n'" "$ssh_body"
+	TILDE_FAKE_SSH_ARGS=$ssh_args TILDE_FAKE_SSH_BODY=$ssh_body PATH=$fake_bin:$PATH "$tilde" ssh target -- bash <<'EOF'
+printf 'bash\n'
+EOF
+	tr '\n' ' ' <"$ssh_args" | grep -Fq 'target bash -s -- '
+	grep -Fq "printf 'bash\\n'" "$ssh_body"
 	TILDE_FAKE_SSH_ARGS=$ssh_args TILDE_FAKE_SSH_BODY=$ssh_body PATH=$fake_bin:$PATH "$tilde" ssh target <<'EOF'
 printf 'rooted\n'
 EOF

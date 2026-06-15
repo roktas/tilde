@@ -229,7 +229,9 @@ HEAD `local` in summaries; that word is ambiguous from the controller.
 Inside the remote script body, bare `tilde` is valid because Tilde SSH transport places the target runtime directory at
 the front of `PATH`.
 
-When the script needs Bash features, pass the interpreter as an argument:
+Remote scripts should be `sh`-compatible by default, especially for macOS targets where Bash behavior may differ. When
+the target is known to have a suitable Bash and Bash-specific syntax is unavoidable, pass the interpreter as an
+argument:
 
 ```bash
 TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
@@ -269,6 +271,11 @@ performing one-off operator workflows.
 
 Managedness must be proven before destructive cleanup. No proof means no destructive mutation.
 
+When apply reports `conflict`, stop after reporting the exact conflicted targets and wait for an explicit user response
+before replacing files, forcing links, copying repository versions over targets, or rerunning apply. Do not infer consent
+from silence, from the fact that a conflict exists, or from the agent's own question. Conflict resolution may reveal
+additional conflicts in a later apply; repeat the same explicit-approval step for each newly revealed conflict.
+
 If sudo is required and noninteractive sudo fails, report `deferred` and present:
 
 ```bash
@@ -304,9 +311,13 @@ For weaker or low-context agents:
   if the active home policy does not define the requested group.
 - When traversing a host group, skip unreachable hosts after a bounded reachability check and continue with reachable
   hosts.
+- Keep remote scripts `sh`-compatible unless Bash is explicitly required and the target is known to support it. Do not
+  use Bash-only options such as `set -o pipefail` in the default `"$TILDE" ssh HOST << 'SCRIPT'` form.
 - After a successful mutating remote apply, run a final target status read before the final answer.
 - In remote summaries, distinguish `target HEAD` from `applied anchor`; do not call the target repository commit
   `local`.
+- After an apply conflict, stop and wait for an explicit user answer before copying repo files over targets, forcing
+  links, or rerunning apply. Newly revealed conflicts need a new explicit answer.
 - Run `"$TILDE" handoff --host HOST --copy` on the controller after sudo deferral. Do not run handoff through
   `"$TILDE" ssh`, do not invent a two-line `TILDE=...` command, and do not rewrite the printed `Handoff command:`.
 - Remove packages, copies, files, or spans only with explicit managedness proof and proposal-first confirmation.

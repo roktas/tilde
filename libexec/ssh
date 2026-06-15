@@ -17,6 +17,18 @@ warn() {
 # Helpers
 # ------------------------------------------------------------------------------------------------------------------------
 
+is_script_interpreter() {
+	local command=$1
+
+	case ${command##*/} in
+	bash | dash | ksh | sh | zsh)
+		return 0
+		;;
+	esac
+
+	return 1
+}
+
 shell_quote() {
 	local value=$1
 
@@ -68,15 +80,17 @@ SH
 
 usage() {
 	cat <<-EOF
-		Usage: "\$TILDE" ssh [--no-root] [--root ROOT] [--tty] HOST [-- ARG...]
+		Usage: "\$TILDE" ssh [--no-root] [--root ROOT] [--tty] HOST [-- [sh|bash|dash|ksh|zsh] [ARG...]]
 	EOF
 }
 
 main() {
 	local host=
+	local interpreter=sh
 	local root=\$HOME/.agents/skills/tilde
 	local tempfile
 	local -a remote_args=()
+	local -a script_args=()
 	local -a ssh_args=()
 
 	while (($# > 0)); do
@@ -139,10 +153,16 @@ main() {
 	trap 'rm -f "'"$tempfile"'"; exit 130' HUP INT QUIT TERM
 
 	cat >"$tempfile"
+	if ((${#remote_args[@]} > 0)) && is_script_interpreter "${remote_args[0]}"; then
+		interpreter=${remote_args[0]}
+		script_args=("${remote_args[@]:1}")
+	else
+		script_args=("${remote_args[@]}")
+	fi
 	{
 		write_prelude "$root"
 		cat "$tempfile"
-	} | ssh "${ssh_args[@]}" "$host" sh -s -- "${remote_args[@]}"
+	} | ssh "${ssh_args[@]}" "$host" "$interpreter" -s -- "${script_args[@]}"
 }
 
 main "$@"

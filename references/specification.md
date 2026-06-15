@@ -948,6 +948,16 @@ Repository paths in remote scripts are the target host's configured bindings. Pu
 Inside the remote script body, bare `tilde` is valid because the Tilde SSH transport has already set the target runtime
 PATH.
 
+Remote scripts should be `sh`-compatible by default, especially for macOS targets where Bash behavior may differ. When
+the target is known to have a suitable Bash and Bash-specific syntax is unavoidable, pass the interpreter after `--`;
+the transport MUST run that interpreter as the remote script reader:
+
+```text
+"$TILDE" ssh spinoza -- bash << 'SCRIPT'
+set -euo pipefail
+SCRIPT
+```
+
 After a successful mutating remote apply, agents MUST perform a final cheap target-local status read before final
 closeout:
 
@@ -991,6 +1001,11 @@ Tilde must propose before:
 - running one-off operator workflows.
 
 Helper commands MUST fail closed on malformed markers, ambiguous targets, binary files, and unmanaged conflicts.
+
+If apply returns a `conflict`, agents MUST stop after reporting the exact conflicted targets and MUST wait for an
+explicit user response before replacing files, forcing links, copying repository versions over targets, or rerunning
+apply. Consent is not implied by silence, by the existence of a conflict, or by the agent's own question. If resolving
+one conflict reveals another conflict in a later apply, the later conflict requires a separate explicit response.
 
 ## 21. State Recovery
 
