@@ -717,6 +717,10 @@ class Plan
              modules.flat_map { |mod| upgrade_module_actions(mod) }
     end
 
+    if refresh?
+      return modules.flat_map { |mod| refresh_module_actions(mod) }
+    end
+
     modules.flat_map { |mod| module_actions(mod) }
   end
 
@@ -920,7 +924,7 @@ class Plan
   def selected_special_sections(body)
     sections = special_sections(body)
     return sections.slice("Update") if full_refresh?
-    return {} if refresh?
+    return sections.slice("Prerequisites", "Update", "Configure") if refresh?
 
     sections.except("Update")
   end
