@@ -193,9 +193,12 @@ The manifest may include:
 
 Tilde has three command surfaces:
 
-- Prompt commands are user/agent workflows written as `$tilde COMMAND ...`.
+- Prompt commands are user/agent workflows written with a prompt marker such as `/tilde COMMAND ...`.
 - Runtime routes are direct `bin/tilde` helper commands.
 - Implementation routes are runtime primitives used inside an agent workflow.
+
+Prompt markers such as `/tilde` and `$tilde` are not shell commands. Implementations MUST NOT execute them in a
+terminal. Shell execution uses runtime commands such as `tilde help`, `tilde ssh HOST`, `tilde plan`, and `tilde apply`.
 
 Prompt commands such as `deploy`, `update`, `repair`, `upgrade`, `adopt`, `create`, `init`, `clean`, and `organize` are
 interpreted by the loaded Tilde skill. They are not guaranteed to have a direct runtime route.

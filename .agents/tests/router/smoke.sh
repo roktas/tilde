@@ -95,7 +95,8 @@ EOF
 	[[ -x $skill_root/libexec/sudo ]]
 
 	"$tilde" >"$help"
-	grep -Fq 'Format: `$tilde <command> [<arguments>...]`' "$help"
+	grep -Fq 'Prompt format: `/tilde <command> [<arguments>...]`' "$help"
+	grep -Fq 'Do not execute `/tilde ...` or `$tilde ...` in a terminal.' "$help"
 	grep -Fq '| `handoff` | `runtime` | Copy and print the privilege handoff command for the local or remote host. |' "$help"
 	grep -Fq '| `status` | `runtime` | Show compact repository bindings and last fully converged anchors. |' "$help"
 	grep -Fq '| `update` | `agent` | Run explicit update behavior from the current desired state. |' "$help"
@@ -104,6 +105,7 @@ EOF
 
 	"$tilde" .help status >"$status_help"
 	grep -Fq '## `status`' "$status_help"
+	grep -Fq 'Prompt: `/tilde status [ssh:<host>]`' "$status_help"
 	grep -Fq 'Remote state note: do not read controller `~/.local/state/tilde/state.yml`' "$status_help"
 
 	"$tilde" boot --help >"$boot_help"

@@ -1,6 +1,6 @@
 interface:
   display_name: "Tilde"
   short_description: "Deploy and manage Tilde homes"
-  default_prompt: "Use $tilde to inspect home state, propose the right deployment or adoption flow, and ask before applying it."
+  default_prompt: "Use the Tilde skill to inspect home state, propose the right deployment or adoption flow, and ask before applying it."
 policy:
   allow_implicit_invocation: true

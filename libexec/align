@@ -131,7 +131,7 @@ main() {
 			shift
 			;;
 		ssh:*)
-			abort "remote align is agent-orchestrated; use the Tilde skill with: \$tilde align $1"
+			abort "remote align is agent-orchestrated; use the Tilde skill with prompt: /tilde align $1"
 			;;
 		*)
 			abort "unknown align argument: $1"

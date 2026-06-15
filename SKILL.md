@@ -1,6 +1,6 @@
 ---
 name: tilde
-description: Use for Tilde deployment, provisioning, and home-management work. Trigger for `$tilde ...`, `~ ...`, messages whose first word is `tilde`, or requests to create, initialize, deploy, update, diagnose managed state, adopt app/config files, customize data-layer policy, or work with Tilde home behavior.
+description: Use for Tilde deployment, provisioning, and home-management work. Trigger for Tilde prompt markers such as `/tilde ...` or `$tilde ...`, `~ ...`, messages whose first word is `tilde`, or requests to create, initialize, deploy, update, diagnose managed state, adopt app/config files, customize data-layer policy, or work with Tilde home behavior.
 ---
 
 # Tilde
@@ -22,9 +22,9 @@ When existing docs, code, habits, or memory conflict with `references/specificat
 
 ## Agent Quickstart
 
-When the user invokes `$tilde <command> [ssh:<host>] [qualifiers...]`:
+When the user invokes a Tilde prompt such as `/tilde <command> [ssh:<host>] [qualifiers...]`:
 
-1. Treat `$tilde` as an agent prompt contract. Do not assume every command is a direct shell route.
+1. Treat `/tilde`, `$tilde`, and similar Tilde prompt markers as agent prompt contracts. They are not shell commands.
 2. Identify the target: local host or `ssh:<host>`.
 3. Classify the command from the Command Reference below.
 4. Map agent-orchestrated commands to the Workflow Matrix before running helpers.
@@ -35,6 +35,10 @@ When the user invokes `$tilde <command> [ssh:<host>] [qualifiers...]`:
 
 If a direct runtime call says a command is agent-orchestrated, stop trying shell variants of that command. Load this
 skill, classify the command, and run the appropriate agent workflow.
+
+Do not execute `/tilde ...` or `$tilde ...` in a terminal. `/tilde` is a prompt marker, and `$tilde` may be a Codex skill
+trigger or shell variable expansion depending on the environment. Shell execution uses runtime commands such as
+`tilde help`, `tilde ssh HOST`, `tilde plan`, and `tilde apply`.
 
 For `ssh:<host>` targets, the first target-state read must happen on the target through `tilde ssh HOST`. Do not inspect
 the controller's `~/.local/state/tilde/state.yml` to discover a remote host's repository bindings, applied anchors,
@@ -83,7 +87,7 @@ so the target host supplies live facts.
 ### Dual Command
 
 - `align`: local link/copy reconciliation can run directly as `tilde align`. Remote align remains agent-orchestrated:
-  use `$tilde align ssh:<host>` semantics and deliver the target-side workflow through `tilde ssh HOST`.
+  use `/tilde align ssh:<host>` prompt semantics and deliver the target-side workflow through `tilde ssh HOST`.
 
 ### Implementation Routes
 
@@ -93,8 +97,8 @@ so the target host supplies live facts.
 - `sudo`: classify privilege needs and support handoff.
 - `boot`, `checkout`, `preflight`, and `smoke`: specialized runtime helpers.
 
-Do not present implementation routes as user-facing `$tilde` commands. When using them, prefer undotted route names such
-as `tilde plan` and `tilde apply`.
+Do not present implementation routes as user-facing Tilde prompt commands. When using them, prefer undotted route names
+such as `tilde plan` and `tilde apply`.
 
 ## Workflow Matrix
 
@@ -125,8 +129,8 @@ These bypass Tilde's PATH setup and sudo interceptor.
 Always plan and execute on the target host. Platform detection, package inventory, repository bindings, and live checks
 come from the target. A controller-side plan for a remote host is invalid.
 
-Remote state is target-local. For `$tilde update ssh:HOST`, `$tilde deploy ssh:HOST`, `$tilde doctor ssh:HOST`,
-`$tilde status ssh:HOST`, and `$tilde align ssh:HOST`, do not read the controller's
+Remote state is target-local. For `/tilde update ssh:HOST`, `/tilde deploy ssh:HOST`, `/tilde doctor ssh:HOST`,
+`/tilde status ssh:HOST`, and `/tilde align ssh:HOST`, do not read the controller's
 `~/.local/state/tilde/state.yml`. If state or repository bindings are needed, read them on the target:
 
 ```bash
@@ -207,6 +211,7 @@ For weaker or low-context agents:
 - Keep `applied` anchors unchanged after `deferred`, `conflict`, or `notok`.
 - Never plan a remote host from the controller.
 - Never read controller `~/.local/state/tilde/state.yml` for an `ssh:<host>` target.
+- Never execute `/tilde ...` or `$tilde ...` in a shell; they are prompt markers, not runtime commands.
 - Do not run `tilde update`, `tilde deploy`, or `tilde repair` as direct shell routes; these are prompt workflows.
 - Use `tilde plan --mode refresh` for the implementation of the `update` prompt command.
 - Remove packages, copies, files, or spans only with explicit managedness proof and proposal-first confirmation.

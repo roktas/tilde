@@ -23,13 +23,13 @@ readonly -a COMMANDS=(
 )
 
 readonly -a EXAMPLES=(
-	'$tilde deploy|Discover local repositories and deploy this host.'
-	'$tilde deploy ssh:<host>|Deploy a remote host using target discovery.'
-	'$tilde deploy ssh:<host> --public PUBLIC_REPO|Deploy a Git-backed VPS with the public data repository.'
-	'$tilde update ssh:<host>|Update a remote host by planning and applying on that target.'
-	'$tilde doctor ssh:<host>|Run diagnostics on the remote target through Tilde SSH transport.'
-	'$tilde adopt APP_OR_PATH|Propose adopting a new app, config, package, or path.'
-	'$tilde repair|Apply current desired state again after a failed or deferred run.'
+	'/tilde deploy|Discover local repositories and deploy this host.'
+	'/tilde deploy ssh:<host>|Deploy a remote host using target discovery.'
+	'/tilde deploy ssh:<host> --public PUBLIC_REPO|Deploy a Git-backed VPS with the public data repository.'
+	'/tilde update ssh:<host>|Update a remote host by planning and applying on that target.'
+	'/tilde doctor ssh:<host>|Run diagnostics on the remote target through Tilde SSH transport.'
+	'/tilde adopt APP_OR_PATH|Propose adopting a new app, config, package, or path.'
+	'/tilde repair|Apply current desired state again after a failed or deferred run.'
 )
 
 abort() {
@@ -162,7 +162,7 @@ print_command_help() {
 	suffix=$(usage_suffix_for "$name")
 
 	printf '## `%s`\n\n' "$name"
-	printf 'Usage: `$tilde %s%s`\n\n' "$name" "$suffix"
+	printf 'Prompt: `/tilde %s%s`\n\n' "$name" "$suffix"
 	printf 'Kind: `%s` - %s.\n\n' "$kind" "$(kind_note_for "$kind")"
 	printf '%s\n' "$action"
 
@@ -192,7 +192,8 @@ print_help() {
 	local kind
 	local name
 
-	printf 'Format: `$tilde <command> [<arguments>...]`\n\n'
+	printf 'Prompt format: `/tilde <command> [<arguments>...]`\n'
+	printf 'This is an agent prompt marker, not a shell command. Do not execute `/tilde ...` or `$tilde ...` in a terminal.\n\n'
 	printf '| Command | Kind | Action |\n'
 	printf '| --- | --- | --- |\n'
 
@@ -207,8 +208,8 @@ print_help() {
 	printf 'For remote targets, generate plans and run live checks on the target host through `tilde ssh HOST`.\n'
 	printf 'Do not read controller `~/.local/state/tilde/state.yml` for remote targets; target state lives on the target host.\n'
 	printf '\n'
-	printf 'Detailed command help: `$tilde help <command>`\n'
-	printf 'Bare `$tilde` means `help`.\n'
+	printf 'Runtime help route: `tilde help <command>`\n'
+	printf 'Bare `/tilde` prompt means `help`.\n'
 	printf '\n'
 	printf 'Example prompts:\n\n'
 	printf '| Prompt | Intent |\n'

@@ -92,8 +92,9 @@ a prerequisite, note, or explicit proposal-first operator action.
 
 ## Commands
 
-`$tilde` is a prompt contract. The installed runtime router also provides implemented helper routes through `bin/tilde`.
-Some commands are interpreted by the agent; some are direct runtime routes.
+Tilde prompt markers such as `/tilde` and `$tilde` are prompt contracts, not shell commands. Use `/tilde` in examples to
+avoid confusing prompt notation with shell variable expansion. The installed runtime router also provides implemented
+helper routes through `bin/tilde`. Some commands are interpreted by the agent; some are direct runtime routes.
 
 | Command | Kind | Action |
 | --- | --- | --- |
@@ -127,13 +128,13 @@ state.
 Example prompts:
 
 ```text
-$tilde deploy
-$tilde deploy ssh:<host>
-$tilde update
-$tilde update ssh:<host>
-$tilde repair
-$tilde doctor
-$tilde align
+/tilde deploy
+/tilde deploy ssh:<host>
+/tilde update
+/tilde update ssh:<host>
+/tilde repair
+/tilde doctor
+/tilde align
 ```
 
 Use `dry-run` or `plan-only` when the user wants the proposal without applying it.
