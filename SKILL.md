@@ -22,12 +22,12 @@ When existing docs, code, habits, or memory conflict with `references/specificat
 
 ## Agent Quickstart
 
-When the user invokes a Tilde prompt such as `/tilde <command> [ssh:<host>] [qualifiers...]`:
+When the user invokes a Tilde prompt such as `/tilde <command> [target] [qualifiers...]`:
 
 1. Treat `/tilde`, `$tilde`, and similar Tilde prompt markers as agent prompt contracts. They are not shell commands.
 2. Resolve the controller-side runtime entrypoint before shell execution. Use the loaded skill directory's `bin/tilde`;
    if that path is not available, use `~/.agents/skills/tilde/bin/tilde`. Do not rely on bare `tilde` being on `PATH`.
-3. Identify the target: local host or `ssh:<host>`.
+3. Identify the target: current host, `HOST`, `ssh:HOST`, or `ALL`.
 4. Classify the command from the Command Reference below.
 5. Map agent-orchestrated commands to the Workflow Matrix before running helpers.
 6. For remote targets, use the resolved runtime entrypoint for script delivery. Generate plans, run live checks, and
@@ -52,9 +52,37 @@ TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
 If the skill was loaded from another directory, set `TILDE` to that directory's `bin/tilde` instead. If a controller-side
 `tilde` command is not found, do not search the filesystem for it; switch to the resolved runtime entrypoint.
 
-For `ssh:<host>` targets, the first target-state read must happen on the target through `"$TILDE" ssh HOST`. Do not
+For remote targets, the first target-state read must happen on the target through `"$TILDE" ssh HOST`. Do not
 inspect the controller's `~/.local/state/tilde/state.yml` to discover a remote host's repository bindings, applied
 anchors, level, platform, or bootstrap state. That file belongs only to the controller host.
+
+## Target Grammar
+
+Host-aware prompt commands accept these target forms:
+
+- no target: current host, also called localhost.
+- `HOST`: remote host shorthand for `ssh:HOST`.
+- `ssh:HOST`: explicit remote host target.
+- `ALL`: all managed hosts defined by the active home policy.
+
+The host-aware prompt commands are `deploy`, `update`, `repair`, `upgrade`, `align`, `status`, and `doctor`.
+Commands with their own subject syntax, such as `adopt APP_OR_PATH`, `clean SUBJECT`, `organize SUBJECT`, `create`, and
+`init`, do not treat a bare argument as a host unless the command's own policy says so.
+
+`ALL` is not a hostname. Expand it from the active `~/AGENTS.md` home policy before running any remote work. If the
+policy does not define `ALL`, ask the user for the host list. For mutating commands, present the expanded host list and
+obtain confirmation before applying changes. Run each host as a separate target workflow and report per-host results.
+
+When traversing `ALL`, perform a bounded noninteractive reachability check before each host workflow. Skip unreachable
+hosts and continue with the remaining hosts. Report skipped hosts separately; an unreachable host inside `ALL` is not a
+failure for reachable hosts. If every expanded host is unreachable, stop with a clear `deferred` result.
+
+```bash
+TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
+"$TILDE" ssh -o BatchMode=yes -o ConnectTimeout=5 HOST << 'SCRIPT'
+printf 'ok\n'
+SCRIPT
+```
 
 ## Runtime
 
@@ -102,7 +130,7 @@ These commands have direct `bin/tilde` runtime routes. For remote targets, deliv
 ### Dual Command
 
 - `align`: local link/copy reconciliation can run directly through the resolved runtime entrypoint. Remote align remains
-  agent-orchestrated: use `/tilde align ssh:<host>` prompt semantics and deliver the target-side workflow through
+  agent-orchestrated: use `/tilde align HOST` prompt semantics and deliver the target-side workflow through
   `"$TILDE" ssh HOST`.
 
 ### Implementation Routes
@@ -151,8 +179,8 @@ These bypass Tilde's PATH setup and sudo interceptor.
 Always plan and execute on the target host. Platform detection, package inventory, repository bindings, and live checks
 come from the target. A controller-side plan for a remote host is invalid.
 
-Remote state is target-local. For `/tilde update ssh:HOST`, `/tilde deploy ssh:HOST`, `/tilde doctor ssh:HOST`,
-`/tilde status ssh:HOST`, and `/tilde align ssh:HOST`, do not read the controller's
+Remote state is target-local. For `/tilde update HOST`, `/tilde update ssh:HOST`, `/tilde deploy HOST`,
+`/tilde deploy ssh:HOST`, `/tilde doctor HOST`, `/tilde status HOST`, and `/tilde align HOST`, do not read the controller's
 `~/.local/state/tilde/state.yml`. If state or repository bindings are needed, read them on the target:
 
 ```bash
@@ -252,13 +280,16 @@ For weaker or low-context agents:
 - Advance `applied` anchors only after every required action succeeds.
 - Keep `applied` anchors unchanged after `deferred`, `conflict`, or `notok`.
 - Never plan a remote host from the controller.
-- Never read controller `~/.local/state/tilde/state.yml` for an `ssh:<host>` target.
+- Never read controller `~/.local/state/tilde/state.yml` for a remote target.
 - Never execute `/tilde ...` or `$tilde ...` in a shell; they are prompt markers, not runtime commands.
 - Before any controller-side runtime call, resolve `TILDE` to the loaded skill directory's `bin/tilde`, falling back to
   `~/.agents/skills/tilde/bin/tilde`.
 - If bare `tilde` is not found on the controller, do not search for it; rerun through `"$TILDE"`.
 - Do not run the `update`, `deploy`, or `repair` routes through `"$TILDE"`; these are prompt workflows.
 - Use the `plan --mode refresh` implementation route for the `update` prompt command.
+- For host-aware prompt commands, treat bare `HOST` as `ssh:HOST`; omitted target means current host.
+- Treat `ALL` as a home-policy macro, not a hostname; ask the user if the active home policy does not define it.
+- When traversing `ALL`, skip unreachable hosts after a bounded reachability check and continue with reachable hosts.
 - After a successful mutating remote apply, run a final target status read before the final answer.
 - In remote summaries, distinguish `target HEAD` from `applied anchor`; do not call the target repository commit
   `local`.

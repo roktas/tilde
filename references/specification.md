@@ -225,6 +225,47 @@ remote script body delivered by `"$TILDE" ssh HOST`.
 Prompt commands such as `deploy`, `update`, `repair`, `upgrade`, `adopt`, `create`, `init`, `clean`, and `organize` are
 interpreted by the loaded Tilde skill. They are not guaranteed to have a direct runtime route.
 
+Host-aware prompt commands accept these target forms:
+
+```text
+no target   current host, also called localhost
+HOST        remote host shorthand for ssh:HOST
+ssh:HOST    explicit remote host target
+ALL         all managed hosts defined by the active home policy
+```
+
+The host-aware prompt commands are:
+
+```text
+deploy
+update
+repair
+upgrade
+align
+status
+doctor
+```
+
+Commands with their own subject syntax, such as `adopt APP_OR_PATH`, `clean SUBJECT`, `organize SUBJECT`, `create`, and
+`init`, MUST NOT treat a bare argument as a host unless the command's own policy explicitly says so.
+
+`ALL` is a home-policy macro, not a hostname. Agents MUST expand `ALL` from the active `~/AGENTS.md` policy before
+running remote work. If the policy does not define `ALL`, agents MUST ask the user for the host list. For mutating
+commands, agents MUST present the expanded host list and obtain confirmation before applying changes. Each expanded host
+is a separate target workflow with separate status, plan, apply, and closeout reporting.
+
+When traversing `ALL`, agents MUST perform a bounded noninteractive reachability check before each host workflow:
+
+```text
+"$TILDE" ssh -o BatchMode=yes -o ConnectTimeout=5 HOST << 'SCRIPT'
+printf 'ok\n'
+SCRIPT
+```
+
+If the reachability check fails, agents MUST mark that host `skipped`, report the reason briefly, and continue with the
+remaining hosts. An unreachable host inside `ALL` MUST NOT fail reachable hosts. If every expanded host is unreachable,
+the command result is `deferred`.
+
 Direct runtime commands such as `help`, `doctor`, `handoff`, and `status` may be run through `bin/tilde`. For remote
 targets, the command must run on the target host through the Tilde SSH transport.
 
@@ -842,9 +883,9 @@ For remote deployment, `state.yml` and `applied` anchors live on the target host
 
 Controller-side paths MUST NOT be written as target bindings.
 
-For an `ssh:<host>` target, the controller's `~/.local/state/tilde/state.yml` MUST NOT be used to discover or infer the
-target host's repository bindings, applied anchors, level, platform, bootstrap state, or desired-state status. That file
-belongs only to the controller host.
+For a remote target, the controller's `~/.local/state/tilde/state.yml` MUST NOT be used to discover or infer the target
+host's repository bindings, applied anchors, level, platform, bootstrap state, or desired-state status. That file belongs
+only to the controller host.
 
 A controller may inspect or mirror remote status, but the target host's own state file is authoritative for that host:
 
@@ -866,8 +907,8 @@ repository bindings, and live checks come from the target host.
 
 Generating a plan on the controller for a remote host is invalid.
 
-Reading controller deployment state before a remote workflow is also invalid. The first target-state read for
-`ssh:<host>` work MUST be delivered to the target:
+Reading controller deployment state before a remote workflow is also invalid. The first target-state read for remote
+work MUST be delivered to the target:
 
 ```text
 "$TILDE" ssh HOST << 'SCRIPT'

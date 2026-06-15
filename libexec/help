@@ -24,10 +24,11 @@ readonly -a COMMANDS=(
 
 readonly -a EXAMPLES=(
 	'/tilde deploy|Discover local repositories and deploy this host.'
-	'/tilde deploy ssh:<host>|Deploy a remote host using target discovery.'
-	'/tilde deploy ssh:<host> --public PUBLIC_REPO|Deploy a Git-backed VPS with the public data repository.'
-	'/tilde update ssh:<host>|Update a remote host by planning and applying on that target.'
-	'/tilde doctor ssh:<host>|Run diagnostics on the remote target through Tilde SSH transport.'
+	'/tilde deploy HOST|Deploy a remote host using target discovery.'
+	'/tilde deploy HOST --public PUBLIC_REPO|Deploy a Git-backed VPS with the public data repository.'
+	'/tilde update HOST|Update a remote host by planning and applying on that target.'
+	'/tilde update ALL|Update every managed host defined by the active home policy.'
+	'/tilde doctor HOST|Run diagnostics on the remote target through Tilde SSH transport.'
 	'/tilde adopt APP_OR_PATH|Propose adopting a new app, config, package, or path.'
 	'/tilde repair|Apply current desired state again after a failed or deferred run.'
 )
@@ -97,7 +98,7 @@ usage_suffix_for() {
 		printf '%s\n' ' <app|config|package|path>'
 		;;
 	align)
-		printf '%s\n' ' [--repo PATH] [--public PUBLIC_REPO] [--private PRIVATE_REPO] [dry-run|plan-only]'
+		printf '%s\n' ' [HOST|ssh:<host>|ALL] [--repo PATH] [--public PUBLIC_REPO] [--private PRIVATE_REPO] [dry-run|plan-only]'
 		;;
 	clean | organize)
 		printf '%s\n' ' [subject] [dry-run|plan-only]'
@@ -106,10 +107,10 @@ usage_suffix_for() {
 		printf '%s\n' ' [public-repo] [private-repo]'
 		;;
 	deploy)
-		printf '%s\n' ' [ssh:<host>] [--public PUBLIC_REPO] [--private PRIVATE_REPO] [dry-run|plan-only]'
+		printf '%s\n' ' [HOST|ssh:<host>|ALL] [--public PUBLIC_REPO] [--private PRIVATE_REPO] [dry-run|plan-only]'
 		;;
 	doctor | status)
-		printf '%s\n' ' [ssh:<host>]'
+		printf '%s\n' ' [HOST|ssh:<host>|ALL]'
 		;;
 	handoff)
 		printf '%s\n' ' [--host HOST] [--root ROOT] [--copy|--no-copy]'
@@ -121,13 +122,13 @@ usage_suffix_for() {
 		printf '%s\n' ' [public-repo] [private-repo]'
 		;;
 	update)
-		printf '%s\n' ' [ssh:<host>] [full] [dry-run|plan-only]'
+		printf '%s\n' ' [HOST|ssh:<host>|ALL] [full] [dry-run|plan-only]'
 		;;
 	repair)
-		printf '%s\n' ' [dry-run|plan-only]'
+		printf '%s\n' ' [HOST|ssh:<host>|ALL] [dry-run|plan-only]'
 		;;
 	upgrade)
-		printf '%s\n' ' [dry-run|plan-only]'
+		printf '%s\n' ' [HOST|ssh:<host>|ALL] [dry-run|plan-only]'
 		;;
 	esac
 }
@@ -177,7 +178,7 @@ print_command_help() {
 		printf 'Remote state note: do not read controller `~/.local/state/tilde/state.yml`; target bindings and anchors come from the target host.\n'
 		;;
 	align)
-		printf '\nRemote note: `ssh:<host>` align is agent-orchestrated; deliver the target-side workflow with `"$TILDE" ssh HOST`.\n'
+		printf '\nRemote note: remote align is agent-orchestrated; deliver the target-side workflow with `"$TILDE" ssh HOST`.\n'
 		printf 'Remote state note: do not read controller `~/.local/state/tilde/state.yml`; target bindings and anchors come from the target host.\n'
 		;;
 	doctor | status)
@@ -208,6 +209,8 @@ print_help() {
 	printf 'Kinds: `agent` means interpreted by the loaded Tilde skill; `runtime` means a direct `bin/tilde` route; `dual` means both local runtime route and prompt workflow.\n'
 	printf 'Runtime entrypoint: set `TILDE` to the loaded skill root `bin/tilde`; fallback `~/.agents/skills/tilde/bin/tilde`.\n'
 	printf 'Do not search `PATH` after `tilde: command not found`; retry with `"$TILDE"`.\n'
+	printf 'Target shorthand: omitted target means current host; bare `HOST` means `ssh:HOST`; `ALL` expands from the active home policy.\n'
+	printf 'When traversing `ALL`, skip hosts that fail a bounded noninteractive reachability check and continue with reachable hosts.\n'
 	printf 'For remote targets, generate plans and run live checks on the target host through `"$TILDE" ssh HOST`.\n'
 	printf 'After successful mutating remote apply, run a final target status read and report target HEAD separately from applied anchors.\n'
 	printf 'Do not read controller `~/.local/state/tilde/state.yml` for remote targets; target state lives on the target host.\n'

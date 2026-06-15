@@ -130,7 +130,9 @@ Kind meanings:
 For agent workflows, `update` maps to planning mode `refresh`. Plans for remote hosts must be generated and applied on
 the target host. After a successful mutating remote apply, read final status on the target before closeout.
 
-For `ssh:<host>` workflows, target state is also read on the target host. Do not use the controller's
+For host-aware prompt commands, omitted target means current host, bare `HOST` means `ssh:HOST`, and `ALL` means every
+managed host defined by the active home policy. For remote workflows, target state is also read on the target host. Do
+not use the controller's
 `~/.local/state/tilde/state.yml` to discover remote repository bindings, applied anchors, level, platform, or bootstrap
 state.
 
@@ -138,9 +140,10 @@ Example prompts:
 
 ```text
 /tilde deploy
-/tilde deploy ssh:<host>
+/tilde deploy HOST
 /tilde update
-/tilde update ssh:<host>
+/tilde update HOST
+/tilde update ALL
 /tilde repair
 /tilde doctor
 /tilde align
