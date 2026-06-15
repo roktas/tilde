@@ -33,7 +33,8 @@ When the user invokes a Tilde prompt such as `/tilde <command> [ssh:<host>] [qua
 6. For remote targets, use the resolved runtime entrypoint for script delivery. Generate plans, run live checks, and
    apply results on the target host, not on the controller.
 7. Keep proposal-first behavior for destructive, preference-sensitive, privilege-requiring, or remote mutations.
-8. After the run, summarize successful, changed, deferred, conflicted, and failed work.
+8. After a successful mutating remote apply, run a cheap final status read on the target before closeout.
+9. After the run, summarize successful, changed, deferred, conflicted, and failed work.
 
 If a direct runtime call says a command is agent-orchestrated, stop trying shell variants of that command. Load this
 skill, classify the command, and run the appropriate agent workflow.
@@ -176,6 +177,20 @@ SCRIPT
 Replace repository paths with the target host's configured bindings. Omit the private plan when the target has no
 private repository.
 
+After a successful mutating remote apply, verify target convergence with a separate cheap status read so the apply JSON
+stays easy to parse:
+
+```bash
+TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
+"$TILDE" ssh HOST << 'SCRIPT'
+tilde status --format markdown
+SCRIPT
+```
+
+Use `target HEAD` or `target current commit` for the repository commit currently checked out on the remote host. Use
+`applied anchor` for the commit recorded under `applied` in the target's `state.yml`. Do not call a remote repository
+HEAD `local` in summaries; that word is ambiguous from the controller.
+
 Inside the remote script body, bare `tilde` is valid because `"$TILDE" ssh HOST` places the target runtime directory at
 the front of `PATH`.
 
@@ -244,5 +259,8 @@ For weaker or low-context agents:
 - If bare `tilde` is not found on the controller, do not search for it; rerun through `"$TILDE"`.
 - Do not run the `update`, `deploy`, or `repair` routes through `"$TILDE"`; these are prompt workflows.
 - Use the `plan --mode refresh` implementation route for the `update` prompt command.
+- After a successful mutating remote apply, run a final target status read before the final answer.
+- In remote summaries, distinguish `target HEAD` from `applied anchor`; do not call the target repository commit
+  `local`.
 - Remove packages, copies, files, or spans only with explicit managedness proof and proposal-first confirmation.
 - Prefer a safe `deferred` or `conflict` result over guessing.

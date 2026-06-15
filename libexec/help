@@ -173,6 +173,7 @@ print_command_help() {
 	case $name in
 	deploy | update | repair | upgrade)
 		printf '\nRemote note: generate and apply plans on the target host through `"$TILDE" ssh HOST`.\n'
+		printf 'Remote verification note: after successful mutating apply, run a final target status read before closeout.\n'
 		printf 'Remote state note: do not read controller `~/.local/state/tilde/state.yml`; target bindings and anchors come from the target host.\n'
 		;;
 	align)
@@ -208,6 +209,7 @@ print_help() {
 	printf 'Runtime entrypoint: set `TILDE` to the loaded skill root `bin/tilde`; fallback `~/.agents/skills/tilde/bin/tilde`.\n'
 	printf 'Do not search `PATH` after `tilde: command not found`; retry with `"$TILDE"`.\n'
 	printf 'For remote targets, generate plans and run live checks on the target host through `"$TILDE" ssh HOST`.\n'
+	printf 'After successful mutating remote apply, run a final target status read and report target HEAD separately from applied anchors.\n'
 	printf 'Do not read controller `~/.local/state/tilde/state.yml` for remote targets; target state lives on the target host.\n'
 	printf '\n'
 	printf 'Runtime help route: `"$TILDE" help <command>`\n'

@@ -42,6 +42,7 @@ main() {
 	local sudo_out
 	local tilde
 	local tmpdir
+	local update_help
 
 	script_dir=$(cd -- "${BASH_SOURCE[0]%/*}" >/dev/null && pwd)
 	skill_root=$(cd -- "$script_dir/../../.." >/dev/null && pwd)
@@ -69,6 +70,7 @@ main() {
 	sudo_alias_root=$tmpdir/alias-root
 	sudo_err=$tmpdir/sudo.err
 	sudo_out=$tmpdir/sudo.out
+	update_help=$tmpdir/update-help.md
 
 	mkdir -p "$align_home" "$align_repo/config" "$align_repo/app" "$align_state/tilde" "$fake_bin" "$real_bin" "$sudo_alias_root/bin"
 	cat >"$fake_bin/ssh" <<'EOF'
@@ -103,6 +105,7 @@ EOF
 	grep -Fq 'Runtime entrypoint: set `TILDE` to the loaded skill root `bin/tilde`; fallback `~/.agents/skills/tilde/bin/tilde`.' "$help"
 	grep -Fq 'Do not search `PATH` after `tilde: command not found`; retry with `"$TILDE"`.' "$help"
 	grep -Fq 'For remote targets, generate plans and run live checks on the target host through `"$TILDE" ssh HOST`.' "$help"
+	grep -Fq 'After successful mutating remote apply, run a final target status read and report target HEAD separately from applied anchors.' "$help"
 	grep -Fq 'Do not read controller `~/.local/state/tilde/state.yml` for remote targets; target state lives on the target host.' "$help"
 
 	"$tilde" .help status >"$status_help"
@@ -110,6 +113,8 @@ EOF
 	grep -Fq 'Prompt: `/tilde status [ssh:<host>]`' "$status_help"
 	grep -Fq 'Remote note: deliver remote diagnostics through `"$TILDE" ssh HOST`; do not run target checks on the controller.' "$status_help"
 	grep -Fq 'Remote state note: do not read controller `~/.local/state/tilde/state.yml`' "$status_help"
+	"$tilde" .help update >"$update_help"
+	grep -Fq 'Remote verification note: after successful mutating apply, run a final target status read before closeout.' "$update_help"
 
 	"$tilde" boot --help >"$boot_help"
 	grep -Fq 'Usage: boot' "$boot_help"

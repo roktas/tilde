@@ -890,6 +890,27 @@ Repository paths in remote scripts are the target host's configured bindings. Pu
 Inside the remote script body, bare `tilde` is valid because the Tilde SSH transport has already set the target runtime
 PATH.
 
+After a successful mutating remote apply, agents MUST perform a final cheap target-local status read before final
+closeout:
+
+```text
+"$TILDE" ssh HOST << 'SCRIPT'
+tilde status --format markdown
+SCRIPT
+```
+
+The final status read verifies target-local `state.yml`, target repository heads, and applied anchors without broad
+discovery. It is not required for `dry-run`, `plan-only`, failed apply, or deferred apply.
+
+Remote summaries MUST distinguish:
+
+```text
+target HEAD     the repository commit currently checked out on the target host
+applied anchor  the commit recorded under applied in the target host state file
+```
+
+Do not call the target repository HEAD `local`; from the controller that word is ambiguous.
+
 Single-command remote checks still use the same transport:
 
 ```text
