@@ -156,7 +156,7 @@ Agent commands map to planning modes and module sections as follows.
 | `deploy` | `apply` | `Prerequisites`, `Install`, `Post Install` when `Install` changed, then `Configure` |
 | `update` | `refresh` | `Prerequisites`, `Update`, then `Configure` |
 | `repair` | `repair` | `Prerequisites`, `Install`, `Post Install` when `Install` changed, then `Configure` |
-| `upgrade` | `upgrade` | explicit broad update/upgrade behavior |
+| `upgrade` | `upgrade` | broad refresh behavior, then package upgrades |
 | `align` | `align` | links and copies only; no bootstrap, packages, or module code |
 
 `create`, `init`, `clean`, `organize`, and `adopt` are proposal-first operator workflows unless a direct helper is

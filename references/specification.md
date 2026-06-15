@@ -308,6 +308,12 @@ repair:
   Post Install, only if Install changed in the current run
   Configure
 
+upgrade:
+  Prerequisites
+  Update
+  Configure
+  package upgrade actions after refresh/update actions
+
 align:
   links and copies only
   no bootstrap, packages, or module code

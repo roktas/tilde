@@ -6,6 +6,7 @@ unset CDPATH
 
 cleanup_extra_module=
 cleanup_platform_module=
+cleanup_refresh_module=
 cleanup_repair_repo=
 cleanup_target_module=
 cleanup_tmpdir=
@@ -15,7 +16,7 @@ cleanup_tmpdir=
 # ------------------------------------------------------------------------------------------------------------------------
 
 cleanup() {
-	rm -rf "$cleanup_extra_module" "$cleanup_platform_module" "$cleanup_target_module"
+	rm -rf "$cleanup_extra_module" "$cleanup_platform_module" "$cleanup_refresh_module" "$cleanup_target_module"
 	[[ -z $cleanup_repair_repo ]] || rm -rf "$cleanup_repair_repo"
 	[[ -z $cleanup_tmpdir ]] || rm -rf "$cleanup_tmpdir"
 }
@@ -46,6 +47,7 @@ main() {
 	local private_plan_json
 	local private_repo
 	local refresh_plan_json
+	local refresh_module
 	local repair_repo=
 	local repair_plan_json
 	local repo
@@ -70,9 +72,11 @@ main() {
 	fi
 	extra_module=$repo/zz-extra-smoke
 	platform_module=$repo/zz-platform-smoke
+	refresh_module=$repo/zz-refresh-smoke
 	target_module=$repo/zz-target-smoke
 	cleanup_extra_module=$extra_module
 	cleanup_platform_module=$platform_module
+	cleanup_refresh_module=$refresh_module
 	cleanup_target_module=$target_module
 
 	trap cleanup EXIT HUP INT QUIT TERM
@@ -553,6 +557,29 @@ EOF
 	grep -q "Package name must not be empty" "$invalid_plan_err"
 
 	rm -rf "$platform_module"
+	rm -rf "$refresh_module"
+	mkdir -p "$refresh_module"
+	cat >"$refresh_module/README.md" <<'EOF'
+# Refresh Smoke
+
+## Prerequisites
+
+```bash
+test -n "$HOME"
+```
+
+## Update
+
+```bash
+printf 'update\n'
+```
+
+## Configure
+
+```bash
+printf 'configure\n'
+```
+EOF
 
 	"$tilde" plan --repo "$repo" --allow-dirty --mode align --platform linux --host smoke >"$align_plan_json"
 	"$tilde" plan --repo "$repo" --mode refresh --platform linux --host smoke >"$refresh_plan_json"
@@ -583,7 +610,12 @@ EOF
 		abort "missing linux module" unless linux
 		abort "missing fast brew refresh" unless linux.fetch("packages_to_refresh").any? { |pkg| pkg.fetch("value") == "brew:*" }
 		abort "refresh should not include per-package brew refresh" if plan.fetch("modules").any? { |mod| mod.fetch("packages_to_refresh").any? { |pkg| pkg.fetch("value") == "brew:neovim" } }
-		abort "fast refresh should not include update section" if neovim.fetch("special_sections").key?("Update")
+		abort "fast refresh should include update section" unless neovim.fetch("special_sections").key?("Update")
+		smoke = plan.fetch("modules").find { |mod| mod.fetch("name") == "zz-refresh-smoke" }
+		abort "missing refresh smoke module" unless smoke
+		abort "refresh should include prerequisite section" unless smoke.fetch("special_sections").key?("Prerequisites")
+		abort "refresh should include update section" unless smoke.fetch("special_sections").key?("Update")
+		abort "refresh should include configure section" unless smoke.fetch("special_sections").key?("Configure")
 	'
 
 	FULL_REFRESH_PLAN_JSON=$full_refresh_plan_json ruby -rjson -e '
@@ -596,6 +628,11 @@ EOF
 		neovim = plan.fetch("modules").find { |mod| mod.fetch("name") == "neovim" }
 		abort "missing neovim module" unless neovim
 		abort "missing neovim update section" unless neovim.fetch("special_sections").key?("Update")
+		smoke = plan.fetch("modules").find { |mod| mod.fetch("name") == "zz-refresh-smoke" }
+		abort "missing full refresh smoke module" unless smoke
+		abort "full refresh should include prerequisite section" unless smoke.fetch("special_sections").key?("Prerequisites")
+		abort "full refresh should include update section" unless smoke.fetch("special_sections").key?("Update")
+		abort "full refresh should include configure section" unless smoke.fetch("special_sections").key?("Configure")
 	'
 
 	UPGRADE_PLAN_JSON=$upgrade_plan_json ruby -rjson -e '
@@ -613,6 +650,11 @@ EOF
 		neovim = plan.fetch("modules").find { |mod| mod.fetch("name") == "neovim" }
 		abort "missing neovim module" unless neovim
 		abort "upgrade should include update section" unless neovim.fetch("special_sections").key?("Update")
+		smoke = plan.fetch("modules").find { |mod| mod.fetch("name") == "zz-refresh-smoke" }
+		abort "missing upgrade smoke module" unless smoke
+		abort "upgrade should include prerequisite section" unless smoke.fetch("special_sections").key?("Prerequisites")
+		abort "upgrade should include update section" unless smoke.fetch("special_sections").key?("Update")
+		abort "upgrade should include configure section" unless smoke.fetch("special_sections").key?("Configure")
 		actions = plan.fetch("actions")
 		update_indexes = actions.each_index.select { |index| actions.fetch(index).fetch("name", nil) == "Update" }
 		upgrade_indexes = actions.each_index.select { |index| actions.fetch(index).fetch("operation", nil) == "upgrade" }

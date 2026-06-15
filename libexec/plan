@@ -711,17 +711,15 @@ class Plan
 
   def ordered_module_actions(modules)
     return modules.flat_map { |mod| align_module_actions(mod) } if align?
-
-    if upgrade?
-      return modules.flat_map { |mod| refresh_module_actions(mod) } +
-             modules.flat_map { |mod| upgrade_module_actions(mod) }
-    end
-
-    if refresh?
-      return modules.flat_map { |mod| refresh_module_actions(mod) }
-    end
+    return ordered_upgrade_actions(modules) if upgrade?
+    return modules.flat_map { |mod| refresh_module_actions(mod) } if refresh?
 
     modules.flat_map { |mod| module_actions(mod) }
+  end
+
+  def ordered_upgrade_actions(modules)
+    modules.flat_map { |mod| refresh_module_actions(mod) } +
+      modules.flat_map { |mod| upgrade_module_actions(mod) }
   end
 
   def package_plan_actions(mod, operation, packages)
@@ -923,8 +921,7 @@ class Plan
 
   def selected_special_sections(body)
     sections = special_sections(body)
-    return sections.slice("Update") if full_refresh?
-    return sections.slice("Prerequisites", "Update", "Configure") if refresh?
+    return sections.slice("Prerequisites", "Update", "Configure") if refresh? || upgrade?
 
     sections.except("Update")
   end
