@@ -25,29 +25,43 @@ When existing docs, code, habits, or memory conflict with `references/specificat
 When the user invokes a Tilde prompt such as `/tilde <command> [ssh:<host>] [qualifiers...]`:
 
 1. Treat `/tilde`, `$tilde`, and similar Tilde prompt markers as agent prompt contracts. They are not shell commands.
-2. Identify the target: local host or `ssh:<host>`.
-3. Classify the command from the Command Reference below.
-4. Map agent-orchestrated commands to the Workflow Matrix before running helpers.
-5. For remote targets, use `tilde ssh HOST` for script delivery. Generate plans, run live checks, and apply results on
-   the target host, not on the controller.
-6. Keep proposal-first behavior for destructive, preference-sensitive, privilege-requiring, or remote mutations.
-7. After the run, summarize successful, changed, deferred, conflicted, and failed work.
+2. Resolve the controller-side runtime entrypoint before shell execution. Use the loaded skill directory's `bin/tilde`;
+   if that path is not available, use `~/.agents/skills/tilde/bin/tilde`. Do not rely on bare `tilde` being on `PATH`.
+3. Identify the target: local host or `ssh:<host>`.
+4. Classify the command from the Command Reference below.
+5. Map agent-orchestrated commands to the Workflow Matrix before running helpers.
+6. For remote targets, use the resolved runtime entrypoint for script delivery. Generate plans, run live checks, and
+   apply results on the target host, not on the controller.
+7. Keep proposal-first behavior for destructive, preference-sensitive, privilege-requiring, or remote mutations.
+8. After the run, summarize successful, changed, deferred, conflicted, and failed work.
 
 If a direct runtime call says a command is agent-orchestrated, stop trying shell variants of that command. Load this
 skill, classify the command, and run the appropriate agent workflow.
 
 Do not execute `/tilde ...` or `$tilde ...` in a terminal. `/tilde` is a prompt marker, and `$tilde` may be a Codex skill
-trigger or shell variable expansion depending on the environment. Shell execution uses runtime commands such as
-`tilde help`, `tilde ssh HOST`, `tilde plan`, and `tilde apply`.
+trigger or shell variable expansion depending on the environment. Shell execution uses the resolved runtime entrypoint,
+written as `"$TILDE"` in examples:
 
-For `ssh:<host>` targets, the first target-state read must happen on the target through `tilde ssh HOST`. Do not inspect
-the controller's `~/.local/state/tilde/state.yml` to discover a remote host's repository bindings, applied anchors,
-level, platform, or bootstrap state. That file belongs only to the controller host.
+```bash
+TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
+"$TILDE" help
+"$TILDE" ssh HOST
+```
+
+If the skill was loaded from another directory, set `TILDE` to that directory's `bin/tilde` instead. If a controller-side
+`tilde` command is not found, do not search the filesystem for it; switch to the resolved runtime entrypoint.
+
+For `ssh:<host>` targets, the first target-state read must happen on the target through `"$TILDE" ssh HOST`. Do not
+inspect the controller's `~/.local/state/tilde/state.yml` to discover a remote host's repository bindings, applied
+anchors, level, platform, or bootstrap state. That file belongs only to the controller host.
 
 ## Runtime
 
 The PATH-visible runtime surface is `bin/tilde`, `bin/sudo`, and helper commands intentionally exposed in the Tilde
 runtime PATH. Normal command implementations live in `libexec/` and are dispatched through `bin/tilde`.
+
+Controller-side runtime calls must go through the resolved entrypoint. Bare `tilde` is valid only when the Tilde runtime
+PATH is already active, such as inside a remote script delivered by `"$TILDE" ssh HOST`.
 
 `bin/tilde` has direct runtime routes for helper and diagnostic commands. It intentionally refuses prompt commands such
 as `update`, `deploy`, and `repair`; those commands are interpreted and orchestrated by the loaded Tilde skill.
@@ -75,8 +89,8 @@ Treat `dry-run` and `plan-only` as qualifiers. Do not invent a separate stateful
 
 ### Direct Runtime Commands
 
-These commands have direct `bin/tilde` runtime routes. For remote targets, deliver the command through `tilde ssh HOST`
-so the target host supplies live facts.
+These commands have direct `bin/tilde` runtime routes. For remote targets, deliver the command through
+`"$TILDE" ssh HOST` so the target host supplies live facts.
 
 - `help`: show public commands or one command's usage.
 - `doctor`: diagnose state, repository, target, and managedness problems without executing module code or mutating
@@ -86,8 +100,9 @@ so the target host supplies live facts.
 
 ### Dual Command
 
-- `align`: local link/copy reconciliation can run directly as `tilde align`. Remote align remains agent-orchestrated:
-  use `/tilde align ssh:<host>` prompt semantics and deliver the target-side workflow through `tilde ssh HOST`.
+- `align`: local link/copy reconciliation can run directly through the resolved runtime entrypoint. Remote align remains
+  agent-orchestrated: use `/tilde align ssh:<host>` prompt semantics and deliver the target-side workflow through
+  `"$TILDE" ssh HOST`.
 
 ### Implementation Routes
 
@@ -97,8 +112,8 @@ so the target host supplies live facts.
 - `sudo`: classify privilege needs and support handoff.
 - `boot`, `checkout`, `preflight`, and `smoke`: specialized runtime helpers.
 
-Do not present implementation routes as user-facing Tilde prompt commands. When using them, prefer undotted route names
-such as `tilde plan` and `tilde apply`.
+Do not present implementation routes as user-facing Tilde prompt commands. When using them on the controller, use the
+resolved runtime entrypoint with undotted route names such as `"$TILDE" plan` and `"$TILDE" apply`.
 
 ## Workflow Matrix
 
@@ -119,9 +134,15 @@ The prompt command is `update`; the plan mode is `refresh`. Do not call or inven
 
 ## Remote Script Execution
 
-Use `bin/tilde ssh HOST` for all remote script execution. It sets up the
-correct Tilde runtime environment (PATH, TILDE_ROOT, TILDE_SUDO, locale) and
-delivers the script body through `ssh HOST sh -s --`.
+Use the resolved runtime entrypoint for all remote script execution:
+
+```bash
+TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
+"$TILDE" ssh HOST
+```
+
+It sets up the correct Tilde runtime environment (PATH, TILDE_ROOT, TILDE_SUDO, locale) and delivers the script body
+through `ssh HOST sh -s --`.
 
 Do not use raw `ssh`, `sh -c`, or `bash -lc` for multi-command remote work.
 These bypass Tilde's PATH setup and sudo interceptor.
@@ -134,13 +155,15 @@ Remote state is target-local. For `/tilde update ssh:HOST`, `/tilde deploy ssh:H
 `~/.local/state/tilde/state.yml`. If state or repository bindings are needed, read them on the target:
 
 ```bash
-tilde ssh HOST << 'SCRIPT'
+TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
+"$TILDE" ssh HOST << 'SCRIPT'
 tilde status --format markdown
 SCRIPT
 ```
 
 ```bash
-tilde ssh HOST << 'SCRIPT'
+TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
+"$TILDE" ssh HOST << 'SCRIPT'
 tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT
 
@@ -153,16 +176,20 @@ SCRIPT
 Replace repository paths with the target host's configured bindings. Omit the private plan when the target has no
 private repository.
 
+Inside the remote script body, bare `tilde` is valid because `"$TILDE" ssh HOST` places the target runtime directory at
+the front of `PATH`.
+
 When the script needs Bash features, pass the interpreter as an argument:
 
 ```bash
-tilde ssh HOST -- bash << 'SCRIPT'
+TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
+"$TILDE" ssh HOST -- bash << 'SCRIPT'
 # bash-specific syntax here
 SCRIPT
 ```
 
-Use `tilde ssh --tty HOST` for interactive remote sessions that require a
-pseudo-terminal (e.g., `sudo` password prompts).
+Use `"$TILDE" ssh --tty HOST` for interactive remote sessions that require a pseudo-terminal (e.g., `sudo` password
+prompts).
 
 ## Module Model
 
@@ -195,7 +222,7 @@ Managedness must be proven before destructive cleanup. No proof means no destruc
 If sudo is required and noninteractive sudo fails, report `deferred` and present:
 
 ```bash
-bin/tilde handoff --host HOST --copy
+"$TILDE" handoff --host HOST --copy
 ```
 
 The helper prints the exact command and reports whether it copied the command to the controller clipboard. Wait for the
@@ -212,7 +239,10 @@ For weaker or low-context agents:
 - Never plan a remote host from the controller.
 - Never read controller `~/.local/state/tilde/state.yml` for an `ssh:<host>` target.
 - Never execute `/tilde ...` or `$tilde ...` in a shell; they are prompt markers, not runtime commands.
-- Do not run `tilde update`, `tilde deploy`, or `tilde repair` as direct shell routes; these are prompt workflows.
-- Use `tilde plan --mode refresh` for the implementation of the `update` prompt command.
+- Before any controller-side runtime call, resolve `TILDE` to the loaded skill directory's `bin/tilde`, falling back to
+  `~/.agents/skills/tilde/bin/tilde`.
+- If bare `tilde` is not found on the controller, do not search for it; rerun through `"$TILDE"`.
+- Do not run the `update`, `deploy`, or `repair` routes through `"$TILDE"`; these are prompt workflows.
+- Use the `plan --mode refresh` implementation route for the `update` prompt command.
 - Remove packages, copies, files, or spans only with explicit managedness proof and proposal-first confirmation.
 - Prefer a safe `deferred` or `conflict` result over guessing.

@@ -96,6 +96,15 @@ Tilde prompt markers such as `/tilde` and `$tilde` are prompt contracts, not she
 avoid confusing prompt notation with shell variable expansion. The installed runtime router also provides implemented
 helper routes through `bin/tilde`. Some commands are interpreted by the agent; some are direct runtime routes.
 
+When a shell runtime helper is needed, resolve the runtime entrypoint from the loaded skill directory's `bin/tilde`.
+Fallback to the installed skill path:
+
+```sh
+TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
+```
+
+Do not rely on bare `tilde` being on the controller `PATH`.
+
 | Command | Kind | Action |
 | --- | --- | --- |
 | `help` | runtime | Show public commands or one command's usage. |
@@ -115,7 +124,7 @@ helper routes through `bin/tilde`. Some commands are interpreted by the agent; s
 Kind meanings:
 
 - `agent`: interpreted by the loaded Tilde skill; no direct runtime route.
-- `runtime`: direct `bin/tilde` route. For remote targets, run it on the target through `tilde ssh HOST`.
+- `runtime`: direct `bin/tilde` route. For remote targets, run it on the target through `"$TILDE" ssh HOST`.
 - `dual`: direct local runtime route plus prompt workflow. Remote targets are agent-orchestrated.
 
 For agent workflows, `update` maps to planning mode `refresh`. Plans for remote hosts must be generated and applied on

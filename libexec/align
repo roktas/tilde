@@ -46,7 +46,7 @@ host_name() {
 
 usage() {
 	cat <<-EOF
-		Usage: tilde align [--repo PATH] [--public PATH] [--private PATH] [--host HOST] [--level LEVEL] [--allow-dirty] [--dry-run|--plan-only]
+		Usage: "\$TILDE" align [--repo PATH] [--public PATH] [--private PATH] [--host HOST] [--level LEVEL] [--allow-dirty] [--dry-run|--plan-only]
 	EOF
 }
 

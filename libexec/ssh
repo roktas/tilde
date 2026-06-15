@@ -56,7 +56,7 @@ SH
 
 usage() {
 	cat <<-EOF
-		Usage: tilde ssh [--no-root] [--root ROOT] [--tty] HOST [-- ARG...]
+		Usage: "\$TILDE" ssh [--no-root] [--root ROOT] [--tty] HOST [-- ARG...]
 	EOF
 }
 

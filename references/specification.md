@@ -198,7 +198,29 @@ Tilde has three command surfaces:
 - Implementation routes are runtime primitives used inside an agent workflow.
 
 Prompt markers such as `/tilde` and `$tilde` are not shell commands. Implementations MUST NOT execute them in a
-terminal. Shell execution uses runtime commands such as `tilde help`, `tilde ssh HOST`, `tilde plan`, and `tilde apply`.
+terminal.
+
+Before executing a controller-side runtime route, agents MUST resolve the Tilde runtime entrypoint. The preferred
+entrypoint is the loaded skill directory's `bin/tilde`. If that path is not available, the fallback entrypoint is:
+
+```text
+~/.agents/skills/tilde/bin/tilde
+```
+
+Examples write the resolved entrypoint as `"$TILDE"`:
+
+```sh
+TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
+"$TILDE" help
+"$TILDE" ssh HOST
+```
+
+Agents MUST NOT rely on bare `tilde` being on the controller `PATH`. If a controller-side `tilde` command returns
+`command not found`, the agent MUST NOT search the filesystem for another command. It MUST retry through the resolved
+runtime entrypoint.
+
+Bare `tilde` is valid only where Tilde has already made its runtime `bin/` directory PATH-visible, including inside a
+remote script body delivered by `"$TILDE" ssh HOST`.
 
 Prompt commands such as `deploy`, `update`, `repair`, `upgrade`, `adopt`, `create`, `init`, `clean`, and `organize` are
 interpreted by the loaded Tilde skill. They are not guaranteed to have a direct runtime route.
@@ -834,7 +856,7 @@ The host-local lock is also target-local.
 
 ### 19.1 Agent Remote-Work Pattern
 
-Agents delivering remote work MUST use `tilde ssh HOST` for script delivery.
+Agents delivering remote work MUST use `"$TILDE" ssh HOST` for script delivery.
 This guarantees the Tilde runtime and sudo intercept environment are active on
 the target.
 
@@ -848,13 +870,13 @@ Reading controller deployment state before a remote workflow is also invalid. Th
 `ssh:<host>` work MUST be delivered to the target:
 
 ```text
-tilde ssh HOST << 'SCRIPT'
+"$TILDE" ssh HOST << 'SCRIPT'
 tilde status --format markdown
 SCRIPT
 ```
 
 ```text
-tilde ssh HOST << 'SCRIPT'
+"$TILDE" ssh HOST << 'SCRIPT'
 tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT
 
@@ -865,11 +887,13 @@ SCRIPT
 ```
 
 Repository paths in remote scripts are the target host's configured bindings. Public-only targets omit the private plan.
+Inside the remote script body, bare `tilde` is valid because the Tilde SSH transport has already set the target runtime
+PATH.
 
 Single-command remote checks still use the same transport:
 
 ```text
-tilde ssh HOST << 'SCRIPT'
+"$TILDE" ssh HOST << 'SCRIPT'
 tilde doctor
 SCRIPT
 ```

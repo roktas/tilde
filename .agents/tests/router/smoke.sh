@@ -100,12 +100,15 @@ EOF
 	grep -Fq '| `handoff` | `runtime` | Copy and print the privilege handoff command for the local or remote host. |' "$help"
 	grep -Fq '| `status` | `runtime` | Show compact repository bindings and last fully converged anchors. |' "$help"
 	grep -Fq '| `update` | `agent` | Run explicit update behavior from the current desired state. |' "$help"
-	grep -Fq 'For remote targets, generate plans and run live checks on the target host through `tilde ssh HOST`.' "$help"
+	grep -Fq 'Runtime entrypoint: set `TILDE` to the loaded skill root `bin/tilde`; fallback `~/.agents/skills/tilde/bin/tilde`.' "$help"
+	grep -Fq 'Do not search `PATH` after `tilde: command not found`; retry with `"$TILDE"`.' "$help"
+	grep -Fq 'For remote targets, generate plans and run live checks on the target host through `"$TILDE" ssh HOST`.' "$help"
 	grep -Fq 'Do not read controller `~/.local/state/tilde/state.yml` for remote targets; target state lives on the target host.' "$help"
 
 	"$tilde" .help status >"$status_help"
 	grep -Fq '## `status`' "$status_help"
 	grep -Fq 'Prompt: `/tilde status [ssh:<host>]`' "$status_help"
+	grep -Fq 'Remote note: deliver remote diagnostics through `"$TILDE" ssh HOST`; do not run target checks on the controller.' "$status_help"
 	grep -Fq 'Remote state note: do not read controller `~/.local/state/tilde/state.yml`' "$status_help"
 
 	"$tilde" boot --help >"$boot_help"
@@ -113,7 +116,7 @@ EOF
 	"$tilde" bootstrap --help >"$boot_help"
 	grep -Fq 'Usage: boot' "$boot_help"
 	"$tilde" align --help >"$align_help"
-	grep -Fq 'Usage: tilde align' "$align_help"
+	grep -Fq 'Usage: "$TILDE" align' "$align_help"
 
 	cat >"$align_repo/AGENTS.md" <<'EOF'
 ---
