@@ -1,10 +1,8 @@
 # Tilde
 
 Tilde is an agent skill and control plane for reconciling a host with desired state stored in public and private home
-repositories.
-
-The canonical contract is [references/specification.md](references/specification.md). That specification defines the
-stateless provisioning model used by the skill and runtime helpers.
+repositories. The canonical contract is [references/specification.md](references/specification.md). That specification
+defines the stateless provisioning model used by the skill and runtime helpers.
 
 ## Install
 
@@ -87,8 +85,8 @@ Recommended module sections:
 ## Notes
 ```
 
-Code blocks must be idempotent or guarded. If an effect cannot be safely detected from live target facts, represent it as
-a prerequisite, note, or explicit proposal-first operator action.
+Code blocks must be idempotent or guarded. If an effect cannot be safely detected from live target facts, represent it
+as a prerequisite, note, or explicit proposal-first operator action.
 
 ## Commands
 
@@ -105,21 +103,21 @@ TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
 
 Do not rely on bare `tilde` being on the controller `PATH`.
 
-| Command | Kind | Action |
-| --- | --- | --- |
-| `help` | runtime | Show public commands or one command's usage. |
-| `deploy` | agent | Prepare a local or remote host and apply desired state. |
-| `update` | agent | Run explicit update behavior from the current desired state. |
-| `repair` | agent | Apply current desired state again. |
-| `doctor` | runtime | Diagnose without executing module code or mutating targets. |
-| `handoff` | runtime | Copy and print the privilege handoff command for the local or remote host. |
-| `align` | dual | Reconcile links and copies without bootstrap, packages, or module code. |
-| `adopt` | agent | Propose adopting an app, config, package, or path. |
-| `create` | agent | Propose public/private home repository creation. |
-| `init` | agent | Bind existing public/private repositories. |
-| `clean` | agent | Propose conservative cleanup. |
-| `organize` | agent | Propose organization changes. |
-| `upgrade` | agent | Run the widest explicitly requested update path. |
+| Command    | Kind    | Action                                                                     |
+| ---------- | ------- | -------------------------------------------------------------------------- |
+| `help`     | runtime | Show public commands or one command's usage.                               |
+| `deploy`   | agent   | Prepare a local or remote host and apply desired state.                    |
+| `update`   | agent   | Run explicit update behavior from the current desired state.               |
+| `repair`   | agent   | Apply current desired state again.                                         |
+| `doctor`   | runtime | Diagnose without executing module code or mutating targets.                |
+| `handoff`  | runtime | Copy and print the privilege handoff command for the local or remote host. |
+| `align`    | dual    | Reconcile links and copies without bootstrap, packages, or module code.    |
+| `adopt`    | agent   | Propose adopting an app, config, package, or path.                         |
+| `create`   | agent   | Propose public/private home repository creation.                           |
+| `init`     | agent   | Bind existing public/private repositories.                                 |
+| `clean`    | agent   | Propose conservative cleanup.                                              |
+| `organize` | agent   | Propose organization changes.                                              |
+| `upgrade`  | agent   | Run the widest explicitly requested update path.                           |
 
 Kind meanings:
 
@@ -132,12 +130,11 @@ no `applied` anchors, use `repair` mode for that run so state recovery writes re
 remote hosts must be generated and applied on the target host. After a successful mutating remote apply, read final
 status on the target before closeout.
 
-For host-aware prompt commands, omitted target means current host. A bare host means `ssh:host`, except when it names the
-current host; use explicit `ssh:host` to force SSH transport. Bare all-caps targets such as `ALL`, `HOME`, and `WORK`
-are host groups defined by the active home policy. For remote workflows, target state is also read on the target host.
-Do not use the controller's
-`~/.local/state/tilde/state.yml` to discover remote repository bindings, applied anchors, level, platform, or bootstrap
-state.
+For host-aware prompt commands, omitted target means current host. A bare host means `ssh:host`, except when it names
+the current host; use explicit `ssh:host` to force SSH transport. Bare all-caps targets such as `ALL`, `HOME`, and
+`WORK` are host groups defined by the active home policy. For remote workflows, target state is also read on the target
+host. Do not use the controller's `~/.local/state/tilde/state.yml` to discover remote repository bindings, applied
+anchors, level, platform, or bootstrap state.
 
 Example prompts:
 
