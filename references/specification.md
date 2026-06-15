@@ -283,12 +283,15 @@ Tilde planning modes execute module sections according to this matrix.
 prompt command -> plan mode
   deploy  -> apply
   update  -> refresh
+  update with missing state.yml or no applied anchors -> repair
   repair  -> repair
   upgrade -> upgrade
   align   -> align
 ```
 
-The prompt command is `update`; the planning mode is `refresh`. Implementations MUST NOT invent a `--mode update`.
+The prompt command is `update`; the ordinary planning mode is `refresh`. Implementations MUST NOT invent a
+`--mode update`. If target status shows missing `state.yml` or no `applied` anchors, an update workflow MUST recover
+state with `repair` mode for that run because refresh-only work does not establish fully converged anchors.
 
 ```text
 apply / install:
@@ -332,7 +335,8 @@ handoff
 ```
 
 `handoff` prints the exact privilege-preparation command for the local or selected remote host and attempts to copy it
-to the controller clipboard using a platform-appropriate clipboard command.
+to the controller clipboard using a platform-appropriate clipboard command. Agents MUST run `handoff` on the controller,
+not through Tilde SSH transport, and MUST present the printed `Handoff command:` line exactly.
 
 ## 8. Module Sections
 
@@ -929,9 +933,11 @@ SCRIPT
 "$TILDE" ssh spinoza << 'SCRIPT'
 tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT
+mode=refresh
+# Use mode=repair when target status reports missing state.yml or no applied anchors.
 
-tilde plan --mode refresh --repo ~/Dropbox/home --host spinoza --format json > "$tmpdir/public.json"
-tilde plan --mode refresh --repo ~/Dropbox/home- --host spinoza --format json > "$tmpdir/private.json"
+tilde plan --mode "$mode" --repo ~/Dropbox/home --host spinoza --format json > "$tmpdir/public.json"
+tilde plan --mode "$mode" --repo ~/Dropbox/home- --host spinoza --format json > "$tmpdir/private.json"
 tilde apply --plan "$tmpdir/public.json" --plan "$tmpdir/private.json"
 SCRIPT
 ```
@@ -987,8 +993,9 @@ Helper commands MUST fail closed on malformed markers, ambiguous targets, binary
 ## 21. State Recovery
 
 If the persistent state file is missing or malformed, Tilde recovers repository bindings from explicit command
-arguments, repository frontmatter, and bounded target discovery. A successful run writes `state.yml` with the recovered
-bindings and fully converged anchors.
+arguments, repository frontmatter, and bounded target discovery. A successful desired-state recovery run writes
+`state.yml` with the recovered bindings and fully converged anchors. Refresh-only package and update-section runs do not
+establish fully converged anchors.
 
 ## 22. Summary
 

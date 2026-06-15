@@ -228,6 +228,9 @@ main() {
 	local package_plan_json
 	local package_repo
 	local plan_json
+	local refresh_apply_json
+	local refresh_plan_json
+	local refresh_state
 	local repo
 	local script_dir
 	local second_apply_json
@@ -257,10 +260,13 @@ main() {
 	package_plan_json=$tmpdir/package-plan.json
 	package_repo=$tmpdir/package-repo
 	plan_json=$tmpdir/plan.json
+	refresh_apply_json=$tmpdir/refresh-apply.json
+	refresh_plan_json=$tmpdir/refresh-plan.json
+	refresh_state=$tmpdir/refresh-state
 	second_apply_json=$tmpdir/second-apply.json
 	second_plan_json=$tmpdir/second-plan.json
 
-	mkdir -p "$fake_bin" "$home/Dropbox" "$state/tilde"
+	mkdir -p "$fake_bin" "$home/Dropbox" "$refresh_state/tilde" "$state/tilde"
 	write_fake_packages "$fake_bin"
 	write_repo "$repo"
 	git -C "$repo" init -q
@@ -269,6 +275,16 @@ main() {
 	git -C "$repo" add .
 	git -C "$repo" commit -q -m init
 	head=$(git -C "$repo" rev-parse HEAD)
+
+	HOME=$home XDG_STATE_HOME=$refresh_state "$tilde" plan --repo "$repo" --mode refresh --platform linux --host "$host" >"$refresh_plan_json"
+	HOME=$home XDG_STATE_HOME=$refresh_state "$tilde" apply --plan "$refresh_plan_json" >"$refresh_apply_json"
+	[[ ! -f $refresh_state/tilde/state.yml ]]
+
+	REFRESH_APPLY_JSON=$refresh_apply_json ruby -rjson -e '
+		apply = JSON.parse(File.read(ENV.fetch("REFRESH_APPLY_JSON")))
+		abort "refresh apply should complete" unless apply.fetch("completed")
+		abort "refresh should run configure" unless apply.fetch("results").any? { |result| result.fetch("action_id") == "public/section:section:Configure" }
+	'
 
 	mkdir -p "$home/.config/app"
 	printf 'unmanaged\n' >"$home/.config/app/source.txt"

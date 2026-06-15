@@ -52,6 +52,7 @@ main() {
 	local tilde
 	local tmpdir
 	local update_help
+	local ssh_help
 
 	script_dir=$(cd -- "${BASH_SOURCE[0]%/*}" >/dev/null && pwd)
 	skill_root=$(cd -- "$script_dir/../../.." >/dev/null && pwd)
@@ -80,6 +81,7 @@ main() {
 	sudo_err=$tmpdir/sudo.err
 	sudo_out=$tmpdir/sudo.out
 	update_help=$tmpdir/update-help.md
+	ssh_help=$tmpdir/ssh-help.md
 
 	mkdir -p "$align_home" "$align_repo/config" "$align_repo/app" "$align_state/tilde" "$fake_bin" "$real_bin" "$sudo_alias_root/bin"
 	cat >"$fake_bin/ssh" <<'EOF'
@@ -116,6 +118,7 @@ EOF
 	grep -Fq 'Target shorthand: omitted target means current host; bare `host` means `ssh:host`; bare all-caps targets such as `ALL`, `HOME`, and `WORK` expand from the active home policy.' "$help"
 	grep -Fq 'When traversing a host group, skip hosts that fail a bounded noninteractive reachability check and continue with reachable hosts.' "$help"
 	grep -Fq 'For remote targets, generate plans and run live checks on the target host through Tilde SSH transport.' "$help"
+	grep -Fq 'For update targets with missing `state.yml` or no `applied` anchors, use `plan --mode repair` for state recovery instead of refresh.' "$help"
 	grep -Fq 'After successful mutating remote apply, run a final target status read and report target HEAD separately from applied anchors.' "$help"
 	grep -Fq 'Do not read controller `~/.local/state/tilde/state.yml` for remote targets; target state lives on the target host.' "$help"
 
@@ -126,7 +129,11 @@ EOF
 	grep -Fq 'Remote state note: do not read controller `~/.local/state/tilde/state.yml`' "$status_help"
 	"$tilde" .help update >"$update_help"
 	grep -Fq 'Prompt: `/tilde update [host|ssh:<host>|GROUP] [full] [dry-run|plan-only]`' "$update_help"
+	grep -Fq 'State recovery note: if target status shows missing `state.yml` or no `applied` anchors, use `plan --mode repair`' "$update_help"
 	grep -Fq 'Remote verification note: after successful mutating apply, run a final target status read before closeout.' "$update_help"
+	"$tilde" help ssh >"$ssh_help"
+	grep -Fq '`ssh` is an implementation route, not a public prompt command.' "$ssh_help"
+	grep -Fq 'Runtime usage: `"$TILDE" ssh --help`' "$ssh_help"
 
 	"$tilde" boot --help >"$boot_help"
 	grep -Fq 'Usage: boot' "$boot_help"
@@ -195,6 +202,11 @@ printf 'rooted\n'
 EOF
 	grep -Fq 'TILDE_ROOT=${TILDE_ROOT:-"$HOME/.agents/skills/tilde"}' "$ssh_body"
 	grep -Fq 'TILDE_SUDO=intercept' "$ssh_body"
+	TILDE_FAKE_SSH_ARGS=$ssh_args TILDE_FAKE_SSH_BODY=$ssh_body PATH=$fake_bin:$PATH \
+		"$tilde" ssh -o BatchMode=yes -o ConnectTimeout=5 target <<'EOF'
+printf 'options\n'
+EOF
+	tr '\n' ' ' <"$ssh_args" | grep -Fq -- '-o BatchMode=yes -o ConnectTimeout=5 target sh -s -- '
 
 	if "$tilde" deploy >/dev/null 2>"$deploy_err"; then
 		abort "expected agent-orchestrated prompt command to fail as a runtime route"

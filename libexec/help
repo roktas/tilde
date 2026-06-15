@@ -33,6 +33,17 @@ readonly -a EXAMPLES=(
 	'/tilde repair|Apply current desired state again after a failed or deferred run.'
 )
 
+readonly -a IMPLEMENTATION_ROUTES=(
+	apply
+	boot
+	checkout
+	plan
+	preflight
+	smoke
+	ssh
+	sudo
+)
+
 abort() {
 	warn "E: $*"
 	exit 2
@@ -88,6 +99,19 @@ kind_note_for() {
 		printf '%s\n' 'direct bin/tilde runtime route for local targets; remote targets run through Tilde SSH transport'
 		;;
 	esac
+}
+
+is_implementation_route() {
+	local name=$1
+
+	local item
+	for item in "${IMPLEMENTATION_ROUTES[@]}"; do
+		if [[ $item = "$name" ]]; then
+			return 0
+		fi
+	done
+
+	return 1
 }
 
 usage_suffix_for() {
@@ -153,6 +177,12 @@ print_command_help() {
 	fi
 
 	if ! entry=$(entry_for "$name"); then
+		if is_implementation_route "$name"; then
+			printf '`%s` is an implementation route, not a public prompt command.\n\n' "$name"
+			printf 'Runtime usage: `"$TILDE" %s --help`\n' "$name"
+			printf 'Do not run implementation routes as `/tilde %s ...` prompts.\n' "$name"
+			return
+		fi
 		printf 'No such public Tilde command: `%s`.\n\n' "$name"
 		print_help
 		return
@@ -169,6 +199,7 @@ print_command_help() {
 
 	if [[ $name = update ]]; then
 		printf '\nImplementation note: `%s` uses planning mode `refresh`; do not use `--mode update`.\n' "$name"
+		printf 'State recovery note: if target status shows missing `state.yml` or no `applied` anchors, use `plan --mode repair` for that run so successful apply can write recovered bindings and anchors.\n'
 	fi
 
 	case $name in
@@ -212,6 +243,7 @@ print_help() {
 	printf 'Target shorthand: omitted target means current host; bare `host` means `ssh:host`; bare all-caps targets such as `ALL`, `HOME`, and `WORK` expand from the active home policy.\n'
 	printf 'When traversing a host group, skip hosts that fail a bounded noninteractive reachability check and continue with reachable hosts.\n'
 	printf 'For remote targets, generate plans and run live checks on the target host through Tilde SSH transport.\n'
+	printf 'For update targets with missing `state.yml` or no `applied` anchors, use `plan --mode repair` for state recovery instead of refresh.\n'
 	printf 'After successful mutating remote apply, run a final target status read and report target HEAD separately from applied anchors.\n'
 	printf 'Do not read controller `~/.local/state/tilde/state.yml` for remote targets; target state lives on the target host.\n'
 	printf '\n'

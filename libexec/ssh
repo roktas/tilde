@@ -25,6 +25,18 @@ shell_quote() {
 	printf "'"
 }
 
+ssh_option_needs_value() {
+	local option=$1
+
+	case $option in
+	-B | -b | -c | -D | -E | -e | -F | -I | -i | -J | -L | -l | -m | -O | -o | -p | -Q | -R | -S | -W | -w)
+		return 0
+		;;
+	esac
+
+	return 1
+}
+
 write_prelude() {
 	local root=$1
 
@@ -97,7 +109,13 @@ main() {
 			;;
 		-*)
 			ssh_args+=("$1")
-			shift
+			if ssh_option_needs_value "$1"; then
+				(($# > 1)) || abort "$1 needs a value"
+				ssh_args+=("$2")
+				shift 2
+			else
+				shift
+			fi
 			;;
 		*)
 			if [[ -z $host ]]; then

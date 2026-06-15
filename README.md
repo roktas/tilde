@@ -127,8 +127,10 @@ Kind meanings:
 - `runtime`: direct `bin/tilde` route. For remote targets, run it on the target through Tilde SSH transport.
 - `dual`: direct local runtime route plus prompt workflow. Remote targets are agent-orchestrated.
 
-For agent workflows, `update` maps to planning mode `refresh`. Plans for remote hosts must be generated and applied on
-the target host. After a successful mutating remote apply, read final status on the target before closeout.
+For agent workflows, `update` ordinarily maps to planning mode `refresh`. If target status shows missing `state.yml` or
+no `applied` anchors, use `repair` mode for that run so state recovery writes recovered bindings and anchors. Plans for
+remote hosts must be generated and applied on the target host. After a successful mutating remote apply, read final
+status on the target before closeout.
 
 For host-aware prompt commands, omitted target means current host, bare `host` means `ssh:host`, and bare all-caps targets
 such as `ALL`, `HOME`, and `WORK` are host groups defined by the active home policy. For remote workflows, target state

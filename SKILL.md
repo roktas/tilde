@@ -154,7 +154,7 @@ Agent commands map to planning modes and module sections as follows.
 | Prompt command | Plan mode | Module behavior |
 | --- | --- | --- |
 | `deploy` | `apply` | `Prerequisites`, `Install`, `Post Install` when `Install` changed, then `Configure` |
-| `update` | `refresh` | `Prerequisites`, `Update`, then `Configure` |
+| `update` | `refresh`; `repair` for state recovery | `Prerequisites`, `Update`, then `Configure`; state recovery uses repair behavior |
 | `repair` | `repair` | `Prerequisites`, `Install`, `Post Install` when `Install` changed, then `Configure` |
 | `upgrade` | `upgrade` | broad refresh behavior, then package upgrades |
 | `align` | `align` | links and copies only; no bootstrap, packages, or module code |
@@ -162,7 +162,9 @@ Agent commands map to planning modes and module sections as follows.
 `create`, `init`, `clean`, `organize`, and `adopt` are proposal-first operator workflows unless a direct helper is
 explicitly documented for the requested step.
 
-The prompt command is `update`; the plan mode is `refresh`. Do not call or invent `--mode update`.
+The prompt command is `update`; the ordinary plan mode is `refresh`. Do not call or invent `--mode update`. If target
+status shows missing `state.yml` or no `applied` anchors, recover state with `plan --mode repair` for that run; do not
+use refresh merely to recreate state, and do not tell the user to run deploy solely to initialize state.
 
 ## Remote Script Execution
 
@@ -198,9 +200,11 @@ TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
 "$TILDE" ssh spinoza << 'SCRIPT'
 tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT
+mode=refresh
+# Use mode=repair when target status reports missing state.yml or no applied anchors.
 
-tilde plan --mode refresh --repo ~/Dropbox/home --host spinoza --format json > "$tmpdir/public.json"
-tilde plan --mode refresh --repo ~/Dropbox/home- --host spinoza --format json > "$tmpdir/private.json"
+tilde plan --mode "$mode" --repo ~/Dropbox/home --host spinoza --format json > "$tmpdir/public.json"
+tilde plan --mode "$mode" --repo ~/Dropbox/home- --host spinoza --format json > "$tmpdir/private.json"
 tilde apply --plan "$tmpdir/public.json" --plan "$tmpdir/private.json"
 SCRIPT
 ```
@@ -271,8 +275,10 @@ If sudo is required and noninteractive sudo fails, report `deferred` and present
 "$TILDE" handoff --host spinoza --copy
 ```
 
-The helper prints the exact command and reports whether it copied the command to the controller clipboard. Wait for the
-user to run it, then rerun the affected action and verify cleanup. Do not collect passwords in chat.
+Run the helper on the controller, not inside `"$TILDE" ssh`. The helper prints the exact command and reports whether it
+copied the command to the controller clipboard. Copy or present the `Handoff command:` line exactly; do not rewrite it,
+replace the remote path with a local variable, or add extra quoting. Wait for the user to run it, then rerun the
+affected action and verify cleanup. Do not collect passwords in chat.
 
 ## Weak-Model Guardrails
 
@@ -289,7 +295,9 @@ For weaker or low-context agents:
   `~/.agents/skills/tilde/bin/tilde`.
 - If bare `tilde` is not found on the controller, do not search for it; rerun through `"$TILDE"`.
 - Do not run the `update`, `deploy`, or `repair` routes through `"$TILDE"`; these are prompt workflows.
-- Use the `plan --mode refresh` implementation route for the `update` prompt command.
+- Use the `plan --mode refresh` implementation route for the `update` prompt command only when target status has
+  existing `applied` anchors. If target status shows missing `state.yml` or no `applied` anchors, use
+  `plan --mode repair` for state recovery.
 - For host-aware prompt commands, treat bare `host` as `ssh:host`; omitted target means current host.
 - Treat bare all-caps targets such as `ALL`, `HOME`, and `WORK` as home-policy host groups, not hostnames; ask the user
   if the active home policy does not define the requested group.
@@ -298,5 +306,7 @@ For weaker or low-context agents:
 - After a successful mutating remote apply, run a final target status read before the final answer.
 - In remote summaries, distinguish `target HEAD` from `applied anchor`; do not call the target repository commit
   `local`.
+- Run `"$TILDE" handoff --host HOST --copy` on the controller after sudo deferral. Do not run handoff through
+  `"$TILDE" ssh`, and do not rewrite the printed `Handoff command:`.
 - Remove packages, copies, files, or spans only with explicit managedness proof and proposal-first confirmation.
 - Prefer a safe `deferred` or `conflict` result over guessing.
