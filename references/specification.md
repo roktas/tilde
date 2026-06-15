@@ -212,7 +212,7 @@ Examples write the resolved entrypoint as `"$TILDE"`:
 ```sh
 TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
 "$TILDE" help
-"$TILDE" ssh HOST
+"$TILDE" ssh spinoza
 ```
 
 Agents MUST NOT rely on bare `tilde` being on the controller `PATH`. If a controller-side `tilde` command returns
@@ -220,7 +220,7 @@ Agents MUST NOT rely on bare `tilde` being on the controller `PATH`. If a contro
 runtime entrypoint.
 
 Bare `tilde` is valid only where Tilde has already made its runtime `bin/` directory PATH-visible, including inside a
-remote script body delivered by `"$TILDE" ssh HOST`.
+remote script body delivered by Tilde SSH transport.
 
 Prompt commands such as `deploy`, `update`, `repair`, `upgrade`, `adopt`, `create`, `init`, `clean`, and `organize` are
 interpreted by the loaded Tilde skill. They are not guaranteed to have a direct runtime route.
@@ -229,9 +229,9 @@ Host-aware prompt commands accept these target forms:
 
 ```text
 no target   current host, also called localhost
-HOST        remote host shorthand for ssh:HOST
-ssh:HOST    explicit remote host target
-ALL         all managed hosts defined by the active home policy
+host        remote host shorthand for ssh:host
+ssh:host    explicit remote host target
+GROUP       bare all-caps host group defined by the active home policy
 ```
 
 The host-aware prompt commands are:
@@ -249,22 +249,25 @@ doctor
 Commands with their own subject syntax, such as `adopt APP_OR_PATH`, `clean SUBJECT`, `organize SUBJECT`, `create`, and
 `init`, MUST NOT treat a bare argument as a host unless the command's own policy explicitly says so.
 
-`ALL` is a home-policy macro, not a hostname. Agents MUST expand `ALL` from the active `~/AGENTS.md` policy before
-running remote work. If the policy does not define `ALL`, agents MUST ask the user for the host list. For mutating
-commands, agents MUST present the expanded host list and obtain confirmation before applying changes. Each expanded host
-is a separate target workflow with separate status, plan, apply, and closeout reporting.
+Bare all-caps targets such as `ALL`, `HOME`, and `WORK` are home-policy host groups, not hostnames. Agents MUST expand a
+host group from the active `~/AGENTS.md` policy before running remote work. Group expansion applies only to unprefixed
+target tokens; `ssh:host` is always an explicit host target. If the policy does not define the requested group, agents
+MUST ask the user for the host list. For mutating commands, agents MUST present the expanded host list and obtain
+confirmation before applying changes. Each expanded host is a separate target workflow with separate status, plan, apply,
+and closeout reporting.
 
-When traversing `ALL`, agents MUST perform a bounded noninteractive reachability check before each host workflow:
+When traversing a host group, agents MUST perform a bounded noninteractive reachability check before each host workflow:
 
 ```text
-"$TILDE" ssh -o BatchMode=yes -o ConnectTimeout=5 HOST << 'SCRIPT'
+host=spinoza
+"$TILDE" ssh -o BatchMode=yes -o ConnectTimeout=5 "$host" << 'SCRIPT'
 printf 'ok\n'
 SCRIPT
 ```
 
 If the reachability check fails, agents MUST mark that host `skipped`, report the reason briefly, and continue with the
-remaining hosts. An unreachable host inside `ALL` MUST NOT fail reachable hosts. If every expanded host is unreachable,
-the command result is `deferred`.
+remaining hosts. An unreachable host inside a group MUST NOT fail reachable hosts. If every expanded host is
+unreachable, the command result is `deferred`.
 
 Direct runtime commands such as `help`, `doctor`, `handoff`, and `status` may be run through `bin/tilde`. For remote
 targets, the command must run on the target host through the Tilde SSH transport.
@@ -897,7 +900,7 @@ The host-local lock is also target-local.
 
 ### 19.1 Agent Remote-Work Pattern
 
-Agents delivering remote work MUST use `"$TILDE" ssh HOST` for script delivery.
+Agents delivering remote work MUST use Tilde SSH transport for script delivery.
 This guarantees the Tilde runtime and sudo intercept environment are active on
 the target.
 
@@ -911,18 +914,18 @@ Reading controller deployment state before a remote workflow is also invalid. Th
 work MUST be delivered to the target:
 
 ```text
-"$TILDE" ssh HOST << 'SCRIPT'
+"$TILDE" ssh spinoza << 'SCRIPT'
 tilde status --format markdown
 SCRIPT
 ```
 
 ```text
-"$TILDE" ssh HOST << 'SCRIPT'
+"$TILDE" ssh spinoza << 'SCRIPT'
 tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT
 
-tilde plan --mode refresh --repo ~/Dropbox/home --host HOST --format json > "$tmpdir/public.json"
-tilde plan --mode refresh --repo ~/Dropbox/home- --host HOST --format json > "$tmpdir/private.json"
+tilde plan --mode refresh --repo ~/Dropbox/home --host spinoza --format json > "$tmpdir/public.json"
+tilde plan --mode refresh --repo ~/Dropbox/home- --host spinoza --format json > "$tmpdir/private.json"
 tilde apply --plan "$tmpdir/public.json" --plan "$tmpdir/private.json"
 SCRIPT
 ```
@@ -935,7 +938,7 @@ After a successful mutating remote apply, agents MUST perform a final cheap targ
 closeout:
 
 ```text
-"$TILDE" ssh HOST << 'SCRIPT'
+"$TILDE" ssh spinoza << 'SCRIPT'
 tilde status --format markdown
 SCRIPT
 ```
@@ -955,7 +958,7 @@ Do not call the target repository HEAD `local`; from the controller that word is
 Single-command remote checks still use the same transport:
 
 ```text
-"$TILDE" ssh HOST << 'SCRIPT'
+"$TILDE" ssh spinoza << 'SCRIPT'
 tilde doctor
 SCRIPT
 ```

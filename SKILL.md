@@ -27,7 +27,7 @@ When the user invokes a Tilde prompt such as `/tilde <command> [target] [qualifi
 1. Treat `/tilde`, `$tilde`, and similar Tilde prompt markers as agent prompt contracts. They are not shell commands.
 2. Resolve the controller-side runtime entrypoint before shell execution. Use the loaded skill directory's `bin/tilde`;
    if that path is not available, use `~/.agents/skills/tilde/bin/tilde`. Do not rely on bare `tilde` being on `PATH`.
-3. Identify the target: current host, `HOST`, `ssh:HOST`, or `ALL`.
+3. Identify the target: current host, `host`, `ssh:host`, or an all-caps host group such as `ALL`, `HOME`, or `WORK`.
 4. Classify the command from the Command Reference below.
 5. Map agent-orchestrated commands to the Workflow Matrix before running helpers.
 6. For remote targets, use the resolved runtime entrypoint for script delivery. Generate plans, run live checks, and
@@ -46,13 +46,13 @@ written as `"$TILDE"` in examples:
 ```bash
 TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
 "$TILDE" help
-"$TILDE" ssh HOST
+"$TILDE" ssh spinoza
 ```
 
 If the skill was loaded from another directory, set `TILDE` to that directory's `bin/tilde` instead. If a controller-side
 `tilde` command is not found, do not search the filesystem for it; switch to the resolved runtime entrypoint.
 
-For remote targets, the first target-state read must happen on the target through `"$TILDE" ssh HOST`. Do not
+For remote targets, the first target-state read must happen on the target through Tilde SSH transport. Do not
 inspect the controller's `~/.local/state/tilde/state.yml` to discover a remote host's repository bindings, applied
 anchors, level, platform, or bootstrap state. That file belongs only to the controller host.
 
@@ -61,25 +61,28 @@ anchors, level, platform, or bootstrap state. That file belongs only to the cont
 Host-aware prompt commands accept these target forms:
 
 - no target: current host, also called localhost.
-- `HOST`: remote host shorthand for `ssh:HOST`.
-- `ssh:HOST`: explicit remote host target.
-- `ALL`: all managed hosts defined by the active home policy.
+- `host`: remote host shorthand for `ssh:host`.
+- `ssh:host`: explicit remote host target.
+- `GROUP`: a bare all-caps host group defined by the active home policy, such as `ALL`, `HOME`, or `WORK`.
 
 The host-aware prompt commands are `deploy`, `update`, `repair`, `upgrade`, `align`, `status`, and `doctor`.
 Commands with their own subject syntax, such as `adopt APP_OR_PATH`, `clean SUBJECT`, `organize SUBJECT`, `create`, and
 `init`, do not treat a bare argument as a host unless the command's own policy says so.
 
-`ALL` is not a hostname. Expand it from the active `~/AGENTS.md` home policy before running any remote work. If the
-policy does not define `ALL`, ask the user for the host list. For mutating commands, present the expanded host list and
-obtain confirmation before applying changes. Run each host as a separate target workflow and report per-host results.
+Bare all-caps targets are not hostnames. Expand them from the active `~/AGENTS.md` home policy before running any remote
+work. Group expansion applies only to unprefixed target tokens; `ssh:host` is always an explicit host target. If the
+policy does not define the requested group, ask the user for the host list. For mutating commands, present the expanded
+host list and obtain confirmation before applying changes. Run each host as a separate target workflow and report
+per-host results.
 
-When traversing `ALL`, perform a bounded noninteractive reachability check before each host workflow. Skip unreachable
-hosts and continue with the remaining hosts. Report skipped hosts separately; an unreachable host inside `ALL` is not a
-failure for reachable hosts. If every expanded host is unreachable, stop with a clear `deferred` result.
+When traversing a host group, perform a bounded noninteractive reachability check before each host workflow. Skip
+unreachable hosts and continue with the remaining hosts. Report skipped hosts separately; an unreachable host inside a
+group is not a failure for reachable hosts. If every expanded host is unreachable, stop with a clear `deferred` result.
 
 ```bash
 TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
-"$TILDE" ssh -o BatchMode=yes -o ConnectTimeout=5 HOST << 'SCRIPT'
+host=spinoza
+"$TILDE" ssh -o BatchMode=yes -o ConnectTimeout=5 "$host" << 'SCRIPT'
 printf 'ok\n'
 SCRIPT
 ```
@@ -90,7 +93,7 @@ The PATH-visible runtime surface is `bin/tilde`, `bin/sudo`, and helper commands
 runtime PATH. Normal command implementations live in `libexec/` and are dispatched through `bin/tilde`.
 
 Controller-side runtime calls must go through the resolved entrypoint. Bare `tilde` is valid only when the Tilde runtime
-PATH is already active, such as inside a remote script delivered by `"$TILDE" ssh HOST`.
+PATH is already active, such as inside a remote script delivered by Tilde SSH transport.
 
 `bin/tilde` has direct runtime routes for helper and diagnostic commands. It intentionally refuses prompt commands such
 as `update`, `deploy`, and `repair`; those commands are interpreted and orchestrated by the loaded Tilde skill.
@@ -119,7 +122,7 @@ Treat `dry-run` and `plan-only` as qualifiers. Do not invent a separate stateful
 ### Direct Runtime Commands
 
 These commands have direct `bin/tilde` runtime routes. For remote targets, deliver the command through
-`"$TILDE" ssh HOST` so the target host supplies live facts.
+Tilde SSH transport so the target host supplies live facts.
 
 - `help`: show public commands or one command's usage.
 - `doctor`: diagnose state, repository, target, and managedness problems without executing module code or mutating
@@ -130,8 +133,8 @@ These commands have direct `bin/tilde` runtime routes. For remote targets, deliv
 ### Dual Command
 
 - `align`: local link/copy reconciliation can run directly through the resolved runtime entrypoint. Remote align remains
-  agent-orchestrated: use `/tilde align HOST` prompt semantics and deliver the target-side workflow through
-  `"$TILDE" ssh HOST`.
+  agent-orchestrated: use `/tilde align spinoza` prompt semantics and deliver the target-side workflow through Tilde SSH
+  transport.
 
 ### Implementation Routes
 
@@ -167,11 +170,11 @@ Use the resolved runtime entrypoint for all remote script execution:
 
 ```bash
 TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
-"$TILDE" ssh HOST
+"$TILDE" ssh spinoza
 ```
 
 It sets up the correct Tilde runtime environment (PATH, TILDE_ROOT, TILDE_SUDO, locale) and delivers the script body
-through `ssh HOST sh -s --`.
+through `ssh host sh -s --`.
 
 Do not use raw `ssh`, `sh -c`, or `bash -lc` for multi-command remote work.
 These bypass Tilde's PATH setup and sudo interceptor.
@@ -179,25 +182,25 @@ These bypass Tilde's PATH setup and sudo interceptor.
 Always plan and execute on the target host. Platform detection, package inventory, repository bindings, and live checks
 come from the target. A controller-side plan for a remote host is invalid.
 
-Remote state is target-local. For `/tilde update HOST`, `/tilde update ssh:HOST`, `/tilde deploy HOST`,
-`/tilde deploy ssh:HOST`, `/tilde doctor HOST`, `/tilde status HOST`, and `/tilde align HOST`, do not read the controller's
+Remote state is target-local. For `/tilde update spinoza`, `/tilde update ssh:spinoza`, `/tilde deploy spinoza`,
+`/tilde deploy ssh:spinoza`, `/tilde doctor spinoza`, `/tilde status spinoza`, and `/tilde align spinoza`, do not read the controller's
 `~/.local/state/tilde/state.yml`. If state or repository bindings are needed, read them on the target:
 
 ```bash
 TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
-"$TILDE" ssh HOST << 'SCRIPT'
+"$TILDE" ssh spinoza << 'SCRIPT'
 tilde status --format markdown
 SCRIPT
 ```
 
 ```bash
 TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
-"$TILDE" ssh HOST << 'SCRIPT'
+"$TILDE" ssh spinoza << 'SCRIPT'
 tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT
 
-tilde plan --mode refresh --repo ~/Dropbox/home --host HOST --format json > "$tmpdir/public.json"
-tilde plan --mode refresh --repo ~/Dropbox/home- --host HOST --format json > "$tmpdir/private.json"
+tilde plan --mode refresh --repo ~/Dropbox/home --host spinoza --format json > "$tmpdir/public.json"
+tilde plan --mode refresh --repo ~/Dropbox/home- --host spinoza --format json > "$tmpdir/private.json"
 tilde apply --plan "$tmpdir/public.json" --plan "$tmpdir/private.json"
 SCRIPT
 ```
@@ -210,7 +213,7 @@ stays easy to parse:
 
 ```bash
 TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
-"$TILDE" ssh HOST << 'SCRIPT'
+"$TILDE" ssh spinoza << 'SCRIPT'
 tilde status --format markdown
 SCRIPT
 ```
@@ -219,19 +222,19 @@ Use `target HEAD` or `target current commit` for the repository commit currently
 `applied anchor` for the commit recorded under `applied` in the target's `state.yml`. Do not call a remote repository
 HEAD `local` in summaries; that word is ambiguous from the controller.
 
-Inside the remote script body, bare `tilde` is valid because `"$TILDE" ssh HOST` places the target runtime directory at
+Inside the remote script body, bare `tilde` is valid because Tilde SSH transport places the target runtime directory at
 the front of `PATH`.
 
 When the script needs Bash features, pass the interpreter as an argument:
 
 ```bash
 TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
-"$TILDE" ssh HOST -- bash << 'SCRIPT'
+"$TILDE" ssh spinoza -- bash << 'SCRIPT'
 # bash-specific syntax here
 SCRIPT
 ```
 
-Use `"$TILDE" ssh --tty HOST` for interactive remote sessions that require a pseudo-terminal (e.g., `sudo` password
+Use `"$TILDE" ssh --tty spinoza` for interactive remote sessions that require a pseudo-terminal (e.g., `sudo` password
 prompts).
 
 ## Module Model
@@ -265,7 +268,7 @@ Managedness must be proven before destructive cleanup. No proof means no destruc
 If sudo is required and noninteractive sudo fails, report `deferred` and present:
 
 ```bash
-"$TILDE" handoff --host HOST --copy
+"$TILDE" handoff --host spinoza --copy
 ```
 
 The helper prints the exact command and reports whether it copied the command to the controller clipboard. Wait for the
@@ -287,9 +290,11 @@ For weaker or low-context agents:
 - If bare `tilde` is not found on the controller, do not search for it; rerun through `"$TILDE"`.
 - Do not run the `update`, `deploy`, or `repair` routes through `"$TILDE"`; these are prompt workflows.
 - Use the `plan --mode refresh` implementation route for the `update` prompt command.
-- For host-aware prompt commands, treat bare `HOST` as `ssh:HOST`; omitted target means current host.
-- Treat `ALL` as a home-policy macro, not a hostname; ask the user if the active home policy does not define it.
-- When traversing `ALL`, skip unreachable hosts after a bounded reachability check and continue with reachable hosts.
+- For host-aware prompt commands, treat bare `host` as `ssh:host`; omitted target means current host.
+- Treat bare all-caps targets such as `ALL`, `HOME`, and `WORK` as home-policy host groups, not hostnames; ask the user
+  if the active home policy does not define the requested group.
+- When traversing a host group, skip unreachable hosts after a bounded reachability check and continue with reachable
+  hosts.
 - After a successful mutating remote apply, run a final target status read before the final answer.
 - In remote summaries, distinguish `target HEAD` from `applied anchor`; do not call the target repository commit
   `local`.

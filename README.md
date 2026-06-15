@@ -124,15 +124,15 @@ Do not rely on bare `tilde` being on the controller `PATH`.
 Kind meanings:
 
 - `agent`: interpreted by the loaded Tilde skill; no direct runtime route.
-- `runtime`: direct `bin/tilde` route. For remote targets, run it on the target through `"$TILDE" ssh HOST`.
+- `runtime`: direct `bin/tilde` route. For remote targets, run it on the target through Tilde SSH transport.
 - `dual`: direct local runtime route plus prompt workflow. Remote targets are agent-orchestrated.
 
 For agent workflows, `update` maps to planning mode `refresh`. Plans for remote hosts must be generated and applied on
 the target host. After a successful mutating remote apply, read final status on the target before closeout.
 
-For host-aware prompt commands, omitted target means current host, bare `HOST` means `ssh:HOST`, and `ALL` means every
-managed host defined by the active home policy. For remote workflows, target state is also read on the target host. Do
-not use the controller's
+For host-aware prompt commands, omitted target means current host, bare `host` means `ssh:host`, and bare all-caps targets
+such as `ALL`, `HOME`, and `WORK` are host groups defined by the active home policy. For remote workflows, target state
+is also read on the target host. Do not use the controller's
 `~/.local/state/tilde/state.yml` to discover remote repository bindings, applied anchors, level, platform, or bootstrap
 state.
 
@@ -140,10 +140,11 @@ Example prompts:
 
 ```text
 /tilde deploy
-/tilde deploy HOST
+/tilde deploy spinoza
 /tilde update
-/tilde update HOST
+/tilde update spinoza
 /tilde update ALL
+/tilde update WORK
 /tilde repair
 /tilde doctor
 /tilde align
