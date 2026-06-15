@@ -130,6 +130,13 @@ no `applied` anchors, use `repair` mode for that run so state recovery writes re
 remote hosts must be generated and applied on the target host. After a successful mutating remote apply, read final
 status on the target before closeout.
 
+For mutating remote workflows, verify target runtime freshness before the first target status read. If the target
+`~/.agents/skills/tilde` checkout is stale, refresh it from the controller checkout before running target `tilde status`,
+`tilde plan`, or `tilde apply`. On Git-backed remote hosts, also refresh stale public/private target checkouts from the
+controller repositories before planning. If a stale target runtime or checkout cannot be safely refreshed, stop with
+`deferred`. Status paths outside the `state.yml` model, such as `config.yml` or `hosts/HOST/state.md`, mean stale target
+runtime, not successful state recovery.
+
 For host-aware prompt commands, omitted target means current host. A bare host means `ssh:host`, except when it names
 the current host; use explicit `ssh:host` to force SSH transport. Bare all-caps targets such as `ALL`, `HOME`, and
 `WORK` are host groups defined by the active home policy. For remote workflows, target state is also read on the target

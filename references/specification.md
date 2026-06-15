@@ -927,14 +927,38 @@ Agents delivering remote work MUST use Tilde SSH transport for script delivery.
 This guarantees the Tilde runtime and sudo intercept environment are active on
 the target.
 
+The remote freshness preflight is the first remote workflow step. Before reading target state, generating plans, applying
+plans, or deciding state-recovery mode, agents MUST perform it.
+
+Remote freshness preflight checks:
+
+- the target `~/.agents/skills/tilde` runtime commit matches the controller-side loaded Tilde runtime commit,
+- Git-backed target desired-state checkouts match the controller-side public/private repositories selected for the run,
+- target checkouts are clean before any controller bundle is applied,
+- Dropbox-backed target repositories are not replaced with controller bundles unless explicitly requested.
+
+For mutating remote prompt workflows such as `deploy`, `update`, `repair`, `upgrade`, and remote `align`, a stale
+Git-backed target runtime or desired-state checkout SHOULD be refreshed from the controller checkout with the
+`checkout remote` implementation route before target `tilde status`, `tilde plan`, or `tilde apply` is run. If a stale
+runtime or checkout cannot be refreshed safely because it is dirty, missing, not a Git checkout, or ambiguous, the run
+MUST return `deferred`.
+
+For read-only remote workflows such as `status` and `doctor`, a stale target runtime is reported as a stale-runtime
+condition. It is not permission to mutate the remote host.
+
+A target status output that references state paths outside this specification, such as
+`~/.local/state/tilde/config.yml` or `~/.local/state/tilde/hosts/HOST/state.md`, indicates a stale target runtime.
+Agents MUST stop and refresh or report the stale runtime before any state-recovery plan. State writes outside the
+`state.yml` model MUST NOT be reported as successful recovery under this specification.
+
 Agent-orchestrated remote workflows that generate plan files and apply them MUST deliver the full workflow as a single
 piped script body. Planning and apply MUST both run on the target host. Platform detection, package inventory,
 repository bindings, and live checks come from the target host.
 
 Generating a plan on the controller for a remote host is invalid.
 
-Reading controller deployment state before a remote workflow is also invalid. The first target-state read for remote
-work MUST be delivered to the target:
+Reading controller deployment state before a remote workflow is also invalid. After remote freshness preflight, the
+first target-state read for remote work MUST be delivered to the target:
 
 ```text
 "$TILDE" ssh spinoza << 'SCRIPT'

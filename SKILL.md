@@ -32,11 +32,13 @@ When the user invokes a Tilde prompt such as `/tilde <command> [target] [qualifi
    `ALL`, `HOME`, or `WORK`.
 4. Classify the command from the Command Reference below.
 5. Map agent-orchestrated commands to the Workflow Matrix before running helpers.
-6. For remote targets, use the resolved runtime entrypoint for script delivery. Generate plans, run live checks, and
-   apply results on the target host, not on the controller.
-7. Keep proposal-first behavior for destructive, preference-sensitive, privilege-requiring, or remote mutations.
-8. After a successful mutating remote apply, run a cheap final status read on the target before closeout.
-9. After the run, summarize successful, changed, deferred, conflicted, and failed work.
+6. For remote targets, run the Remote Freshness Preflight before reading target state, generating plans, or applying
+   results.
+7. Use the resolved runtime entrypoint for script delivery. Generate plans, run live checks, and apply results on the
+   target host, not on the controller.
+8. Keep proposal-first behavior for destructive, preference-sensitive, privilege-requiring, or remote mutations.
+9. After a successful mutating remote apply, run a cheap final status read on the target before closeout.
+10. After the run, summarize successful, changed, deferred, conflicted, and failed work.
 
 If a direct runtime call says a command is agent-orchestrated, stop trying shell variants of that command. Load this
 skill, classify the command, and run the appropriate agent workflow.
@@ -175,6 +177,35 @@ bounded evidence proves otherwise.
 
 ## Remote Script Execution
 
+### Remote Freshness Preflight
+
+Remote Freshness Preflight is the first remote workflow step. Before any remote `status`, `plan`, `apply`, or
+state-recovery decision, confirm that the target runtime is current. The controller-side loaded skill is the source for
+the expected Tilde runtime commit.
+
+For mutating remote prompt workflows such as `deploy`, `update`, `repair`, `upgrade`, and remote `align`:
+
+- Compare the controller runtime commit with the target `~/.agents/skills/tilde` commit before the first target-state
+  read.
+- If the target runtime is a stale Git checkout, refresh it from the controller checkout with `"$TILDE" checkout remote`
+  before running target `tilde status`, `tilde plan`, or `tilde apply`.
+- If the target runtime is stale but cannot be refreshed safely because it is dirty, missing, not a Git checkout, or
+  otherwise ambiguous, stop with `deferred`. Do not continue into state recovery with the stale runtime.
+- On Git-backed remote hosts, also refresh the target public/private desired-state checkouts from the controller
+  repositories before planning. If a target checkout is dirty or cannot be fast-forwarded from the controller bundle,
+  stop with `deferred`.
+- On Dropbox-backed remote hosts, do not replace synced repositories with controller bundles; report stale or unsynced
+  target checkouts as `deferred` unless the user asks for a Git-backed checkout refresh.
+
+For read-only remote workflows such as `status` and `doctor`, detecting a stale target runtime is a reportable stale
+runtime condition, not permission to mutate the remote host. Report it and stop unless the user requested repair or
+update behavior.
+
+A status output that mentions state paths outside this specification, such as `~/.local/state/tilde/config.yml` or
+`~/.local/state/tilde/hosts/HOST/state.md` means the target runtime is stale. Stop and refresh or report the stale
+runtime before any `plan --mode repair` step. Do not describe state writes outside the `state.yml` model as successful
+state recovery.
+
 Use the resolved runtime entrypoint for all remote script execution:
 
 ```bash
@@ -188,8 +219,8 @@ through `ssh host sh -s --`.
 Do not use raw `ssh`, `sh -c`, or `bash -lc` for multi-command remote work.
 These bypass Tilde's PATH setup and sudo interceptor.
 
-Always plan and execute on the target host. Platform detection, package inventory, repository bindings, and live checks
-come from the target. A controller-side plan for a remote host is invalid.
+After the Remote Freshness Preflight, plan and execute on the target host. Platform detection, package inventory,
+repository bindings, and live checks come from the target. A controller-side plan for a remote host is invalid.
 
 Remote state is target-local. For `/tilde update spinoza`, `/tilde update ssh:spinoza`, `/tilde deploy spinoza`,
 `/tilde deploy ssh:spinoza`, `/tilde doctor spinoza`, `/tilde status spinoza`, and `/tilde align spinoza`, do not read the controller's
@@ -316,6 +347,10 @@ For weaker or low-context agents:
 - On timeout or `state lock busy`, do not remove `~/.local/state/tilde/lock` blindly. Check whether an apply process is
   still active and treat uncertainty as `deferred`.
 - Never plan a remote host from the controller.
+- For mutating remote workflows, verify target Tilde runtime freshness and Git-backed desired-state checkout freshness
+  before the first target `status`, `plan`, or `apply`.
+- Do not run target `tilde status`, `tilde plan`, or `tilde apply` through a stale target runtime. Refresh the target
+  runtime first, or stop with `deferred` if it cannot be safely refreshed.
 - Never read controller `~/.local/state/tilde/state.yml` for a remote target.
 - Never execute `/tilde ...` or `$tilde ...` in a shell; they are prompt markers, not runtime commands.
 - Before any controller-side runtime call, resolve `TILDE` to the loaded skill directory's `bin/tilde`, falling back to
@@ -328,6 +363,8 @@ For weaker or low-context agents:
 - For host-aware prompt commands, omitted target means current host. Treat bare `host` as `ssh:host`, except when it
   names the current host; then run the local workflow. Use explicit `ssh:host` to force SSH transport.
 - Missing `state.yml` or missing `applied` anchors means state recovery, not proof that the host was never deployed.
+- Remote status paths outside the `state.yml` model, such as `config.yml` or `hosts/HOST/state.md`, mean stale target
+  runtime, not successful current state recovery.
 - Treat bare all-caps targets such as `ALL`, `HOME`, and `WORK` as home-policy host groups, not hostnames; ask the user
   if the active home policy does not define the requested group.
 - When traversing a host group, skip unreachable hosts after a bounded reachability check and continue with reachable

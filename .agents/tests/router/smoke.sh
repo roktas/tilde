@@ -118,7 +118,9 @@ EOF
 	grep -Fq 'Target shorthand: omitted target means current host; bare `host` means `ssh:host` except when it names the current host; bare all-caps targets such as `ALL`, `HOME`, and `WORK` expand from the active home policy.' "$help"
 	grep -Fq 'When traversing a host group, skip hosts that fail a bounded noninteractive reachability check and continue with reachable hosts.' "$help"
 	grep -Fq 'For remote targets, generate plans and run live checks on the target host through Tilde SSH transport.' "$help"
+	grep -Fq 'For mutating remote workflows, verify target runtime freshness before target status reads, plan, or apply; refresh stale Git-backed target checkouts first, or defer.' "$help"
 	grep -Fq 'For update targets with missing `state.yml` or no `applied` anchors, use `plan --mode repair` for state recovery instead of refresh; missing state is not proof the host was never deployed.' "$help"
+	grep -Fq 'Status paths outside the `state.yml` model, such as `config.yml` or `hosts/HOST/state.md`, mean stale target runtime.' "$help"
 	grep -Fq 'After successful mutating remote apply, run a final target status read and report target HEAD separately from applied anchors.' "$help"
 	grep -Fq 'Do not read controller `~/.local/state/tilde/state.yml` for remote targets; target state lives on the target host.' "$help"
 
@@ -129,6 +131,7 @@ EOF
 	grep -Fq 'Remote state note: do not read controller `~/.local/state/tilde/state.yml`' "$status_help"
 	"$tilde" .help update >"$update_help"
 	grep -Fq 'Prompt: `/tilde update [host|ssh:<host>|GROUP] [full] [dry-run|plan-only]`' "$update_help"
+	grep -Fq 'Remote freshness note: before target status reads that gate a mutating workflow, plan, or apply, verify target runtime freshness and refresh stale Git-backed target checkouts; defer if they cannot be safely refreshed.' "$update_help"
 	grep -Fq 'State recovery note: if target status shows missing `state.yml` or no `applied` anchors, use `plan --mode repair`' "$update_help"
 	grep -Fq 'Remote verification note: after successful mutating apply, run a final target status read before closeout.' "$update_help"
 	"$tilde" help ssh >"$ssh_help"
