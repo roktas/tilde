@@ -11,14 +11,15 @@ readonly -a COMMANDS=(
 	'clean|Propose conservative cleanup, including duplicate candidates when relevant.'
 	'create|Create public/private home repository skeletons.'
 	'deploy|Prepare a host and install desired state.'
-	'doctor|Diagnose deployment, repository, host, home-entrypoint, and managed-link health.'
+	'doctor|Diagnose state, repository, target, and managedness problems without executing module code.'
+	'handoff|Copy and print the privilege handoff command for the local or remote host.'
 	'help|Show public commands or detailed help for one public command.'
 	'init|Register existing public/private repositories on this host.'
 	'organize|Propose organization changes, including archive moves when relevant.'
-	'repair|Retry failed install phases from recorded state.'
-	'status|Show a short deployment, home-entrypoint, and managed-surface summary.'
-	'update|Reconcile desired state, then run the fast update path.'
-	'upgrade|Run `update full`, then broad package-manager upgrades after explicit confirmation.'
+	'repair|Apply the current desired state again.'
+	'status|Show compact repository bindings and last fully converged anchors.'
+	'update|Run explicit update behavior from the current desired state.'
+	'upgrade|Run the widest explicitly requested update path.'
 )
 
 readonly -a EXAMPLES=(
@@ -26,7 +27,7 @@ readonly -a EXAMPLES=(
 	'$tilde deploy ssh:<host>|Deploy a remote host using target discovery.'
 	'$tilde deploy ssh:<host> --public PUBLIC_REPO|Deploy a Git-backed VPS with the public data repository.'
 	'$tilde adopt APP_OR_PATH|Propose adopting a new app, config, package, or path.'
-	'$tilde update dry-run|Preview the returning-user update flow.'
+	'$tilde repair|Apply current desired state again after a failed or deferred run.'
 )
 
 abort() {
@@ -77,6 +78,9 @@ usage_suffix_for() {
 		;;
 	doctor | status)
 		printf '%s\n' ' [ssh:<host>]'
+		;;
+	handoff)
+		printf '%s\n' ' [--host HOST] [--root ROOT] [--copy|--no-copy]'
 		;;
 	help)
 		printf '%s\n' ' [command]'

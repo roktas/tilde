@@ -4,9 +4,6 @@ set -Eeuo pipefail
 [[ -z ${TRACE:-} ]] || set -x
 unset CDPATH
 
-readonly BOOTSTRAP_REQUIREMENTS="sha256:18ed5cbd4623dd0e94850f4d911130f93b5eff6286fd1d47815738832cc7b992"
-readonly BOOTSTRAP_SCHEMA="tilde.bootstrap/v1"
-
 BOOTSTRAP_TOOL_BREW=
 BOOTSTRAP_CHECK_REASON=
 BOOTSTRAP_TOOL_CURL=
@@ -41,70 +38,6 @@ apt_lock_pids() {
 	command -v fuser >/dev/null || return 0
 
 	{ sudo_run fuser "${locks[@]}" 2>/dev/null || true; } | tr ' ' '\n' | sed '/^$/d' | sort -u
-}
-
-bootstrap_state_value() {
-	local key=$1
-
-	local state
-
-	state=$(state_path)
-	[[ -f $state ]] || return 1
-
-	awk -v key="$key" '
-		/^---[[:space:]]*$/ {
-			if (!front) {
-				front = 1
-				next
-			}
-			exit
-		}
-		front && /^bootstrap:[[:space:]]*$/ {
-			inside = 1
-			next
-		}
-		front && inside && /^[^[:space:]]/ {
-			inside = 0
-		}
-		front && inside {
-			line = $0
-			sub(/^[[:space:]]+/, "", line)
-			if (line ~ "^" key ":") {
-				sub(/^[^:]*:[[:space:]]*/, "", line)
-				gsub(/^'\''|'\''$/, "", line)
-				gsub(/^"|"$/, "", line)
-				print line
-				exit
-			}
-		}
-	' "$state"
-}
-
-bootstrap_state_ok() {
-	local platform=$1
-
-	local actual
-
-	actual=$(bootstrap_state_value status 2>/dev/null || true)
-	[[ $actual == ok ]] || {
-		check_fail "state-status:${actual:-missing}"
-		return
-	}
-	actual=$(bootstrap_state_value schema 2>/dev/null || true)
-	[[ $actual == "$BOOTSTRAP_SCHEMA" ]] || {
-		check_fail "state-schema:${actual:-missing}"
-		return
-	}
-	actual=$(bootstrap_state_value platform 2>/dev/null || true)
-	[[ $actual == "$platform" ]] || {
-		check_fail "state-platform:${actual:-missing}"
-		return
-	}
-	actual=$(bootstrap_state_value requirements 2>/dev/null || true)
-	[[ $actual == "$BOOTSTRAP_REQUIREMENTS" ]] || {
-		check_fail "state-requirements:${actual:-missing}"
-		return
-	}
 }
 
 detect_platform() {
@@ -234,66 +167,6 @@ probe_bootstrap() {
 	}
 }
 
-record_bootstrap_state() {
-	local platform=$1
-
-	local state
-
-	state=$(state_path)
-	mkdir -p "${state%/*}"
-
-	# shellcheck disable=SC2016
-	TILDE_BOOTSTRAP_CHECKED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ") \
-	TILDE_BOOTSTRAP_CURL=$BOOTSTRAP_TOOL_CURL \
-	TILDE_BOOTSTRAP_GIT=$BOOTSTRAP_TOOL_GIT \
-	TILDE_BOOTSTRAP_BREW=$BOOTSTRAP_TOOL_BREW \
-	TILDE_BOOTSTRAP_HOST=$(host_name) \
-	TILDE_BOOTSTRAP_PLATFORM=$platform \
-	TILDE_BOOTSTRAP_REQUIREMENTS=$BOOTSTRAP_REQUIREMENTS \
-	TILDE_BOOTSTRAP_RUBY=$BOOTSTRAP_TOOL_RUBY \
-	TILDE_BOOTSTRAP_SCHEMA=$BOOTSTRAP_SCHEMA \
-	TILDE_BOOTSTRAP_STATE=$state \
-		"$BOOTSTRAP_TOOL_RUBY" -ryaml -rdate -e '
-		path = ENV.fetch("TILDE_BOOTSTRAP_STATE")
-		text = File.file?(path) ? File.read(path) : ""
-		frontmatter = {}
-		body = ""
-
-		if text.start_with?("---\n")
-			_head, yaml, body = text.split(/^---\s*$\n?/, 3)
-			begin
-				loaded = YAML.safe_load(yaml, aliases: true, permitted_classes: [Date, Time])
-				frontmatter = loaded.is_a?(Hash) ? loaded : {}
-			rescue Psych::Exception
-				frontmatter = {}
-			end
-			body ||= ""
-		else
-			body = text
-		end
-
-		frontmatter["host"] ||= ENV.fetch("TILDE_BOOTSTRAP_HOST")
-		frontmatter["date"] ||= ENV.fetch("TILDE_BOOTSTRAP_CHECKED_AT")
-		frontmatter["bootstrap"] = {
-			"status" => "ok",
-			"schema" => ENV.fetch("TILDE_BOOTSTRAP_SCHEMA"),
-			"platform" => ENV.fetch("TILDE_BOOTSTRAP_PLATFORM"),
-			"requirements" => ENV.fetch("TILDE_BOOTSTRAP_REQUIREMENTS"),
-			"checked_at" => ENV.fetch("TILDE_BOOTSTRAP_CHECKED_AT"),
-			"tools" => {
-				"brew" => ENV.fetch("TILDE_BOOTSTRAP_BREW"),
-				"curl" => ENV.fetch("TILDE_BOOTSTRAP_CURL"),
-				"git" => ENV.fetch("TILDE_BOOTSTRAP_GIT"),
-				"ruby" => ENV.fetch("TILDE_BOOTSTRAP_RUBY")
-			}
-		}
-
-		temp = "#{path}.tmp-#{$PROCESS_ID}"
-		File.write(temp, "---\n#{YAML.dump(frontmatter).delete_prefix("---\n")}---\n#{body}")
-		File.rename(temp, path)
-	'
-}
-
 run_apt() {
 	sudo_run env DEBIAN_FRONTEND=noninteractive apt-get "$@"
 }
@@ -312,15 +185,6 @@ require_sudo() {
 	command -v sudo >/dev/null || abort "sudo is required for $reason"
 	[[ ! -t 0 ]] || return
 	sudo -n true >/dev/null 2>&1 || abort "sudo is required for $reason; rerun bootstrap interactively or configure passwordless sudo"
-}
-
-state_path() {
-	local host
-	local root
-
-	host=$(host_name)
-	root=${XDG_STATE_HOME:-"$HOME/.local/state"}
-	printf '%s\n' "$root/tilde/hosts/$host/state.md"
 }
 
 stop_apt_maintenance() {
@@ -468,15 +332,13 @@ persist_homebrew() {
 
 usage() {
 	cat <<-EOF
-		Usage: boot [--check] [--probe] [--record] [linux|macos]
+		Usage: boot [--check] [linux|macos]
 	EOF
 }
 
 main() {
 	local check=0
 	local platform
-	local probe=0
-	local record=0
 
 	while (($# > 0)); do
 		case $1 in
@@ -487,14 +349,6 @@ main() {
 		--help)
 			usage
 			return
-			;;
-		--probe)
-			probe=1
-			shift
-			;;
-		--record)
-			record=1
-			shift
 			;;
 		linux | macos)
 			[[ -z ${platform:-} ]] || {
@@ -517,13 +371,7 @@ main() {
 	fi
 
 	if ((check)); then
-		if ((!probe)) && bootstrap_state_ok "$platform"; then
-			printf 'OK: bootstrap state\n'
-			return
-		fi
-
 		probe_bootstrap "$platform" || abort "bootstrap baseline is missing or incomplete: ${BOOTSTRAP_CHECK_REASON:-unknown}"
-		((!record)) || record_bootstrap_state "$platform"
 		printf 'OK: bootstrap probe\n'
 		return
 	fi
@@ -551,11 +399,6 @@ main() {
 	ruby --version
 	git --version
 	curl --version | head -n 1
-	BOOTSTRAP_TOOL_BREW=$(find_homebrew)
-	BOOTSTRAP_TOOL_CURL=$(find_tool curl curl)
-	BOOTSTRAP_TOOL_GIT=$(find_tool git git)
-	BOOTSTRAP_TOOL_RUBY=$(find_tool ruby ruby)
-	record_bootstrap_state "$platform"
 }
 
 main "$@"

@@ -5,168 +5,90 @@ description: Use for Tilde deployment, provisioning, and home-management work. T
 
 # Tilde
 
-This skill is standalone. Treat `references/specification.md` as the canonical specification entrypoint. It contains the
-always-read contract and routes to narrower files under `references/specification/`. In this repository,
-`.agents/specs/tilde.md` may exist as a relative symlink for discoverability; do not treat that alias as a second source
-of truth.
+Tilde is a standalone agent skill and control plane. The canonical contract is
+[Specification](references/specification.md). Read that file before changing behavior or executing nontrivial Tilde
+work. The `.agents/specs/tilde.md` path is only a symlink to the same canonical file.
 
-Read `references/specification.md` first, then only the relevant routed specification file before changing behavior or
-executing nontrivial commands. Keep `SKILL.md` short; durable semantics belong in `references/specification.md` and
-`references/specification/`. The PATH-visible runtime surface is `bin/tilde` plus the `bin/sudo` shim; command
-implementations belong in `libexec/`.
+The provisioning model is:
 
-## Specification Map
+- Desired state comes from the current committed public/private home repositories.
+- The only persistent Tilde state file is `~/.local/state/tilde/state.yml`.
+- `state.yml` stores repository bindings and the last fully converged commit anchors.
+- Planning evaluates current manifests and targeted live facts on every run.
+- Every run compares current desired manifests with targeted live checks and idempotent actions.
+- Failed, conflicted, or deferred runs do not advance `applied` anchors.
 
-Read [Specification](references/specification.md) first, then load the narrowest routed file:
+When existing docs, code, habits, or memory conflict with `references/specification.md`, the specification wins.
 
-- Command parsing and confirmation: [Commands](references/specification/commands.md).
-- Home entrypoint, data-repository policy sections, discovery, and adoption: [Home](references/specification/home.md).
-- Data-layer instruction evaluation, custom commands, and layout policy: [Customization](references/specification/customization.md).
-- Fresh-host, Dropbox, and remote setup: [Deployment](references/specification/deployment.md).
-- Module semantics: [Modules](references/specification/modules.md).
-- Model, state, paths, and skill lifecycle: [Model](references/specification/model.md).
-- Plan/install behavior: [Provisioning](references/specification/provisioning.md).
-- Deterministic plan execution: [Apply](references/specification/apply.md).
-- Package work: [Packages](references/specification/packages.md).
-- Repository development: [Tilde Repository Development](references/development.md).
+## Runtime
 
-Package type and platform scope are separate. Do not infer `macos` scope from a prefix such as `cask:`; preserve the
-module's declared `all`, `linux`, or `macos` scope unless package availability or module intent says otherwise.
+The PATH-visible runtime surface is `bin/tilde`, `bin/sudo`, and helper commands intentionally exposed in the Tilde
+runtime PATH. Normal command implementations live in `libexec/` and are dispatched through `bin/tilde`.
 
-## Prompt Contract
+Use `bin/tilde ssh HOST` for Tilde-controlled remote script delivery when available. It sends a script body through
+`ssh HOST sh -s --`; do not compose multi-command remote work with `ssh HOST 'set -e; ...'`, `sh -c`, or `bash -lc`
+unless the target entrypoint explicitly requires Bash.
 
-Tilde is a skill the agent reads and applies directly. In example prompts, `$tilde` is a dispatch notation: it signals
-that this skill should be loaded and the given operation applied by the agent. The installed skill also provides
-`bin/tilde` as a runtime router for implemented helper commands; that router does not replace proposal-first agent
-orchestration for public commands that are still prompt-level workflows.
+## Public Commands
 
-Treat `$tilde [command] [subject...] [qualifiers...]`, `tilde`-prefixed, and `~`-prefixed (second word is a known
-public or internal tilde command) messages as compact natural-language commands, not strict shell invocations. `~`
-followed by a path (e.g. `~/.config`) is not a command. Interpret each command by its specification semantics, and do not
-introduce a separate command-scope model.
+- `help`: show public commands or one command's usage.
+- `deploy`: prepare a local or remote host and apply desired state.
+- `update`: run explicit update behavior from the current desired state.
+- `repair`: apply the current desired state again; it does not read a repair queue or module-level state.
+- `doctor`: diagnose state, repository, target, and managedness problems without executing module code or mutating
+  targets.
+- `handoff`: copy and print the privilege handoff command for the local or remote host.
+- `align`: reconcile links and copies without bootstrap, packages, or module code.
+- `adopt`: inspect a requested app, config, package, or path and propose public/private repository placement.
+- `create`, `init`, `clean`, `organize`, and `upgrade`: follow the specification and user policy; keep destructive or
+  preference-sensitive work proposal-first.
 
-Bare `$tilde` means `help`. It is read-only and must behave like `$tilde help`.
+Treat `dry-run` and `plan-only` as qualifiers. Do not invent a separate stateful planning model for them.
 
-`$tilde help` prints the public command inventory as a GitHub-flavored Markdown table with `Command` and `Action`
-columns, then shows the general prompt format, detailed-help form, bare-command default, and a short example prompt
-section. `$tilde help COMMAND` shows only that public command. `$tilde help custom.NAME` must resolve configured
-data-layer policy before answering. If `COMMAND` is unknown or internal, say so and then show the public command table.
-Prefer `bin/tilde help` when available for bare `$tilde` and `$tilde help`. Present the output as rendered Markdown
-(GFM table, etc.), not as raw code-block text.
+## Module Model
 
-Use proposal-first behavior for writes, moves, removals, repository edits, package changes, home-entrypoint writes, state
-writes, and remote-host actions. Prefer structured confirmation and choice UI over raw prompts such as `[Y/n]`. In
-Codex, use available structured user-input or AFALA-style interaction; in other agents, use the closest native
-equivalent. If only text is available, present explicit choices with target, effect, and blast radius.
+Module README code sections use this stateless contract:
 
-## Commands
+- `Prerequisites`: external requirements and read-only checks only. Failed checks return `deferred`.
+- `Install`: idempotently ensure packages, tools, directories, applications, repositories, or local resources are present.
+- `Post Install`: runs only when `Install` changed something in the current run; correctness must not depend on it.
+- `Configure`: idempotent desired configuration and drift repair.
+- `Update`: explicit refresh or upgrade work.
+- `Notes`: informational only; never executed.
 
-- `align`: reconcile links and copies without running bootstrap, packages, or module scripts. For local configured
-  repositories, prefer `bin/tilde align` when a direct runtime command is useful.
-- `help`: show public commands or one public command's usage.
-- `create`: create public/private home repository skeletons.
-- `init`: register existing public/private repositories on this host.
-- `deploy`: prepare a local or remote host and install desired state.
-- `update`: run the normal returning-user maintenance flow with the fast update path. `update full` runs the full
-  managed update path.
-- `repair`: retry failed install phases from recorded state.
-- `upgrade`: run `update full`, then broad package-manager upgrades after explicit confirmation.
-- `status`: show a short read-only deployment, home-entrypoint, and managed-surface summary. Keep it fast and state-first:
-  prefer `bin/tilde status --format markdown` when available; do not regenerate plans, validate live links, query package
-  managers, or call Dropbox by default. If full deployment state or caches are missing, warn that status is partial and
-  suggest explicit `$tilde status discover`, `$tilde doctor`, or `$tilde deploy`.
-- `doctor`: run bounded diagnostics; this is not a whole-home audit.
-- `adopt`: inspect the requested app, config, package, or path and propose public or private data-repository placement.
-- `clean`, `organize`: preference-sensitive home commands; read `~/AGENTS.md` and private policy when present and
-  otherwise stay conservative. `clean` may include duplicate candidates; `organize` may include archive moves.
+Code blocks must be idempotent or guarded. If an effect cannot be detected from live target facts, represent it as a
+prerequisite, note, or explicit proposal-first operator action.
 
-Internal semantic commands live under `internal.` with `.name` shorthand during Tilde development. Do not show them in
-ordinary help. Treat `plan` and `dry-run` as qualifiers on public commands, not as public commands.
+Package managers are the source of truth for package presence. Package inventories are ephemeral, in-memory
+optimizations only.
 
-For local helper execution, use `bin/tilde COMMAND ...` when a runtime route exists. Command-specific implementation
-files under `libexec/` are internal route targets. `bin/sudo` is a Tilde execution shim, not a user-facing command.
+Module code blocks call Tilde helpers by their plain names, such as `line` and `span`. Privileged helper calls use the
+same plain form with `sudo`, such as `sudo line ...`.
 
-## Common Prompt Shapes
+## Safety
 
-- `$tilde adopt APP_OR_PATH`: propose public/private data-repository placement for a new app, config, package, or
-  explicit path.
-- `$tilde deploy`: local/default discovery.
-- `$tilde deploy ssh:<host>`: remote discovery; use Dropbox-backed target checkouts when present.
-- `$tilde deploy ssh:<host> --public PUBLIC_REPO`: minimal `remote-git` VPS deployment.
-- `$tilde deploy ssh:<host> --public PUBLIC_REPO --private PRIVATE_REPO`: remote deployment with private modules and
-  policy.
-- `$tilde align`: reconcile managed links and copies for configured local repositories without bootstrap or packages.
-- `$tilde align ssh:<host>`: reconcile managed links and copies on an already reachable remote host.
-- `$tilde update`: update an already deployed local host.
-- `$tilde update ssh:<host>`: update an already deployed remote host.
-- `$tilde update full`: run full managed update for an already deployed local host.
-- `$tilde update ssh:<host> full`: run full managed update for an already deployed remote host.
-- `$tilde upgrade`: run the widest update path, including `update full` and broad package-manager upgrades.
-- Add `dry-run` or `plan-only` when the user wants the proposal without applying it.
+Proposal-first behavior is required before replacing unmanaged files, removing stale links or managed spans, backing up
+conflicting paths, uninstalling packages, running non-idempotent code, requiring privileges, mutating remote hosts, or
+performing one-off operator workflows.
 
-## Discovery
+Managedness must be proven before destructive cleanup. No proof means no destructive mutation.
 
-After deployment, home commands may start from `~`. Treat `~/AGENTS.md` as the user's home-directory instructions,
-normally linked from the private data repository's `home/AGENTS.md`, or from the public data repository's
-`home/AGENTS.md` when no private data repository is configured. Resolve the installed Tilde skill from local Tilde
-state, fallback entrypoint frontmatter, the current repository, or explicit user-provided paths. Never search all of
-home just to find the repo.
+If sudo is required and noninteractive sudo fails, report `deferred` and present:
 
-Do not recursively scan `$HOME` by default. No `find $HOME`, `fd $HOME`, or equivalent broad search unless the user
-explicitly requests it after scope and cost are described. Use bounded discovery from modules, explicit paths, managed
-targets, cheap XDG/home metadata, relevant app/config locations, and cheap package/app metadata.
-
-## Data-Layer Policy
-
-For custom commands or preference-sensitive home policy, read the Home and Customization specs. `home/AGENTS.md` owns
-target-home policy; public/private root `AGENTS.md` files are repository-scope only. Data-layer policy uses `## Layout`
-and `## Operations` sections. Ordinary text remains normal agent instructions, but data-layer policy cannot weaken
-control-plane safety rules.
-
-## Deployment
-
-Choose host kind from the target repo copy: `dropbox`, `git`, `self`, or `any`. For `dropbox`, Dropbox setup and account
-linking are interactive preconditions; guide the user, then run `bin/tilde preflight` in the target context. Treat
-required files and Git traversal failures as blockers, and macOS File Provider flags as advisory. Do not create a Git
-clone on a `dropbox` target unless the user changes host kind.
-
-For real local deployment or `remote-git`, require a clean worktree and pushed target commit. Generate plans with
-`bin/tilde plan`; it never applies changes. Write deployment state on the target first and optionally mirror it back to
-the controller. Run `bin/tilde boot` only when the target is missing the bootstrap baseline, the baseline is suspect, or
-the user explicitly asks for a bootstrap check. Cleaning deployment state is not a reason to rerun bootstrap.
-For `remote-git` with a private data repository, use controller-side Git bundle transport as the default first move.
-Target-side private GitHub authentication is opt-in only; do not try `gh auth`, deploy keys, PATs, or SSH agent
-forwarding before bundle transport unless the user or host policy explicitly chooses target-side private Git. Prefer
-`bin/tilde checkout remote` for bundle-based private checkout preparation and updates.
-Run `bin/tilde preflight` before planning; it starts with `bin/tilde boot --check --record` so compatible bootstrap state
-uses the fast path and missing or stale bootstrap state is probed before deployment continues. For normal apply/update
-preflight, missing or incomplete bootstrap baseline is recoverable: preflight runs idempotent bootstrap and re-checks.
-If bootstrap needs credentials or another external action but the existing runtime can still run plan/apply, continue
-with a warning instead of blocking desired-state reconciliation.
-When a host state records a provisioning level, keep that level for later plans unless the user explicitly asks for
-another level. A host deployed as `minimal` should stay `minimal` during update.
-After remote deploy or update apply, inspect structured apply results before closeout. If any result is `deferred` with
-reason `privilege required`, do not treat the operation as fully closed. Present the target-specific `bin/tilde sudo
-handoff --host HOST --copy` command, explain the privilege scope and cleanup requirement, tell the user that the helper
-attempts to copy the exact command to the clipboard, wait for the user action, rerun the affected repair or update path,
-then verify cleanup.
-For Dropbox-internal symlinks, the plan must carry a relative link value even when source and target spell the Dropbox
-root differently, such as direct `~/Dropbox` paths versus macOS File Provider paths under
-`~/Library/CloudStorage/Dropbox`.
-
-For remote SSH orchestration, do not rely on the target login shell. Use `bin/tilde ssh HOST` for Tilde-controlled
-multi-command remote work when the route is available; it executes the body through the POSIX `ssh HOST sh -s --`
-shape:
-
-```sh
-bin/tilde ssh HOST <<'SH'
-# ...
-SH
+```bash
+bin/tilde handoff --host HOST
 ```
 
-Do not start remote commands with `set -e; ...`, and do not use `sh -c` or `bash -lc` for multi-command remote
-orchestration. Reserve Bash only for explicit Bash script entrypoints such as `libexec/boot` or a target-resolved
-Homebrew Bash when truly required.
+The helper prints the exact command and reports whether it copied the command to the controller clipboard. Wait for the
+user to run it, then rerun the affected action and verify cleanup. Do not collect passwords in chat.
 
-Before presenting or running a remote multi-command snippet, scan it once: if it contains `ssh ... 'set -e;`,
-`ssh ... sh -c`, or `ssh ... bash -lc`, rewrite it to the `sh -s` heredoc form.
+## Weak-Model Guardrails
+
+For weaker or low-context agents:
+
+- Plan from current committed repositories and targeted live facts.
+- Treat `Prerequisites` as read-only checks.
+- Advance `applied` anchors only after every required action succeeds.
+- Keep `applied` anchors unchanged after `deferred`, `conflict`, or `notok`.
+- Remove packages, copies, files, or spans only with explicit managedness proof and proposal-first confirmation.
+- Prefer a safe `deferred` or `conflict` result over guessing.

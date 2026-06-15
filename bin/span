@@ -1,0 +1,143 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "fileutils"
+require "json"
+require "pathname"
+
+class Span
+  SCHEMA = "tilde.helper/v1"
+
+  def initialize(argv, input)
+    @argv = argv.dup
+    @comment = "#"
+    @home = Pathname.new(ENV.fetch("HOME", Dir.home)).expand_path
+    @input = input
+  end
+
+  def run
+    parse!
+    status = @op == "ensure" ? ensure_span : remove_span
+    emit(status)
+    0
+  rescue Conflict => e
+    emit("conflict", "reason" => e.message) if @target && @id
+    warn("conflict: #{e.message}")
+    2
+  rescue StandardError => e
+    emit("notok", "reason" => e.message) if @target && @id
+    warn("error: #{e.message}")
+    1
+  end
+
+  class Conflict < StandardError; end
+
+  private
+
+  def begin_marker = "#{@comment} >>> tilde:#{@id}"
+
+  def block
+    body = @input.end_with?("\n") ? @input : "#{@input}\n"
+    "#{begin_marker}\n#{body}#{end_marker}\n"
+  end
+
+  def display(path)
+    text = path.to_s
+    text == @home.to_s ? "~" : text.sub(%r{\A#{Regexp.escape(@home.to_s)}/}, "~/")
+  end
+
+  def emit(status, extra = {})
+    record = {
+      "schema" => SCHEMA,
+      "tool" => "span",
+      "op" => @op,
+      "status" => status,
+      "target" => display(path),
+      "id" => @id
+    }.merge(extra).compact
+    puts(JSON.generate(record))
+  end
+
+  def end_marker = "#{@comment} <<< tilde:#{@id}"
+
+  def ensure_span
+    text = read_text
+    range = span_range(text)
+    if range
+      return "unchanged" if text[range] == block
+
+      File.write(path.to_s, "#{text[0...range.begin]}#{block}#{text[range.end..]}")
+      return "changed"
+    end
+
+    FileUtils.mkdir_p(path.dirname)
+    prefix = text.empty? || text.end_with?("\n") ? "" : "\n"
+    File.write(path.to_s, "#{text}#{prefix}#{block}")
+    "changed"
+  end
+
+  def expand(value)
+    return @home if value == "~"
+    return @home.join(value.delete_prefix("~/")).expand_path if value.start_with?("~/")
+
+    Pathname.new(value).expand_path
+  end
+
+  def marker_indexes(lines, marker)
+    lines.each_index.select { |index| lines.fetch(index).chomp == marker }
+  end
+
+  def parse!
+    @op = @argv.shift
+    @target = @argv.shift
+    @id = @argv.shift
+    raise "usage: span ensure FILE ID [--comment PREFIX]" unless %w[ensure remove].include?(@op) && @target && @id
+
+    until @argv.empty?
+      case @argv.shift
+      when "--comment"
+        @comment = @argv.shift || raise("missing --comment value")
+      else
+        raise "unknown option"
+      end
+    end
+  end
+
+  def path
+    @path ||= expand(@target)
+  end
+
+  def read_text
+    return "" unless path.file?
+
+    text = path.read
+    raise Conflict, "binary file" if text.include?("\0")
+
+    text
+  end
+
+  def remove_span
+    text = read_text
+    range = span_range(text)
+    return "unchanged" unless range
+
+    File.write(path.to_s, "#{text[0...range.begin]}#{text[range.end..]}")
+    "removed"
+  end
+
+  def span_range(text)
+    lines = text.lines
+    starts = marker_indexes(lines, begin_marker)
+    ends = marker_indexes(lines, end_marker)
+    raise Conflict, "multiple same IDs" if starts.length > 1 || ends.length > 1
+    raise Conflict, "malformed-marker" if starts.length != ends.length
+    return nil if starts.empty?
+    raise Conflict, "malformed-marker" if starts.first > ends.first
+
+    offsets = [0]
+    lines.each { |line| offsets << (offsets.last + line.bytesize) }
+    offsets.fetch(starts.first)...offsets.fetch(ends.first + 1)
+  end
+end
+
+exit(Span.new(ARGV, $stdin.read).run)

@@ -1,8 +1,8 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-require "json"
 require "date"
+require "json"
 require "open3"
 require "optparse"
 require "pathname"
@@ -15,6 +15,8 @@ class Doctor
     @format = options.fetch(:format)
     @home = Pathname.new(ENV.fetch("HOME", Dir.home)).expand_path
     @host = options[:host] || Socket.gethostname.split(".").first
+    @private = options[:private]
+    @public = options[:public]
     @state_dir = expand(options[:state_dir] || "~/.local/state/tilde")
   end
 
@@ -25,40 +27,35 @@ class Doctor
 
   private
 
-  def area(path)
-    names = path.relative_path_from(dropbox).each_filename.map(&:downcase)
-    return "cache" if names.intersect?(%w[.cache cache caches .dropbox.cache])
-    return "archive" if names.intersect?(%w[archive archives arsiv])
-    return "tmp" if names.intersect?(%w[.tmp tmp temp temporary])
-
-    "active"
+  def applied_commit(state, role)
+    applied = state["applied"]
+    applied[role] if applied.is_a?(Hash)
   end
 
   def collect
-    plan = read_plan
-    findings = health_findings(plan) + repository_findings + action_findings(plan)
+    state = read_state
+    findings = state_findings(state) + repository_findings(state) + home_findings
     {
       schema: "tilde.doctor/v1",
       generated_at: Time.now.iso8601,
       host: @host,
       state_dir: show(@state_dir),
-      config: show(config_path),
-      host_state: show(host_state_path),
-      last_plan: show(plan_path),
+      state: show(state_path),
       findings:
     }
   end
 
-  def action_findings(plan)
-    plan.fetch("actions", []).filter_map { |action| inspect_action(action) }
+  def configured_path(option, configured)
+    value = option || configured
+    value ? expand(value) : nil
   end
 
-  def config_path
-    @state_dir.join("config.yml")
+  def dirty?(repo)
+    !git(repo, "status", "--porcelain", "--untracked-files=no").fetch(:stdout).strip.empty?
   end
 
-  def display_target(target, path)
-    target.start_with?("~/") ? target : show(path)
+  def display_target(path)
+    show(path)
   end
 
   def expand(path)
@@ -69,16 +66,13 @@ class Doctor
     Pathname.new(text).expand_path
   end
 
-  def finding(action, path, link, problems)
+  def finding(kind, path, problems, extra = {})
     {
-      kind: "link",
+      kind:,
       area: area(path),
-      module_id: action["module_id"],
-      action_id: action["id"],
-      target: display_target(action.fetch("target"), path),
-      link:,
+      target: display_target(path),
       problems:
-    }
+    }.merge(extra)
   end
 
   def git(repo, *args)
@@ -91,123 +85,124 @@ class Doctor
     }
   end
 
-  def health_findings(plan)
-    findings = []
-    findings << issue("state", config_path, ["missing config"]) unless config_path.file?
-    findings << issue("state", host_state_path, ["missing host state"]) unless host_state_path.file?
-    findings << issue("cache", plan_path, ["missing cached plan"]) unless plan_path.file?
-    findings << issue("cache", plan_path, ["invalid cached plan: #{plan.fetch('error')}"]) if plan["error"]
-    findings
+  def home_findings
+    {
+      "~/AGENTS.md" => expand("~/AGENTS.md"),
+      "~/.agents" => expand("~/.agents"),
+      "~/.agents/skills/tilde" => expand("~/.agents/skills/tilde")
+    }.filter_map do |_label, path|
+      inspect_path(path)
+    end
   end
 
-  def host_state_path
-    @state_dir.join("hosts", @host, "state.md")
+  def inspect_path(path)
+    return finding("home", path, ["missing"]) unless path.exist? || path.symlink?
+    return nil unless path.symlink?
+
+    link = File.readlink(path.to_s)
+    problems = link_problems(path, link)
+    return nil if problems.empty?
+
+    finding("home", path, problems, "link" => link)
+  rescue SystemCallError => e
+    finding("home", path, ["error: #{e.message}"])
+  end
+
+  def area(path)
+    names = path.expand_path.each_filename.map(&:downcase)
+    return "cache" if names.intersect?(%w[.cache cache caches .dropbox.cache])
+    return "archive" if names.intersect?(%w[archive archives arsiv])
+    return "tmp" if names.intersect?(%w[.tmp tmp temp temporary])
+
+    "active"
   end
 
   def host_absolute?(link)
     link == @home.to_s || link.start_with?("#{@home}/")
   end
 
-  def inspect_action(action)
-    return nil unless link_action?(action)
-
-    path = expand(action.fetch("target"))
-    return nil unless managed_dropbox_link?(path)
-
-    link = File.readlink(path.to_s)
-    problems = problems(path, link)
-    return nil if problems.empty?
-
-    finding(action, path, link, problems)
-  rescue SystemCallError => e
-    finding(action, path, nil, ["error: #{e.message}"])
+  def issue(kind, path, problems, extra = {})
+    finding(kind, path, problems, extra)
   end
 
-  def inside?(path, root)
-    path = path.expand_path
-    root = root.expand_path
-    path.to_s == root.to_s || path.to_s.start_with?("#{root}/")
-  end
-
-  def issue(kind, path, problems)
-    {
-      kind:,
-      area: "active",
-      target: show(path),
-      problems:
-    }
-  end
-
-  def link_action?(action)
-    action["kind"] == "link" && action["target"]
-  end
-
-  def managed_dropbox_link?(path)
-    inside?(path, dropbox) && path.symlink?
-  end
-
-  def plan_path
-    @plan_path ||= @state_dir.join("hosts", @host, "last-plan.json")
-  end
-
-  def read_plan
-    JSON.parse(plan_path.read)
-  rescue Errno::ENOENT
-    { "actions" => [] }
-  rescue JSON::ParserError => e
-    { "actions" => [], "error" => e.message }
-  end
-
-  def read_state
-    return {} unless host_state_path.file?
-
-    text = host_state_path.read
-    return {} unless text.start_with?("---\n")
-
-    _head, yaml, _body = text.split(/^---\s*$\n?/, 3)
-    YAML.safe_load(yaml, aliases: true, permitted_classes: [Date, Time]) || {}
-  rescue Psych::SyntaxError
-    {}
-  end
-
-  def read_yaml(path)
-    return {} unless path.file?
-
-    YAML.safe_load(path.read, aliases: true, permitted_classes: [Date, Time]) || {}
-  rescue Psych::SyntaxError
-    {}
-  end
-
-  def repository_findings
-    repositories = {}
-    config = read_yaml(config_path)
-    state = read_state
-    repositories["public"] = config["public"] || state.dig("public", "path")
-    repositories["private"] = config["private"] || state.dig("private", "path")
-
-    repositories.filter_map do |label, value|
-      repository_finding(label, expand(value)) if value
-    end
-  end
-
-  def repository_finding(label, path)
-    return issue("repository", path, ["#{label} repository missing"]) unless path.directory?
-    return issue("repository", path, ["#{label} repository is not a git checkout"]) unless path.join(".git").exist?
-
-    status = git(path, "status", "--porcelain")
-    unless status.fetch(:ok)
-      return issue("repository", path, ["#{label} repository git error: #{status.fetch(:stderr).strip}"])
-    end
-    return issue("repository", path, ["#{label} repository dirty"]) unless status.fetch(:stdout).strip.empty?
-
-    nil
-  end
-
-  def problems(path, link)
+  def link_problems(path, link)
     problems = []
     problems << "broken" unless resolved?(path)
     problems << "host-absolute" if host_absolute?(link)
     problems
+  end
+
+  def read_state
+    return {} unless state_path.file?
+
+    data = YAML.safe_load(state_path.read, aliases: true, permitted_classes: [Date, Time])
+    data.is_a?(Hash) ? data : { "_error" => "state.yml is not a map" }
+  rescue Psych::SyntaxError => e
+    { "_error" => e.message }
+  end
+
+  def repository_finding(label, path, applied)
+    return issue("repository", Pathname.new("~"), ["#{label} repository not configured"], "role" => label) unless path
+    return issue("repository", path, ["#{label} repository missing"], "role" => label) unless path.directory?
+    unless path.join(".git").exist?
+      return issue("repository", path, ["#{label} repository is not a git checkout"], "role" => label)
+    end
+
+    status_finding = repository_status_finding(label, path)
+    return status_finding if status_finding
+    return issue("repository", path, ["#{label} repository dirty"], "role" => label) if dirty?(path)
+
+    head = repository_head(label, path)
+    return head.fetch(:finding) if head.fetch(:finding)
+
+    repository_anchor_finding(label, path, head.fetch(:commit), applied)
+  end
+
+  def repository_anchor_finding(label, path, head, applied)
+    return nil unless applied && head != applied
+
+    issue(
+      "repository",
+      path,
+      ["#{label} repository differs from applied anchor"],
+      "role" => label,
+      "head" => head,
+      "applied" => applied
+    )
+  end
+
+  def repository_findings(state)
+    repositories = {
+      "public" => configured_path(@public, state["public"]),
+      "private" => configured_path(@private, state["private"])
+    }
+
+    repositories.filter_map do |label, path|
+      repository_finding(label, path, applied_commit(state, label))
+    end
+  end
+
+  def repository_head(label, path)
+    head = git(path, "rev-parse", "HEAD")
+    unless head.fetch(:ok)
+      return {
+        finding: issue(
+          "repository",
+          path,
+          ["#{label} repository head error: #{head.fetch(:stderr).strip}"],
+          "role" => label
+        )
+      }
+    end
+
+    { commit: head.fetch(:stdout).strip, finding: nil }
+  end
+
+  def repository_status_finding(label, path)
+    status = git(path, "status", "--porcelain", "--untracked-files=no")
+    return nil if status.fetch(:ok)
+
+    issue("repository", path, ["#{label} repository git error: #{status.fetch(:stderr).strip}"], "role" => label)
   end
 
   def resolved?(path)
@@ -217,33 +212,50 @@ class Doctor
     false
   end
 
-  def dropbox
-    @dropbox ||= @home.join("Dropbox").expand_path
-  end
-
   def show(path)
     path = Pathname.new(path.to_s)
     text = path.to_s
     text == @home.to_s ? "~" : text.sub(%r{\A#{Regexp.escape(@home.to_s)}/}, "~/")
   end
 
-  def puts_markdown(report)
-    puts("# Tilde Doctor")
-    puts
-    puts("- Host: `#{report.fetch(:host)}`")
-    puts("- State root: `#{report.fetch(:state_dir)}`")
-    puts("- Last plan cache: `#{report.fetch(:last_plan)}`")
-    puts
-    puts_health(report)
-    puts
-    puts_dropbox_links(report)
+  def state_findings(state)
+    findings = []
+    findings << issue("state", state_path, ["missing state.yml"]) unless state_path.file?
+    findings << issue("state", state_path, ["invalid state.yml: #{state.fetch('_error')}"]) if state.key?("_error")
+    findings.concat(valid_state_findings(state)) if state_path.file? && !state.key?("_error")
+    findings
+  end
+
+  def state_path
+    @state_dir.join("state.yml")
+  end
+
+  def valid_state_findings(state)
+    findings = []
+    unless state["protocol"] == "tilde/v1"
+      findings << issue("state", state_path, ["unexpected protocol: #{state['protocol'] || 'missing'}"])
+    end
+    findings << issue("state", state_path, ["missing applied anchors"]) unless state["applied"].is_a?(Hash)
+    findings
+  end
+
+  def puts_dropbox_links(report)
+    puts("## Home Links")
+    findings = link_items(report)
+    if findings.empty?
+      puts("- No broken or host-absolute home-entrypoint links found.")
+    else
+      findings.each do |item|
+        puts("- `#{item.fetch(:target)}`: #{item.fetch(:problems).join(', ')} (`#{item.fetch(:area)}`)")
+      end
+    end
   end
 
   def puts_health(report)
     health = health_items(report)
     puts("## Health")
     if health.empty?
-      puts("- No deployment state, cache, or repository health problems found.")
+      puts("- No state or repository health problems found.")
     else
       health.each do |item|
         puts("- `#{item.fetch(:target)}`: #{item.fetch(:problems).join(', ')}")
@@ -251,27 +263,24 @@ class Doctor
     end
   end
 
-  def puts_dropbox_links(report)
-    puts("## Dropbox Links")
-    findings = link_items(report)
-    if findings.empty?
-      puts("- No broken or host-absolute managed Dropbox links found.")
-    else
-      findings.each do |item|
-        puts(
-          "- `#{item.fetch(:target)}`: #{item.fetch(:problems).join(', ')} " \
-          "(`#{item.fetch(:area)}`, `#{item.fetch(:module_id)}`)"
-        )
-      end
-    end
+  def puts_markdown(report)
+    puts("# Tilde Doctor")
+    puts
+    puts("- Host: `#{report.fetch(:host)}`")
+    puts("- State root: `#{report.fetch(:state_dir)}`")
+    puts("- State: `#{report.fetch(:state)}`")
+    puts
+    puts_health(report)
+    puts
+    puts_dropbox_links(report)
   end
 
   def health_items(report)
-    report.fetch(:findings).reject { |item| item.fetch(:kind) == "link" }
+    report.fetch(:findings).reject { |item| item.fetch(:kind) == "home" }
   end
 
   def link_items(report)
-    report.fetch(:findings).select { |item| item.fetch(:kind) == "link" }
+    report.fetch(:findings).select { |item| item.fetch(:kind) == "home" }
   end
 end
 
@@ -285,6 +294,8 @@ def main(argv)
       parser.banner = "Usage: doctor [options]"
       parser.on("--format FORMAT", "Output format: json or markdown") { |value| options[:format] = value }
       parser.on("--host HOST", "Host short name") { |value| options[:host] = value }
+      parser.on("--private PATH", "Private home repository path") { |value| options[:private] = value }
+      parser.on("--public PATH", "Public home repository path") { |value| options[:public] = value }
       parser.on("--state-dir PATH", "Tilde state directory") { |value| options[:state_dir] = value }
     end
     .parse!(argv)

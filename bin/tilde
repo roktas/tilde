@@ -23,6 +23,7 @@ readonly -a ROUTES=(
 	boot
 	checkout
 	doctor
+	handoff
 	help
 	plan
 	preflight
@@ -97,6 +98,9 @@ resolve_route() {
 		;;
 	.help | internal.help)
 		printf '%s\n' help
+		;;
+	.handoff | internal.handoff)
+		printf '%s\n' handoff
 		;;
 	.plan | internal.plan)
 		printf '%s\n' plan

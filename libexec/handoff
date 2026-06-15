@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+[[ -z ${TRACE:-} ]] || set -x
+unset CDPATH
+
+abort() {
+	warn "E: $*"
+	exit 2
+}
+
+warn() {
+	printf '%s\n' "$*" >&2
+}
+
+# ------------------------------------------------------------------------------------------------------------------------
+# Main
+# ------------------------------------------------------------------------------------------------------------------------
+
+usage() {
+	cat <<'EOF'
+Usage: handoff [--host HOST] [--root ROOT] [--copy|--no-copy]
+EOF
+}
+
+main() {
+	local root
+
+	root=$(cd -- "${BASH_SOURCE[0]%/*}/.." >/dev/null && pwd)
+
+	case ${1:-} in
+	-h | --help | help)
+		usage
+		exit 0
+		;;
+	esac
+
+	exec "$root/libexec/sudo" handoff "$@"
+}
+
+main "$@"

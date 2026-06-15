@@ -29,12 +29,12 @@ check_bootstrap() {
 
 	case $mode in
 	auto)
-		if "$root/bin/tilde" boot --check --record; then
+		if "$root/bin/tilde" boot --check; then
 			return
 		fi
 
 		warn "W: bootstrap check failed; running bootstrap"
-		if "$root/bin/tilde" boot && "$root/bin/tilde" boot --check --record; then
+		if "$root/bin/tilde" boot && "$root/bin/tilde" boot --check; then
 			return
 		fi
 
@@ -47,16 +47,16 @@ check_bootstrap() {
 		return 1
 		;;
 	check)
-		"$root/bin/tilde" boot --check --record
+		"$root/bin/tilde" boot --check
 		;;
 	require)
-		if "$root/bin/tilde" boot --check --record; then
+		if "$root/bin/tilde" boot --check; then
 			return
 		fi
 
 		warn "W: bootstrap check failed; running bootstrap"
 		"$root/bin/tilde" boot
-		"$root/bin/tilde" boot --check --record
+		"$root/bin/tilde" boot --check
 		;;
 	skip)
 		;;

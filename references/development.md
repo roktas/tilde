@@ -14,11 +14,11 @@ Load this reference when editing this repository, the Tilde skill, helper script
 - Runtime router helper: `bin/tilde`
 - Sudo PATH shim: `bin/sudo`
 - Runtime implementations: `libexec/`
-- Align runtime implementation: `libexec/align`
+- Privilege handoff route: `libexec/handoff`
 - Bootstrap implementation: `libexec/boot`
 - SSH transport implementation: `libexec/ssh`
 - Sudo classifier and handoff implementation: `libexec/sudo`
-- Provisioning state: `~/.local/state/tilde/hosts/HOST/state.md`
+- Provisioning state: `~/.local/state/tilde/state.yml`
 - Agent resume checkpoint: `.agents/state/checkpoints/assistant.md`
 - Shared notes and TODO inbox: `.agents/notes/todo.md`
 - Local task state: `.agents/state/tasks/`
@@ -54,10 +54,10 @@ checkpoint after requested commits or pushes when practical.
   `misc-` exists, it must be `extra`.
 - Prefer short contextual file, directory, and helper names. Avoid encoding implementation details in names unless they
   disambiguate real siblings or are part of an established external interface.
-- Keep `bin/` minimal because it is the PATH-visible runtime surface. It contains `tilde`, `sudo`, and only future
-  entries that need PATH lookup or a stable executable name. Do not add `bin/` wrappers for normal `libexec/` routes;
-  dispatch those routes through `bin/tilde`, and update the spec, development docs, and router tests before adding any
-  future `bin/` entry.
+- Keep `bin/` intentional because it is the PATH-visible Tilde runtime surface. It contains the `tilde` router, the
+  `sudo` shim, and helper commands such as `line` or `span` that module code blocks call through the Tilde runtime PATH.
+  Do not add `bin/` wrappers for normal `libexec/` routes; dispatch those routes through `bin/tilde`, and update the
+  spec, development docs, and router tests before adding any future `bin/` entry.
 - In the public home data repository, `agents` is the shared agent module. `codex` and `opencode` are agent-specific
   modules. Keep agent-specific modules equivalent in feature set when practical; the intended difference is tone and
   weight.
@@ -78,10 +78,11 @@ bin/tilde plan --repo ../home --allow-dirty --platform linux --host smoke --form
 .agents/tests/checkout/smoke.sh
 .agents/tests/deploy/smoke.sh
 .agents/tests/doctor/smoke.sh
+.agents/tests/helper/smoke.sh
 .agents/tests/router/smoke.sh
 .agents/tests/status/smoke.sh
 REPO_ROOT=../home .agents/tests/plan/smoke.sh
-RUBOCOP_SERVER=false RUBOCOP_CACHE_ROOT=.agents/state/rubocop-cache rubocop --cache false --config .agents/tests/rubocop.yml libexec/plan libexec/apply libexec/doctor libexec/status
+RUBOCOP_SERVER=false RUBOCOP_CACHE_ROOT=.agents/state/rubocop-cache rubocop --cache false --config .agents/tests/rubocop.yml libexec/plan libexec/apply libexec/doctor libexec/status bin/line bin/span
 mapfile -t shell_files < <(rg --hidden -l '^#!.*(bash|sh)' -g '!**/.git/**' -g '!**/.agents/state/**')
 shellcheck "${shell_files[@]}"
 ```

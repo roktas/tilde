@@ -19,10 +19,8 @@ TILDE_ROOT = Pathname.new(__dir__).parent.expand_path
 
 class Apply
   APPLY_SCHEMA = "tilde.apply/v1"
-  CACHE_SCHEMA = "tilde.cache/v1"
   PLAN_SCHEMA = "tilde.plan/v1"
-  RESULT_OK = %w[ok unchanged ignored].freeze
-  RESUMABLE_RESULTS = %w[ok unchanged].freeze
+  RESULT_OK = %w[ok changed unchanged removed skipped ignored].freeze
   ROLES = %w[public private].freeze
   ROLE_ORDER = {
     "public" => 0,
@@ -30,7 +28,7 @@ class Apply
   }.freeze
   SUPPORTED_ACTIONS = %w[entrypoint package section link copy manual].freeze
   SUPPORTED_CONDITIONS = %w[graphical].freeze
-  SUPPORTED_CONFLICTS = %w[backup none write-fallback-file].freeze
+  SUPPORTED_CONFLICTS = %w[none write-fallback-file].freeze
   SUPPORTED_PACKAGE_TYPES = %w[brew cask deb egg flatpak gem github npm scoop skill].freeze
   ACTION_HANDLERS = {
     "copy" => :execute_copy,
@@ -85,6 +83,16 @@ class Apply
     %w[upgrade npm] => ->(name) { ["bun", "update", "-g", name] },
     %w[upgrade scoop] => ->(name) { name == "*" ? %w[scoop update *] : ["scoop", "update", name] }
   }.freeze
+  PACKAGE_INVENTORY_COMMANDS = {
+    "brew" => %w[brew list --formula -1],
+    "cask" => %w[brew list --cask -1],
+    "deb" => ["dpkg-query", "-W", "-f", '${binary:Package}\n'],
+    "egg" => %w[uv tool list],
+    "flatpak" => %w[flatpak list --app --columns=application],
+    "gem" => %w[gem list --no-versions],
+    "npm" => %w[bun list -g],
+    "scoop" => %w[scoop list]
+  }.freeze
   GITHUB_PLATFORM_RULES = {
     "linux" => {
       positive: /(?:linux|\.deb\z)/,
@@ -111,27 +119,25 @@ class Apply
     load_plans
     validate!
     prepare_state
-    write_last_plan
-    write_last_apply unless @resume
+    acquire_lock
     apply_actions
-    write_state if write_state?
+    write_state if advance_anchors?
     puts(JSON.pretty_generate(@apply))
   end
 
   private
 
   def action_failure?(result)
-    !RESULT_OK.include?(result.fetch(:status)) && result.fetch(:status) != "deferred"
+    !RESULT_OK.include?(result.fetch(:status))
   end
 
-  def action_result(action, status, diagnostics = {}, backups = [])
+  def action_result(action, status, diagnostics = {})
     {
       action_id: action.fetch("id"),
       kind: action.fetch("kind"),
       module_id: action.fetch("module_id"),
       status:,
       diagnostics: diagnostics.compact,
-      backups:,
       finished_at: Time.now.iso8601
     }
   end
@@ -148,19 +154,13 @@ class Apply
     end
 
     @apply[:completed] = !stop_after_reached? && @apply[:results].length == actions.length
-    write_last_apply
   end
 
-  def backup_path(target)
-    relative = target.relative_path_from(@home).to_s
-    ensure_backup_dir.join(relative)
-  end
+  def acquire_lock
+    @lock = File.open(@lock_path.to_s, File::RDWR | File::CREAT, 0o600)
+    return if @lock.flock(File::LOCK_EX | File::LOCK_NB)
 
-  def backup_target(target)
-    backup = backup_path(target)
-    FileUtils.mkdir_p(backup.dirname)
-    FileUtils.mv(target.to_s, backup.to_s)
-    backup.to_s
+    raise "state lock busy: #{@lock_path}"
   end
 
   def canonicalize(value)
@@ -251,13 +251,6 @@ class Apply
     !git(repo, "status", "--porcelain").empty?
   end
 
-  def ensure_backup_dir
-    return @backup_dir if @backup_dir
-
-    @backup_dir = @host_dir.join("backups", Time.now.utc.strftime("%Y%m%dT%H%M%SZ"))
-    @backup_dir
-  end
-
   def execute(action)
     send(ACTION_HANDLERS.fetch(action.fetch("kind")), action)
   rescue StandardError => e
@@ -269,15 +262,15 @@ class Apply
     target = expand_target(action.fetch("target"))
     return action_result(action, "unchanged") if copy_equal?(source, target)
 
-    backups = []
-    backups << backup_target(target) if target.exist? || target.symlink?
+    return action_result(action, "conflict", { "reason" => "copy target differs" }) if target.exist? || target.symlink?
+
     FileUtils.mkdir_p(target.dirname)
 
     temp = Pathname.new("#{target}.tilde-tmp-#{$PROCESS_ID}")
     FileUtils.rm_rf(temp)
     copy_source(source, temp)
     FileUtils.mv(temp.to_s, target.to_s)
-    action_result(action, "ok", {}, backups)
+    action_result(action, "changed")
   ensure
     FileUtils.rm_rf(temp) if temp
   end
@@ -287,11 +280,13 @@ class Apply
     target = expand_target(action.fetch("target"))
     return action_result(action, "unchanged") if target.file? && target.read == source.read
 
-    backups = []
-    backups << backup_target(target) if target.exist? || target.symlink?
+    if target.exist? || target.symlink?
+      return action_result(action, "conflict", { "reason" => "entrypoint target differs" })
+    end
+
     FileUtils.mkdir_p(target.dirname)
     target.write(source.read)
-    action_result(action, "ok", {}, backups)
+    action_result(action, "changed")
   end
 
   def execute_link(action)
@@ -299,11 +294,11 @@ class Apply
     value = action.fetch("link_value")
     return action_result(action, "unchanged") if target.symlink? && File.readlink(target.to_s) == value
 
-    backups = []
-    backups << backup_target(target) if target.exist? || target.symlink?
+    return action_result(action, "conflict", { "reason" => "link target differs" }) if target.exist? || target.symlink?
+
     FileUtils.mkdir_p(target.dirname)
     File.symlink(value, target.to_s)
-    action_result(action, "ok", {}, backups)
+    action_result(action, "changed")
   end
 
   def execute_manual(action)
@@ -320,14 +315,9 @@ class Apply
   def execute_package(action)
     package = action.fetch("package")
     type = package.fetch("type")
-    unless SUPPORTED_PACKAGE_TYPES.include?(type)
-      return action_result(action, "deferred", { "reason" => "unsupported package handler: #{type}" })
-    end
 
-    condition = action["condition"] || package["condition"]
-    unless condition_met?(condition)
-      return action_result(action, "ignored", { "reason" => "condition not met: #{condition}" })
-    end
+    preflight = package_preflight_result(action, package)
+    return preflight if preflight
 
     return execute_github(action) if type == "github"
     return execute_skill(action) if type == "skill"
@@ -336,6 +326,101 @@ class Apply
     return action_result(action, "deferred", { "reason" => "unsupported package operation" }) unless commands
 
     execute_commands(action, commands)
+  end
+
+  def github_package_present?(source)
+    name = source.to_s.split("/").last
+    return false if name.empty?
+
+    @home.join(".local", "bin", name).executable? || command_available?(name)
+  end
+
+  def package_inventory(type)
+    @package_inventory ||= {}
+    return @package_inventory[type] if @package_inventory.key?(type)
+
+    command = package_inventory_command(type)
+    @package_inventory[type] = command ? package_inventory_output(type, command) : nil
+  end
+
+  def package_install_present?(action, package) = action.fetch("operation") == "install" && package_present?(package)
+
+  def package_inventory_command(type) = PACKAGE_INVENTORY_COMMANDS[type]
+
+  def package_inventory_output(type, command)
+    stdout, _stderr, status = Open3.capture3(*command)
+    return nil unless status.success?
+
+    parse_package_inventory(type, stdout)
+  rescue Errno::ENOENT
+    nil
+  end
+
+  def package_present?(package)
+    type = package.fetch("type")
+    name = package.fetch("name")
+
+    case type
+    when "github"
+      github_package_present?(name)
+    when "skill"
+      skill_present?(name)
+    else
+      inventory = package_inventory(type)
+      inventory ? inventory.include?(name) : false
+    end
+  end
+
+  def package_preflight_result(action, package)
+    type = package.fetch("type")
+    unless SUPPORTED_PACKAGE_TYPES.include?(type)
+      return action_result(action, "deferred", { "reason" => "unsupported package handler: #{type}" })
+    end
+
+    condition = action["condition"] || package["condition"]
+    unless condition_met?(condition)
+      return action_result(action, "ignored", { "reason" => "condition not met: #{condition}" })
+    end
+    return package_present_result(action) if package_install_present?(action, package)
+
+    nil
+  end
+
+  def package_present_result(action)
+    action_result(action, "unchanged", { "reason" => "package already present" })
+  end
+
+  def parse_egg_inventory(output)
+    output.lines.filter_map { |line| line.match(/\A([^\s-]\S*)\s+v\d/) { |match| match[1] } }
+  end
+
+  def parse_npm_inventory_line(line)
+    text = line.strip
+    return if text.empty? || text.include?("node_modules")
+
+    name = text.sub(/\A\S+\s+/, "").split.first
+    return unless name
+
+    name.sub(/@[^@]*\z/, "")
+  end
+
+  def parse_npm_inventory(output) = output.lines.filter_map { |line| parse_npm_inventory_line(line) }
+
+  def parse_package_inventory(type, output)
+    return parse_egg_inventory(output) if type == "egg"
+    return parse_npm_inventory(output) if type == "npm"
+    return parse_scoop_inventory(output) if type == "scoop"
+
+    output.lines.map(&:strip).reject(&:empty?)
+  end
+
+  def parse_scoop_inventory(output)
+    output.lines.filter_map { |line| line.split.first }.grep_v(/\A(?:Name|Installed|-+)\z/i)
+  end
+
+  def skill_present?(source)
+    target = skill_target(source)
+    target&.join(".git")&.directory?
   end
 
   def execute_commands(action, commands, diagnostics = {})
@@ -440,17 +525,11 @@ class Apply
 
     blocks = []
     action.fetch("bash_blocks").each_with_index do |block, index|
-      stdout, stderr, status, sudo_events = run_block(block)
-      result = { "index" => index + 1, "stdout" => stdout, "stderr" => stderr, "exit" => status.exitstatus }
-      result["sudo"] = sudo_events unless sudo_events.empty?
-      blocks << result
-      if privilege_deferred?(["bash"], stderr, status, sudo_events)
-        return action_result(action, "deferred", { "blocks" => blocks, "reason" => "privilege required" })
-      end
-      return action_result(action, "notok", { "blocks" => blocks }) unless status.success?
+      result = section_block_result(action, block, index, blocks)
+      return result if result
     end
 
-    action_result(action, "ok", { "blocks" => blocks })
+    action_result(action, section_status(action, blocks), section_diagnostics(action, blocks))
   end
 
   def expand_target(path)
@@ -707,8 +786,10 @@ class Apply
     Socket.gethostname.split(".").first
   end
 
-  def input_plan_cache?
-    %w[apply repair].include?(target.fetch("mode"))
+  def advance_anchors?
+    %w[apply repair].include?(target.fetch("mode")) &&
+      @apply.fetch(:completed) &&
+      @apply.fetch(:results).all? { |result| RESULT_OK.include?(result.fetch(:status)) }
   end
 
   def init_apply
@@ -733,79 +814,9 @@ class Apply
     raise "invalid plan JSON: #{e.message}"
   end
 
-  def module_results
-    results = skipped_module_results
-    module_statuses.each do |module_id, values|
-      results[module_id] = values.all? { |value| RESULT_OK.include?(value) } ? "ok" : "notok"
-    end
-    results
-  end
-
-  def module_statuses
-    statuses = actions.to_h { |action| [action.fetch("module_id"), []] }
-    @apply.fetch(:results).each do |result|
-      statuses[result.fetch(:module_id)] ||= []
-      statuses[result.fetch(:module_id)] << result.fetch(:status)
-    end
-
-    statuses
-  end
-
-  def modules
-    @modules ||= @plans.flat_map { |plan| plan.fetch("modules", []) }
-  end
-
-  def cache_actions(actions, modules, previous_actions)
-    skipped_ids = modules.select { |mod| mod["skipped"] }.map { |mod| mod.fetch("id") }
-    current_ids = actions.map { |action| action.fetch("module_id") }
-    preserved = Array(previous_actions).select do |action|
-      skipped_ids.include?(action["module_id"]) && !current_ids.include?(action["module_id"])
-    end
-
-    preserved + actions
-  end
-
-  def cache_core(cache, previous)
-    core = cache.fetch(:core)
-    previous_core = previous["core"]
-    return core unless previous_core.is_a?(Hash)
-
-    entrypoints = core["home_entrypoints_to_write"]
-    links = core["links_to_create"]
-    {
-      "home_entrypoints_to_write" =>
-        Array(entrypoints).empty? ? previous_core["home_entrypoints_to_write"] : entrypoints,
-      "links_to_create" =>
-        Array(links).empty? ? previous_core["links_to_create"] : links
-    }
-  end
-
-  def cache_modules(modules, previous_modules)
-    previous = previous_modules.to_h { |mod| [mod["id"], mod] }
-    modules.map do |mod|
-      mod["skipped"] ? previous.fetch(mod.fetch("id"), mod) : mod
-    end
-  end
-
-  def cache_name(kind)
-    mode = target.fetch("mode")
-    return "last-#{kind}.json" if %w[apply repair].include?(mode)
-
-    "last-#{mode}-#{kind}.json"
-  end
-
-  def cache_plan(cache)
-    return cache unless input_plan_cache?
-
-    previous = read_json(@last_plan_path)
-    return cache unless previous["schema"] == CACHE_SCHEMA
-
-    modules = cache_modules(cache.fetch(:modules), Array(previous["modules"]))
-    cache.merge(
-      core: cache_core(cache, previous),
-      modules:,
-      actions: cache_actions(cache.fetch(:actions), cache.fetch(:modules), previous["actions"])
-    )
+  def binding(role)
+    repository = role_repository(role)
+    repository && display_path(repository.fetch("path"))
   end
 
   def path_inside?(path, root)
@@ -835,12 +846,9 @@ class Apply
   def prepare_state
     target = @plans.first.fetch("target")
     @state_root = Pathname.new(target.fetch("state_root")).expand_path
-    @host_dir = @state_root.join("hosts", target.fetch("host"))
-    @last_apply_path = @host_dir.join(cache_name("apply"))
-    @last_plan_path = @host_dir.join(cache_name("plan"))
-    @state_path = @host_dir.join("state.md")
-    FileUtils.mkdir_p(@host_dir)
-    @resume = read_resume
+    @state_path = @state_root.join("state.yml")
+    @lock_path = @state_root.join("lock")
+    FileUtils.mkdir_p(@state_root)
     @apply = init_apply
   end
 
@@ -849,60 +857,6 @@ class Apply
     record(result)
     failed_modules[action.fetch("module_id")] = true if module_failure?(action, result)
     !core_failure?(action, result) && !stop_after_reached?
-  end
-
-  def read_resume
-    return nil unless @last_apply_path&.file?
-
-    data = JSON.parse(@last_apply_path.read)
-    return nil if data["completed"]
-    return nil unless data["input_id"] == input_id
-
-    data
-  rescue JSON::ParserError
-    nil
-  end
-
-  def read_json(path)
-    return {} unless path.file?
-
-    JSON.parse(path.read)
-  rescue JSON::ParserError
-    {}
-  end
-
-  def previous_done
-    return @previous_done if defined?(@previous_done)
-
-    @previous_done = read_state_done
-  end
-
-  def previous_bootstrap
-    return @previous_bootstrap if defined?(@previous_bootstrap)
-
-    @previous_bootstrap = read_state_frontmatter.fetch("bootstrap", nil)
-  end
-
-  def previous_module_status(mod)
-    previous_done[mod.fetch("id")] || previous_done[mod.fetch("name")]
-  end
-
-  def read_state_done
-    done = read_state_frontmatter["done"]
-    done.is_a?(Hash) ? done : {}
-  end
-
-  def read_state_frontmatter
-    return {} unless @state_path.file?
-
-    text = @state_path.read
-    return {} unless text.start_with?("---\n")
-
-    _head, yaml, _body = text.split(/^---\s*$\n?/, 3)
-    frontmatter = YAML.safe_load(yaml, aliases: true, permitted_classes: [Date, Time])
-    frontmatter.is_a?(Hash) ? frontmatter : {}
-  rescue Psych::Exception
-    {}
   end
 
   def skill_name(source)
@@ -939,24 +893,6 @@ class Apply
 
   def record(result)
     @apply.fetch(:results) << result
-    write_last_apply
-  end
-
-  def resume_result(action)
-    return nil unless @resume
-
-    result = @resume.fetch("results", []).find { |item| item.fetch("action_id") == action.fetch("id") }
-    return nil unless result && RESUMABLE_RESULTS.include?(result.fetch("status"))
-
-    {
-      action_id: result.fetch("action_id"),
-      kind: result.fetch("kind"),
-      module_id: result.fetch("module_id"),
-      status: result.fetch("status"),
-      diagnostics: result.fetch("diagnostics", {}).merge("resumed" => true),
-      backups: result.fetch("backups", []),
-      finished_at: Time.now.iso8601
-    }
   end
 
   def core_failure?(action, result)
@@ -970,9 +906,32 @@ class Apply
   def result_for(action, failed_modules)
     if failed_modules.key?(action.fetch("module_id"))
       action_result(action, "ignored", { "reason" => "previous module action failed" })
+    elsif !run_if_met?(action)
+      action_result(action, "skipped", { "reason" => run_if_reason(action) })
     else
-      resume_result(action) || execute(action)
+      execute(action)
     end
+  end
+
+  def run_if_met?(action)
+    condition = action["run_if"]
+    return true unless condition
+
+    section = condition["section_changed"]
+    return true unless section
+
+    @apply.fetch(:results).any? do |result|
+      result.fetch(:module_id) == action.fetch("module_id") &&
+        result.fetch(:kind) == "section" &&
+        result.dig(:diagnostics, "name") == section &&
+        result.fetch(:status) == "changed"
+    end
+  end
+
+  def run_if_reason(action)
+    condition = action["run_if"] || {}
+    section = condition["section_changed"]
+    section ? "#{section} did not change in this run" : "run condition not met"
   end
 
   def run_block(block)
@@ -1009,6 +968,56 @@ class Apply
     }
   end
 
+  def section_block_result(action, block, index, blocks)
+    stdout, stderr, status, sudo_events = run_block(block)
+    result = { "index" => index + 1, "stdout" => stdout, "stderr" => stderr, "exit" => status.exitstatus }
+    result["sudo"] = sudo_events unless sudo_events.empty?
+    blocks << result
+
+    if privilege_deferred?(["bash"], stderr, status, sudo_events)
+      return action_result(action, "deferred", section_diagnostics(action, blocks, "privilege required"))
+    end
+
+    return nil if status.success?
+
+    section_failure(action, blocks)
+  end
+
+  def section_diagnostics(action, blocks, reason = nil)
+    {
+      "name" => action.fetch("name"),
+      "blocks" => blocks,
+      "reason" => reason
+    }.compact
+  end
+
+  def section_status(action, blocks)
+    return "changed" if action.fetch("name") == "Install" && section_statuses(blocks).include?("changed")
+
+    "ok"
+  end
+
+  def section_failure(action, blocks)
+    status = action.fetch("name") == "Prerequisites" ? "deferred" : "notok"
+    reason = action.fetch("name") == "Prerequisites" ? "prerequisite failed" : nil
+    action_result(action, status, section_diagnostics(action, blocks, reason))
+  end
+
+  def section_statuses(blocks)
+    blocks.flat_map do |block|
+      [block.fetch("stdout"), block.fetch("stderr")].flat_map do |text|
+        text.lines.filter_map do |line|
+          data = JSON.parse(line)
+          next unless data.is_a?(Hash) && data["schema"] == "tilde.helper/v1"
+
+          data["status"]
+        rescue JSON::ParserError
+          nil
+        end
+      end
+    end
+  end
+
   def stop_after_reached?
     stop = ENV.fetch("TILDE_APPLY_STOP_AFTER", nil)
     stop && @apply.fetch(:results).length >= stop.to_i
@@ -1016,10 +1025,6 @@ class Apply
 
   def target
     @target ||= @plans.first.fetch("target")
-  end
-
-  def write_state?
-    %w[apply repair].include?(target.fetch("mode"))
   end
 
   def validate!
@@ -1106,7 +1111,7 @@ class Apply
 
   def validate_host_dir!(first_target)
     state_root = Pathname.new(first_target.fetch("state_root")).expand_path
-    raise "state root must exist: #{state_root}" unless state_root.directory?
+    FileUtils.mkdir_p(state_root)
     raise "state root is not writable: #{state_root}" unless state_root.writable?
   end
 
@@ -1163,91 +1168,41 @@ class Apply
     Pathname.new(plan.fetch("repository").fetch("path")).expand_path
   end
 
-  def write_json(path, data)
-    FileUtils.mkdir_p(path.dirname)
-    temp = path.dirname.join(".#{path.basename}.tmp-#{$PROCESS_ID}")
-    temp.write(JSON.pretty_generate(data))
-    FileUtils.mv(temp.to_s, path.to_s)
-  ensure
-    FileUtils.rm_f(temp) if temp&.exist?
-  end
-
-  def write_last_apply
-    write_json(@last_apply_path, @apply)
-  end
-
-  def write_last_plan
-    modules = @plans.flat_map { |plan| plan.fetch("modules", []) }
-    core_entrypoints = @plans.flat_map { |plan| plan.fetch("core").fetch("home_entrypoints_to_write", []) }
-    links = @plans.flat_map { |plan| plan.fetch("core").fetch("links_to_create", []) }
-    cache = {
-      schema: CACHE_SCHEMA,
-      generated_at: Time.now.iso8601,
-      input_id:,
-      mode: target.fetch("mode"),
-      scope: target.fetch("scope"),
-      plans: @plans,
-      core: {
-        "home_entrypoints_to_write" => core_entrypoints,
-        "links_to_create" => links
-      },
-      modules:,
-      actions:
-    }
-
-    write_json(@last_plan_path, cache_plan(cache))
-  end
-
   def write_state
     temp = @state_path.dirname.join(".#{@state_path.basename}.tmp-#{$PROCESS_ID}")
-    temp.write(state_text)
+    temp.write(YAML.dump(state_hash))
     FileUtils.mv(temp.to_s, @state_path.to_s)
   ensure
     FileUtils.rm_f(temp) if temp&.exist?
   end
 
-  def state_body
-    @apply
-      .fetch(:results)
-      .reject { |result| RESULT_OK.include?(result.fetch(:status)) }
-      .map { |result| "- #{result.fetch(:module_id)} #{result.fetch(:action_id)}: #{result.fetch(:status)}" }
-      .join("\n")
-  end
-
-  def state_frontmatter
-    frontmatter = {
-      "host" => target.fetch("host"),
-      "date" => Time.now.iso8601,
-      "level" => target.fetch("level"),
-      "bootstrap" => previous_bootstrap,
-      "public" => role_repository("public"),
-      "private" => role_repository("private"),
-      "done" => module_results
+  def state_hash
+    {
+      "protocol" => "tilde/v1",
+      "skill" => display_path(TILDE_ROOT),
+      "public" => binding("public"),
+      "private" => binding("private"),
+      "applied" => applied_hash
     }.compact
-    frontmatter["head"] = frontmatter.dig("public", "commit") if frontmatter["public"]
-    frontmatter
   end
 
-  def state_text
-    text = +"---\n"
-    text << YAML.dump(state_frontmatter).delete_prefix("---\n")
-    text << "---\n"
-    text << state_body
-    text << "\n" unless text.end_with?("\n")
-    text
+  def applied_hash
+    {
+      "level" => target.fetch("level"),
+      "platform" => target.fetch("platform"),
+      "public" => role_repository("public")&.fetch("commit"),
+      "private" => role_repository("private")&.fetch("commit")
+    }.compact
   end
 
   def role_repository(role)
     @plans.find { |plan| plan.fetch("repository").fetch("role") == role }&.fetch("repository")
   end
 
-  def skipped_module_results
-    modules.filter_map do |mod|
-      next unless mod["skipped"]
-
-      status = previous_module_status(mod)
-      [mod.fetch("id"), status] if status
-    end.to_h
+  def display_path(path)
+    path = Pathname.new(path.to_s).expand_path
+    text = path.to_s
+    text == @home.to_s ? "~" : text.sub(%r{\A#{Regexp.escape(@home.to_s)}/}, "~/")
   end
 
   def sudo_events(log)

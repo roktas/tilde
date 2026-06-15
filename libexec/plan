@@ -34,17 +34,7 @@ class Plan
     "flatpak" => "graphical"
   }.freeze
   SCOPES = %w[fast full].freeze
-  SPECIAL_SECTIONS = %w[
-    Preinstall
-    Install
-    Postinstall
-    Prelink
-    Presetup
-    Link
-    Postlink
-    Setup
-    Update
-  ].freeze
+  SPECIAL_SECTIONS = ["Prerequisites", "Install", "Post Install", "Configure", "Update", "Notes"].freeze
 
   def initialize(options)
     @allow_dirty = options.fetch(:allow_dirty)
@@ -64,7 +54,7 @@ class Plan
     validate_worktree!
 
     @head = git("rev-parse", "HEAD")
-    @previous_state = previous_state
+    @state = read_state
     @level = resolved_level
     validate_level!
     validate_scope!
@@ -87,7 +77,7 @@ class Plan
       state_path: state_path.to_s,
       repository: repository_identity,
       target: target_identity,
-      previous_state: @previous_state,
+      state: @state,
       core:,
       modules:
     }
@@ -131,7 +121,7 @@ class Plan
 
   def apply_like? = align? || apply? || repair?
 
-  def actions_skipped?(skipped) = skipped || !apply_like?
+  def actions_skipped? = !apply_like?
 
   def bash_blocks(body)
     fenced_blocks(body).filter_map do |info, content|
@@ -232,7 +222,7 @@ class Plan
       source_path: copy.fetch(:source_path),
       target: copy.fetch(:target),
       conflict: {
-        strategy: "backup"
+        strategy: "none"
       }
     }
   end
@@ -347,7 +337,7 @@ class Plan
   end
 
   def dirty?
-    !git("status", "--porcelain").empty?
+    !git("status", "--porcelain", "--untracked-files=no").empty?
   end
 
   def companion_repo
@@ -502,7 +492,9 @@ class Plan
     source_dir = Pathname.new(source_path(dir, source))
     raise "Link fan-in source is not a directory: #{source}" unless source_dir.directory?
 
-    source_dir.children.sort_by { |child| child.basename.to_s }.map do |child|
+    source_dir.children.sort_by { |child| child.basename.to_s }.filter_map do |child|
+      next if suppressed_fan_in_child?(source, target, child)
+
       child_source = File.join(source, child.basename.to_s)
       child_target = File.join(target, child.basename.to_s)
       link_action(dir, child_source, child_target, fan_in_metadata(source, target))
@@ -535,7 +527,7 @@ class Plan
       fan_in_source: link.fetch(:fan_in_source),
       fan_in_target: link.fetch(:fan_in_target),
       conflict: {
-        strategy: "backup"
+        strategy: "none"
       }
     }
   end
@@ -614,8 +606,7 @@ class Plan
     value
   end
 
-  def package_actions(packages, mode, skipped)
-    return [] if skipped
+  def package_actions(packages, mode)
     return packages if mode == "apply" && apply_like?
 
     []
@@ -634,8 +625,7 @@ class Plan
     return nil unless level_allowed?(level)
     return nil unless host_allowed?(config)
 
-    skipped, skip_reason = skip_status(module_name)
-    actions_skipped = actions_skipped?(skipped)
+    actions_skipped = actions_skipped?
     home_entrypoint = home_entrypoint_declared?(config)
     links = actions_skipped ? [] : normalize_links(config, dir)
     packages = normalize_packages(config)
@@ -648,14 +638,14 @@ class Plan
       level:,
       home_entrypoint:,
       packages:,
-      packages_to_install: align? ? [] : package_actions(packages, "apply", skipped),
+      packages_to_install: align? ? [] : package_actions(packages, "apply"),
       packages_to_refresh: [],
       packages_to_upgrade: [],
       links_to_create: links,
       copies_to_create: actions_skipped ? [] : normalize_copies(config, dir),
-      special_sections: section_actions(body, skipped),
-      skipped:,
-      skip_reason:,
+      special_sections: section_actions(body),
+      skipped: false,
+      skip_reason: nil,
       virtual: !config.key?("packages")
     }
   end
@@ -678,39 +668,32 @@ class Plan
   end
 
   def align_module_actions(mod)
-    return [] if mod.fetch(:skipped)
-
     mod.fetch(:links_to_create).map { |link| link_plan_action(mod, link) } +
       mod.fetch(:copies_to_create).map { |copy| copy_action(mod, copy) }
   end
 
   def module_actions(mod)
-    return [] if mod.fetch(:skipped)
-
     actions = []
-    actions.concat(section_plan_actions(mod, %w[Preinstall]))
+    actions.concat(section_plan_actions(mod, %w[Prerequisites]))
     actions.concat(package_plan_actions(mod, "install", mod.fetch(:packages_to_install)))
-    actions.concat(package_plan_actions(mod, "refresh", mod.fetch(:packages_to_refresh)))
-    actions.concat(package_plan_actions(mod, "upgrade", mod.fetch(:packages_to_upgrade)))
-    actions.concat(section_plan_actions(mod, %w[Install Postinstall Prelink Presetup]))
+    actions.concat(section_plan_actions(mod, %w[Install]))
+    actions.concat(section_plan_actions(mod, ["Post Install"], run_if: { section_changed: "Install" }))
+    actions.concat(section_plan_actions(mod, %w[Configure]))
     actions.concat(mod.fetch(:links_to_create).map { |link| link_plan_action(mod, link) })
     actions.concat(mod.fetch(:copies_to_create).map { |copy| copy_action(mod, copy) })
-    actions.concat(section_plan_actions(mod, %w[Link Postlink Setup Update]))
     actions
   end
 
   def refresh_module_actions(mod)
-    return [] if mod.fetch(:skipped)
-
     actions = []
     actions.concat(package_plan_actions(mod, "refresh", mod.fetch(:packages_to_refresh)))
+    actions.concat(section_plan_actions(mod, %w[Prerequisites]))
     actions.concat(section_plan_actions(mod, %w[Update]))
+    actions.concat(section_plan_actions(mod, %w[Configure]))
     actions
   end
 
   def upgrade_module_actions(mod)
-    return [] if mod.fetch(:skipped)
-
     package_plan_actions(mod, "upgrade", mod.fetch(:packages_to_upgrade))
   end
 
@@ -848,17 +831,23 @@ class Plan
     path.to_s
   end
 
-  def previous_state
+  def suppressed_fan_in_child?(source, target, child)
+    source == "skills/" && target == "~/.agents/skills" && child.basename.to_s == "tilde"
+  end
+
+  def read_state
     return nil unless state_path.file?
 
-    frontmatter, body = frontmatter_and_body(state_path)
-    frontmatter.merge("body" => body.strip)
+    data = YAML.safe_load(state_path.read, aliases: true, permitted_classes: [Date, Time])
+    data.is_a?(Hash) ? data : nil
+  rescue Psych::Exception
+    nil
   end
 
   def resolved_level
     return @level if @level
 
-    state_level = @previous_state && @previous_state["level"].to_s
+    state_level = @state && @state.dig("applied", "level").to_s
     return state_level if LEVELS.key?(state_level)
 
     "normal"
@@ -886,23 +875,13 @@ class Plan
     hostname.sub(/\..*\z/, "")
   end
 
-  def repair_skip_status(module_name)
-    return [true, "no previous state to repair"] unless @previous_state
-    return [true, "state head differs from current head"] unless current_state_head?
-
-    status = module_state_status(module_name)
-    return [false, nil] if status == "notok"
-
-    [true, "not marked notok at current head"]
-  end
-
-  def section_actions(body, skipped)
+  def section_actions(body)
     return {} if align?
 
-    skipped ? {} : selected_special_sections(body)
+    selected_special_sections(body)
   end
 
-  def section_plan_action(mod, name, section)
+  def section_plan_action(mod, name, section, metadata = {})
     bash_only = section.fetch(:bash_only)
     kind = bash_only ? "section" : "manual"
 
@@ -920,7 +899,7 @@ class Plan
       conflict: {
         strategy: "none"
       }
-    }
+    }.merge(metadata)
   end
 
   def section_manual_reason(section)
@@ -931,41 +910,11 @@ class Plan
     "no-shell-blocks"
   end
 
-  def section_plan_actions(mod, names)
+  def section_plan_actions(mod, names, metadata = {})
     names.filter_map do |name|
       section = mod.fetch(:special_sections)[name]
-      section_plan_action(mod, name, section) if section
+      section_plan_action(mod, name, section, metadata) if section
     end
-  end
-
-  def skip_status(module_name)
-    return [false, nil] if align?
-    return [false, nil] if refresh? || upgrade?
-    return repair_skip_status(module_name) if repair?
-    return [false, nil] unless state_skip_available?
-
-    status = module_state_status(module_name)
-    return [true, "already #{status} at current head"] if %w[ok ignored].include?(status)
-
-    [false, nil]
-  end
-
-  def state_skip_available?
-    @previous_state && current_state_head?
-  end
-
-  def current_state_head?
-    previous_state_commit == @head
-  end
-
-  def module_state_status(module_name)
-    done = normalize_map(@previous_state["done"])
-    done[module_id(module_name)] || done[module_name]
-  end
-
-  def previous_state_commit
-    role_state = normalize_map(@previous_state[repo_role])
-    role_state["commit"] || (repo_role == "public" ? @previous_state["head"] : nil)
   end
 
   def selected_special_sections(body)
@@ -1054,7 +1003,7 @@ class Plan
   end
 
   def special_heading(title)
-    SPECIAL_SECTIONS.find { |name| name == title }
+    SPECIAL_SECTIONS.find { |name| name == title.strip }
   end
 
   def state_root
@@ -1063,7 +1012,7 @@ class Plan
   end
 
   def state_path
-    state_root.join("hosts", @host, "state.md")
+    state_root.join("state.yml")
   end
 
   def target_identity

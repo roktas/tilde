@@ -4,7 +4,6 @@ set -Eeuo pipefail
 [[ -z ${TRACE:-} ]] || set -x
 unset CDPATH
 
-cleanup_dirty_module=
 cleanup_extra_module=
 cleanup_platform_module=
 cleanup_repair_repo=
@@ -16,7 +15,7 @@ cleanup_tmpdir=
 # ------------------------------------------------------------------------------------------------------------------------
 
 cleanup() {
-	rm -rf "$cleanup_dirty_module" "$cleanup_extra_module" "$cleanup_platform_module" "$cleanup_target_module"
+	rm -rf "$cleanup_extra_module" "$cleanup_platform_module" "$cleanup_target_module"
 	[[ -z $cleanup_repair_repo ]] || rm -rf "$cleanup_repair_repo"
 	[[ -z $cleanup_tmpdir ]] || rm -rf "$cleanup_tmpdir"
 }
@@ -28,8 +27,8 @@ cleanup() {
 main() {
 	local align_plan_json
 	local align_state_plan_json
-	local dirty_module
 	local dirty_plan_err
+	local dirty_repo
 	local extra_module
 	local extra_plan_json
 	local file_provider_plan_json
@@ -69,11 +68,9 @@ main() {
 	if [[ -z $private_repo && -d $repo/../home- ]]; then
 		private_repo=$(cd -- "$repo/../home-" >/dev/null && pwd)
 	fi
-	dirty_module=$repo/zz-dirty-smoke
 	extra_module=$repo/zz-extra-smoke
 	platform_module=$repo/zz-platform-smoke
 	target_module=$repo/zz-target-smoke
-	cleanup_dirty_module=$dirty_module
 	cleanup_extra_module=$extra_module
 	cleanup_platform_module=$platform_module
 	cleanup_target_module=$target_module
@@ -112,19 +109,30 @@ main() {
 
 	ruby -c "$plan_impl"
 
-	rm -rf "$dirty_module"
-	mkdir -p "$dirty_module"
-	cat >"$dirty_module/README.md" <<'EOF'
-# Dirty Guard Smoke
-EOF
+	dirty_repo=$tmpdir/dirty-repo
+	mkdir -p "$dirty_repo"
+	cat >"$dirty_repo/AGENTS.md" <<'EOF'
+---
+tilde:
+  protocol: tilde/v1
+  role: public
+---
 
-	if "$tilde" plan --repo "$repo" >"$plan_json" 2>"$dirty_plan_err"; then
+# Dirty Guard
+EOF
+	git -C "$dirty_repo" init -q
+	git -C "$dirty_repo" config user.email smoke@example.invalid
+	git -C "$dirty_repo" config user.name Smoke
+	git -C "$dirty_repo" add .
+	git -C "$dirty_repo" commit -q -m init
+	printf '\n' >>"$dirty_repo/AGENTS.md"
+
+	if "$tilde" plan --repo "$dirty_repo" >"$plan_json" 2>"$dirty_plan_err"; then
 		echo "expected dirty worktree guard to fail" >&2
 		exit 1
 	fi
 
 	grep -q "Dirty worktree" "$dirty_plan_err"
-	rm -rf "$dirty_module"
 
 	"$tilde" plan --repo "$repo" --allow-dirty --platform linux --host smoke >"$plan_json"
 
@@ -140,7 +148,7 @@ EOF
 		ids = actions.map { |action| action.fetch("id") }
 		abort "action ids should be unique" unless ids.uniq == ids
 		abort "actions should use role-qualified module ids" unless actions.all? { |action| action.fetch("module_id") == "core" || action.fetch("module_id").include?("/") }
-		abort "legacy home-entrypoint action kind leaked" if actions.any? { |action| action.fetch("kind") == "home-entrypoint" }
+		abort "home-entrypoint action kind leaked" if actions.any? { |action| action.fetch("kind") == "home-entrypoint" }
 		abort "missing linux install section action" unless actions.any? { |action| action.fetch("kind") == "section" && action.fetch("module_id") == "public/linux" && action.fetch("name") == "Install" && action.fetch("bash_only") == true }
 		abort "missing agents link action" unless actions.any? { |action| action.fetch("kind") == "link" && action.fetch("module_id") == "public/agents" && action.fetch("target") == "~/.agents/AGENTS.md" && action.fetch("link_value").end_with?("/agents/AGENTS.md") }
 		abort "wrong mode" unless plan.fetch("mode") == "apply"
@@ -200,18 +208,14 @@ EOF
 	'
 
 	head=$(git -C "$repo" rev-parse HEAD)
-	mkdir -p "$XDG_STATE_HOME/tilde/hosts/smoke"
-	cat >"$XDG_STATE_HOME/tilde/hosts/smoke/state.md" <<EOF
----
-host: smoke
-head: $head
-public:
-  commit: $head
-done:
-  public/linux: ok
-  public/git: ok
-  mc: ok
----
+	mkdir -p "$XDG_STATE_HOME/tilde"
+	cat >"$XDG_STATE_HOME/tilde/state.yml" <<EOF
+protocol: tilde/v1
+public: $repo
+applied:
+  level: normal
+  platform: linux
+  public: $head
 EOF
 
 	"$tilde" plan --repo "$repo" --allow-dirty --platform linux --host smoke >"$state_skip_plan_json"
@@ -221,33 +225,30 @@ EOF
 		plan = JSON.parse(File.read(ENV.fetch("STATE_SKIP_PLAN_JSON")))
 		linux = plan.fetch("modules").find { |mod| mod.fetch("name") == "linux" }
 		abort "missing linux module" unless linux
-		abort "role-qualified linux state should skip module" unless linux.fetch("skipped")
-		abort "skipped linux should not include packages" unless linux.fetch("packages_to_install").empty?
+		abort "state must not skip linux module" if linux.fetch("skipped")
+		abort "linux packages should still be planned" if linux.fetch("packages_to_install").empty?
 		git = plan.fetch("modules").find { |mod| mod.fetch("name") == "git" }
 		abort "missing git module" unless git
-		abort "role-qualified git state should skip module" unless git.fetch("skipped")
-		abort "skipped git should not include packages" unless git.fetch("packages_to_install").empty?
-		abort "skipped git should not include links" unless git.fetch("links_to_create").empty?
+		abort "state must not skip git module" if git.fetch("skipped")
+		abort "git packages should still be planned" if git.fetch("packages_to_install").empty?
+		abort "git links should still be planned" if git.fetch("links_to_create").empty?
 		mc = plan.fetch("modules").find { |mod| mod.fetch("name") == "mc" }
 		abort "missing mc module" unless mc
-		abort "legacy mc state should still skip module" unless mc.fetch("skipped")
+		abort "state must not skip mc module" if mc.fetch("skipped")
 		align = JSON.parse(File.read(ENV.fetch("ALIGN_STATE_PLAN_JSON")))
 		align_git = align.fetch("modules").find { |mod| mod.fetch("name") == "git" }
 		abort "missing align git module" unless align_git
-		abort "align should ignore ok state skip" if align_git.fetch("skipped")
+		abort "align should not skip from state" if align_git.fetch("skipped")
 		abort "align should keep git links" if align_git.fetch("links_to_create").empty?
 	'
-	rm -f "$XDG_STATE_HOME/tilde/hosts/smoke/state.md"
 
-	cat >"$XDG_STATE_HOME/tilde/hosts/smoke/state.md" <<EOF
----
-host: smoke
-level: minimal
-head: $head
-public:
-  commit: $head
-done: {}
----
+	cat >"$XDG_STATE_HOME/tilde/state.yml" <<EOF
+protocol: tilde/v1
+public: $repo
+applied:
+  level: minimal
+  platform: linux
+  public: $head
 EOF
 	"$tilde" plan --repo "$repo" --allow-dirty --platform linux --host smoke >"$stored_level_plan_json"
 	STORED_LEVEL_PLAN_JSON=$stored_level_plan_json ruby -rjson -e '
@@ -256,7 +257,7 @@ EOF
 		abort "target should reuse stored level" unless plan.fetch("target").fetch("level") == "minimal"
 		abort "stored minimal level should exclude normal modules" if plan.fetch("modules").any? { |mod| mod.fetch("level") == "normal" }
 	'
-	rm -f "$XDG_STATE_HOME/tilde/hosts/smoke/state.md"
+	rm -f "$XDG_STATE_HOME/tilde/state.yml"
 
 	if [[ -n $private_repo ]]; then
 		"$tilde" plan --repo "$private_repo" --allow-dirty --platform linux --host smoke >"$private_plan_json"
@@ -275,8 +276,8 @@ EOF
 			abort "missing codex hook action" unless hook_action
 			abort "codex hook should use a relative Dropbox link value" unless hook_action.fetch("link_value") == "../../../../home-/codex/hooks/shellcheck"
 			abort "codex should use shared agent instructions" unless codex.fetch("special_sections").dig("Install", "body").include?("Dropbox/allos/var/codex/AGENTS.md")
-			abort "codex should ignore local temp files with Dropbox attributes" unless codex.fetch("special_sections").dig("Postinstall", "body").include?("attr -s com.dropbox.ignored")
-			abort "codex should ignore the shared temp directory" unless codex.fetch("special_sections").dig("Postinstall", "body").include?("Dropbox/allos/var/codex/.tmp")
+			abort "codex should ignore local temp files with Dropbox attributes" unless codex.fetch("special_sections").dig("Post Install", "body").include?("attr -s com.dropbox.ignored")
+			abort "codex should ignore the shared temp directory" unless codex.fetch("special_sections").dig("Post Install", "body").include?("Dropbox/allos/var/codex/.tmp")
 			abort "codex should not link skills under ~/.codex" if codex.fetch("links_to_create").any? { |link| link.fetch("target").start_with?("~/.codex/skills/") }
 			copilot = linux.fetch("modules").find { |mod| mod.fetch("name") == "copilot" }
 			abort "missing linux copilot module" unless copilot
@@ -286,7 +287,7 @@ EOF
 			environment = linux.fetch("modules").find { |mod| mod.fetch("name") == "environment" }
 			abort "missing linux environment module" unless environment
 			abort "environment should link linux session.conf" unless environment.fetch("links_to_create").any? { |link| link.fetch("source") == "environment.d/session.linux.conf" && link.fetch("target") == "~/.config/environment.d/session.conf" }
-			abort "environment should not link legacy variables" if environment.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.config/environment/variables" || link.fetch("target") == "~/.config/environment.d/00-base.conf" }
+			abort "environment should not link variables file" if environment.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.config/environment/variables" || link.fetch("target") == "~/.config/environment.d/00-base.conf" }
 			abort "dropignore module should be removed" if linux.fetch("modules").any? { |mod| mod.fetch("name") == "dropignore" }
 			opencode = linux.fetch("modules").find { |mod| mod.fetch("name") == "opencode" }
 			abort "missing private opencode module" unless opencode
@@ -300,11 +301,11 @@ EOF
 			abort "missing macos codex module" unless macos_codex
 			abort "missing macos codex cask" unless macos_codex.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "cask:codex" }
 			abort "macos codex should not install codex-switcher release" if macos_codex.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "github:Lampese/codex-switcher" }
-			abort "macos codex should use Dropbox File Provider ignore attributes" unless macos_codex.fetch("special_sections").dig("Postinstall", "body").include?("com.apple.fileprovider.ignore#P")
+			abort "macos codex should use Dropbox File Provider ignore attributes" unless macos_codex.fetch("special_sections").dig("Post Install", "body").include?("com.apple.fileprovider.ignore#P")
 			macos_environment = macos.fetch("modules").find { |mod| mod.fetch("name") == "environment" }
 			abort "missing macos environment module" unless macos_environment
 			abort "environment should link macos session.conf" unless macos_environment.fetch("links_to_create").any? { |link| link.fetch("source") == "environment.d/session.macos.conf" && link.fetch("target") == "~/.config/environment.d/session.conf" }
-			abort "macos environment should not link legacy variables" if macos_environment.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.config/environment/variables" || link.fetch("target") == "~/.config/environment.d/00-base.conf" }
+			abort "macos environment should not link variables file" if macos_environment.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.config/environment/variables" || link.fetch("target") == "~/.config/environment.d/00-base.conf" }
 			copilot = macos.fetch("modules").find { |mod| mod.fetch("name") == "copilot" }
 			abort "missing macos copilot module" unless copilot
 			abort "missing macos copilot-cli cask" unless copilot.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "cask:copilot-cli" }
@@ -471,7 +472,7 @@ EOF
 		abort "missing virtualbox extra module" unless virtualbox
 		abort "virtualbox should be virtual" unless virtualbox.fetch("virtual") == true
 		abort "missing virtualbox install section" unless virtualbox.fetch("special_sections").key?("Install")
-		abort "missing virtualbox postinstall section" unless virtualbox.fetch("special_sections").key?("Postinstall")
+		abort "missing virtualbox postinstall section" unless virtualbox.fetch("special_sections").key?("Post Install")
 		ghostty = extra_plan.fetch("modules").find { |mod| mod.fetch("name") == "ghostty" }
 		abort "missing ghostty module" unless ghostty
 		abort "ghostty linux plan should not install cask" if ghostty.fetch("packages_to_install").any? { |pkg| pkg.fetch("type") == "cask" }
@@ -649,17 +650,14 @@ EOF
 	repair_repo=$(mktemp -d)
 	cleanup_repair_repo=$repair_repo
 	cp -a "$repo/." "$repair_repo"
-	mkdir -p "$XDG_STATE_HOME/tilde/hosts/smoke-repair"
 	head=$(git -C "$repair_repo" rev-parse HEAD)
-	cat >"$XDG_STATE_HOME/tilde/hosts/smoke-repair/state.md" <<EOF
----
-head: $head
-public:
-  commit: $head
-done:
-  public/git: notok
-  mc: ok
----
+	cat >"$XDG_STATE_HOME/tilde/state.yml" <<EOF
+protocol: tilde/v1
+public: $repair_repo
+applied:
+  level: normal
+  platform: linux
+  public: $head
 EOF
 
 	"$tilde" plan --repo "$repair_repo" --allow-dirty --mode repair --platform linux --host smoke-repair >"$repair_plan_json"
@@ -674,8 +672,8 @@ EOF
 		abort "repair should include git links" if git.fetch("links_to_create").empty?
 		mc = plan.fetch("modules").find { |mod| mod.fetch("name") == "mc" }
 		abort "missing mc module in repair plan" unless mc
-		abort "mc should be skipped during repair" unless mc.fetch("skipped")
-		abort "skipped repair module should not include copies" unless mc.fetch("copies_to_create").empty?
+		abort "repair must not skip mc from state" if mc.fetch("skipped")
+		abort "repair should include mc copies" if mc.fetch("copies_to_create").empty?
 	'
 
 	echo "plan smoke ok"

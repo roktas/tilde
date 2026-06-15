@@ -1,0 +1,92 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "digest"
+require "fileutils"
+require "json"
+require "pathname"
+
+class Line
+  SCHEMA = "tilde.helper/v1"
+
+  def initialize(argv)
+    @op, @target, @line = argv
+    @home = Pathname.new(ENV.fetch("HOME", Dir.home)).expand_path
+  end
+
+  def run
+    validate!
+    status = @op == "ensure" ? ensure_line : remove_line
+    emit(status)
+    0
+  rescue StandardError => e
+    emit("notok", "reason" => e.message) if @target
+    warn("error: #{e.message}")
+    1
+  end
+
+  private
+
+  def display(path)
+    text = path.to_s
+    text == @home.to_s ? "~" : text.sub(%r{\A#{Regexp.escape(@home.to_s)}/}, "~/")
+  end
+
+  def emit(status, extra = {})
+    record = {
+      "schema" => SCHEMA,
+      "tool" => "line",
+      "op" => @op,
+      "status" => status,
+      "target" => display(path),
+      "line_sha256" => Digest::SHA256.hexdigest(@line.to_s)
+    }.merge(extra).compact
+    puts(JSON.generate(record))
+  end
+
+  def ensure_line
+    lines = read_lines
+    return "unchanged" if lines.any? { |line| line.chomp == @line }
+
+    FileUtils.mkdir_p(path.dirname)
+    File.open(path.to_s, "a") do |file|
+      file.write("\n") if path.file? && !path.zero? && !path.read.end_with?("\n")
+      file.write("#{@line}\n")
+    end
+    "changed"
+  end
+
+  def expand(value)
+    return @home if value == "~"
+    return @home.join(value.delete_prefix("~/")).expand_path if value.start_with?("~/")
+
+    Pathname.new(value).expand_path
+  end
+
+  def path
+    @path ||= expand(@target)
+  end
+
+  def read_lines
+    return [] unless path.file?
+
+    path.readlines
+  end
+
+  def remove_line
+    return "unchanged" unless path.file?
+
+    lines = read_lines
+    kept = lines.reject { |line| line.chomp == @line }
+    return "unchanged" if kept.length == lines.length
+
+    File.write(path.to_s, kept.join)
+    "removed"
+  end
+
+  def validate!
+    raise "usage: line ensure FILE LINE" unless %w[ensure remove].include?(@op) && @target && @line
+  end
+end
+
+exit(Line.new(ARGV).run)

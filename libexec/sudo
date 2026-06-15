@@ -36,26 +36,53 @@ canonical_path() {
 copy_clipboard() {
 	local text=$1
 
-	if command -v pbcopy >/dev/null 2>&1; then
-		printf '%s' "$text" | pbcopy
-		return
-	fi
-	if command -v wl-copy >/dev/null 2>&1; then
-		printf '%s' "$text" | wl-copy
-		return
-	fi
-	if command -v xclip >/dev/null 2>&1; then
-		printf '%s' "$text" | xclip -selection clipboard
-		return
-	fi
-	if command -v xsel >/dev/null 2>&1; then
-		printf '%s' "$text" | xsel --clipboard --input
-		return
-	fi
-	if command -v clip.exe >/dev/null 2>&1; then
-		printf '%s' "$text" | clip.exe
-		return
-	fi
+	local tool
+
+	tool=$(clipboard_tool) || return 1
+
+	case ${tool##*/} in
+	pbcopy | wl-copy | clip.exe)
+		printf '%s' "$text" | "$tool" || return 1
+		;;
+	xclip)
+		printf '%s' "$text" | "$tool" -selection clipboard || return 1
+		;;
+	xsel)
+		printf '%s' "$text" | "$tool" --clipboard --input || return 1
+		;;
+	*)
+		return 1
+		;;
+	esac
+
+	printf '%s\n' "${tool##*/}"
+}
+
+clipboard_tool() {
+	local os
+
+	os=$(uname -s 2>/dev/null || printf unknown)
+
+	case $os in
+	Darwin)
+		command -v pbcopy 2>/dev/null && return
+		;;
+	Linux)
+		if [[ -n ${WAYLAND_DISPLAY:-} ]]; then
+			command -v wl-copy 2>/dev/null && return
+		fi
+		if [[ -n ${DISPLAY:-} ]]; then
+			command -v xclip 2>/dev/null && return
+			command -v xsel 2>/dev/null && return
+		fi
+		if [[ -r /proc/version ]] && grep -qi microsoft /proc/version; then
+			command -v clip.exe 2>/dev/null && return
+		fi
+		;;
+	MINGW* | MSYS* | CYGWIN*)
+		command -v clip.exe 2>/dev/null && return
+		;;
+	esac
 
 	return 1
 }
@@ -121,6 +148,31 @@ sudo_privilege_failure() {
 		[[ $stderr =~ [Aa]uthentication ]] ||
 		[[ $stderr =~ [Nn]ot[[:space:]]+allowed ]] ||
 		[[ $stderr =~ [Mm]ay[[:space:]]+not[[:space:]]+run[[:space:]]+sudo ]]
+}
+
+tilde_helper_path() {
+	local command=$1
+
+	local helper
+	local root=${TILDE_ROOT:-}
+
+	case $command in
+	line | span)
+		;;
+	*)
+		return 1
+		;;
+	esac
+
+	if [[ -n $root && -x $root/bin/$command ]]; then
+		printf '%s\n' "$root/bin/$command"
+		return
+	fi
+
+	root=$(cd -P -- "${BASH_SOURCE[0]%/*}/.." >/dev/null && pwd)
+	helper=$root/bin/$command
+	[[ -x $helper ]] || return 1
+	printf '%s\n' "$helper"
 }
 
 tilde_sudo_shim() {
@@ -203,17 +255,22 @@ command.cleanup() {
 }
 
 command.handoff() {
-	local copy=0
+	local copy=1
 	local host=
 	local root=\$HOME/.agents/skills/tilde
 
 	local command
+	local tool
 	local remote
 
 	while (($# > 0)); do
 		case $1 in
 		--copy)
 			copy=1
+			shift
+			;;
+		--no-copy)
+			copy=0
 			shift
 			;;
 		--host)
@@ -247,12 +304,13 @@ command.handoff() {
 		command=$remote
 	fi
 
+	printf 'Handoff command:\n'
 	printf '%s\n' "$command"
 	if ((copy)); then
-		if copy_clipboard "$command"; then
-			warn "Copied handoff command to clipboard"
+		if tool=$(copy_clipboard "$command"); then
+			printf 'Clipboard: copied with %s.\n' "$tool"
 		else
-			warn "W: clipboard command unavailable"
+			printf 'Clipboard: unavailable on this controller; copy the command manually.\n'
 		fi
 	fi
 }
@@ -263,6 +321,8 @@ command.run() {
 		exit "$PRIVILEGE_EXIT"
 	fi
 
+	local command_index=0
+	local helper
 	local real
 	local status
 	local stderr
@@ -277,6 +337,12 @@ command.run() {
 	stderr=$(mktemp) || exit
 	trap 'rm -f "'"$stdout"'" "'"$stderr"'"' EXIT
 	trap 'rm -f "'"$stdout"'" "'"$stderr"'"; exit 130' HUP INT QUIT TERM
+
+	[[ ${args[0]:-} != -n ]] || command_index=1
+	helper=$(tilde_helper_path "${args[$command_index]:-}" || true)
+	if [[ -n $helper ]]; then
+		args=("${args[@]:0:$command_index}" env "PATH=${PATH:-}" "$helper" "${args[@]:$((command_index + 1))}")
+	fi
 
 	if [[ ${args[0]:-} == -n ]]; then
 		"$real" "${args[@]}" >"$stdout" 2>"$stderr" && status=0 || status=$?
@@ -304,7 +370,7 @@ usage() {
 		Usage:
 		  tilde sudo allow [--user USER]
 		  tilde sudo cleanup
-		  tilde sudo handoff [--host HOST] [--root ROOT] [--copy]
+		  tilde sudo handoff [--host HOST] [--root ROOT] [--copy|--no-copy]
 	EOF
 }
 

@@ -27,7 +27,7 @@ configured_repo() {
 	ruby -ryaml -e '
 		key = ARGV.fetch(0)
 		root = ENV.fetch("XDG_STATE_HOME", File.join(Dir.home, ".local", "state"))
-		path = File.join(root, "tilde", "config.yml")
+		path = File.join(root, "tilde", "state.yml")
 		exit 0 unless File.file?(path)
 
 		data = YAML.safe_load(File.read(path), aliases: true) || {}
