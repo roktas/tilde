@@ -199,10 +199,18 @@ For mutating remote prompt workflows such as `deploy`, `update`, `repair`, `upgr
 - On Dropbox-backed remote hosts, do not replace synced repositories with controller bundles; report stale or unsynced
   target checkouts as `deferred` unless the user asks for a Git-backed checkout refresh.
 
-When using `checkout remote`, always pass the complete source and target binding:
+When using `checkout remote`, always pass the complete source and target binding. For target runtime freshness, the
+controller repository is the loaded skill root and the target is `~/.agents/skills/tilde`:
 
 ```bash
 TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
+controller_runtime=${TILDE%/bin/tilde}
+"$TILDE" checkout remote --host spinoza --repo "$controller_runtime" --target ~/.agents/skills/tilde
+```
+
+For Git-backed desired-state checkout freshness, pass the selected controller data repository and the target checkout:
+
+```bash
 "$TILDE" checkout remote --host ondokuz --repo ~/Dropbox/home --target ~/.local/src/home
 ```
 
@@ -247,6 +255,26 @@ Use the returned `state.public` and `state.private` paths exactly when generatin
 status, explicit user arguments, or active home policy for a stale Git-backed target that must be refreshed before
 status can be trusted.
 
+When a remote workflow needs repository bindings in a target-side script, bind them from target status JSON before
+planning. Do not retype host-convention paths in `tilde plan --repo ...` commands:
+
+```bash
+TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
+"$TILDE" ssh spinoza << 'SCRIPT'
+tmpdir=$(mktemp -d)
+trap 'rm -rf "$tmpdir"' EXIT
+status_json=$tmpdir/status.json
+
+tilde status --format json > "$status_json"
+public=$(ruby -rjson -e 'data = JSON.parse(File.read(ARGV[0])); print data.dig("state", "public").to_s' "$status_json")
+private=$(ruby -rjson -e 'data = JSON.parse(File.read(ARGV[0])); print data.dig("state", "private").to_s' "$status_json")
+if [ -z "$public" ]; then
+  printf '%s\n' 'STATUS_FAILED: missing state.public' >&2
+  exit 1
+fi
+SCRIPT
+```
+
 Remote state is target-local. For `/tilde update spinoza`, `/tilde update ssh:spinoza`, `/tilde deploy spinoza`,
 `/tilde deploy ssh:spinoza`, `/tilde doctor spinoza`, `/tilde status spinoza`, and `/tilde align spinoza`, do not read the controller's
 `~/.local/state/tilde/state.yml`. If state or repository bindings are needed, read them on the target:
@@ -263,12 +291,25 @@ TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
 "$TILDE" ssh spinoza << 'SCRIPT'
 tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT
+status_json=$tmpdir/status.json
 mode=refresh
 # Use mode=repair when target status reports missing state.yml or no applied anchors.
 
-tilde plan --mode "$mode" --repo ~/Dropbox/home --host spinoza --format json > "$tmpdir/public.json"
-tilde plan --mode "$mode" --repo ~/Dropbox/home- --host spinoza --format json > "$tmpdir/private.json"
-tilde apply --plan "$tmpdir/public.json" --plan "$tmpdir/private.json"
+tilde status --format json > "$status_json"
+public=$(ruby -rjson -e 'data = JSON.parse(File.read(ARGV[0])); print data.dig("state", "public").to_s' "$status_json")
+private=$(ruby -rjson -e 'data = JSON.parse(File.read(ARGV[0])); print data.dig("state", "private").to_s' "$status_json")
+if [ -z "$public" ]; then
+  printf '%s\n' 'STATUS_FAILED: missing state.public' >&2
+  exit 1
+fi
+
+tilde plan --mode "$mode" --repo "$public" --host spinoza --format json > "$tmpdir/public.json" || exit $?
+if [ -n "$private" ]; then
+  tilde plan --mode "$mode" --repo "$private" --host spinoza --format json > "$tmpdir/private.json" || exit $?
+  tilde apply --plan "$tmpdir/public.json" --plan "$tmpdir/private.json"
+else
+  tilde apply --plan "$tmpdir/public.json"
+fi
 SCRIPT
 ```
 
@@ -283,10 +324,24 @@ TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
 "$TILDE" ssh spinoza << 'SCRIPT'
 tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT
+status_json=$tmpdir/status.json
+mode=align
 
-tilde plan --mode align --repo ~/Dropbox/home --host spinoza --format json > "$tmpdir/public.json"
-tilde plan --mode align --repo ~/Dropbox/home- --host spinoza --format json > "$tmpdir/private.json"
-tilde apply --plan "$tmpdir/public.json" --plan "$tmpdir/private.json"
+tilde status --format json > "$status_json"
+public=$(ruby -rjson -e 'data = JSON.parse(File.read(ARGV[0])); print data.dig("state", "public").to_s' "$status_json")
+private=$(ruby -rjson -e 'data = JSON.parse(File.read(ARGV[0])); print data.dig("state", "private").to_s' "$status_json")
+if [ -z "$public" ]; then
+  printf '%s\n' 'STATUS_FAILED: missing state.public' >&2
+  exit 1
+fi
+
+tilde plan --mode "$mode" --repo "$public" --host spinoza --format json > "$tmpdir/public.json" || exit $?
+if [ -n "$private" ]; then
+  tilde plan --mode "$mode" --repo "$private" --host spinoza --format json > "$tmpdir/private.json" || exit $?
+  tilde apply --plan "$tmpdir/public.json" --plan "$tmpdir/private.json"
+else
+  tilde apply --plan "$tmpdir/public.json"
+fi
 SCRIPT
 ```
 
@@ -436,9 +491,9 @@ For weaker or low-context agents:
   if the active home policy does not define the requested group.
 - When traversing a host group, skip unreachable hosts after a bounded reachability check and continue with reachable
   hosts. Run this check through `"$TILDE" ssh`; do not use raw `ssh` for Tilde remote workflow probes.
-- After remote runtime freshness is verified, read `tilde status --format json` on the target and use the returned
-  repository bindings for remote plan paths. Do not guess Dropbox or Git-backed checkout paths when status or explicit
-  policy can supply them.
+- After remote runtime freshness is verified, read `tilde status --format json` on the target, bind the returned
+  repository paths to shell variables, and use those variables for remote plan paths. Do not guess Dropbox or
+  Git-backed checkout paths when status or explicit policy can supply them.
 - Keep remote scripts `sh`-compatible unless Bash is explicitly required and the target is known to support it. Do not
   use Bash-only options such as `set -o pipefail` in the default `"$TILDE" ssh HOST << 'SCRIPT'` form.
 - In default remote scripts, avoid Bashisms such as `[[ ]]`, arrays, `source`, `local`, `pipefail`, process

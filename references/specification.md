@@ -991,6 +991,21 @@ The `checkout remote` route MUST be called with the full controller-to-target ma
 "$TILDE" checkout remote --host HOST --repo CONTROLLER_REPO --target TARGET_REPO
 ```
 
+For target runtime freshness, the controller repository is the loaded skill root and the target is
+`~/.agents/skills/tilde`:
+
+```text
+controller_runtime=${TILDE%/bin/tilde}
+"$TILDE" checkout remote --host spinoza --repo "$controller_runtime" --target ~/.agents/skills/tilde
+```
+
+For Git-backed desired-state checkout freshness, the controller repository is the selected data repository and the
+target is the target host's bound checkout:
+
+```text
+"$TILDE" checkout remote --host ondokuz --repo ~/Dropbox/home --target ~/.local/src/home
+```
+
 Agents MUST NOT call `checkout remote` with only `--host`. The route cannot infer repository bindings from a host name.
 
 For read-only remote workflows such as `status` and `doctor`, a stale target runtime is reported as a stale-runtime
@@ -1020,6 +1035,25 @@ Use the returned `state.public` and `state.private` paths exactly when generatin
 `~/Dropbox/home`, `~/Dropbox/home-`, `~/.local/src/home`, or `~/.local/src/home-` when status, explicit user arguments,
 or active home policy can supply the target binding.
 
+When a remote workflow needs repository bindings in a target-side script, agents MUST bind them from target status JSON
+before planning. Agents MUST NOT retype host-convention paths in `tilde plan --repo ...` commands:
+
+```text
+"$TILDE" ssh spinoza << 'SCRIPT'
+tmpdir=$(mktemp -d)
+trap 'rm -rf "$tmpdir"' EXIT
+status_json=$tmpdir/status.json
+
+tilde status --format json > "$status_json"
+public=$(ruby -rjson -e 'data = JSON.parse(File.read(ARGV[0])); print data.dig("state", "public").to_s' "$status_json")
+private=$(ruby -rjson -e 'data = JSON.parse(File.read(ARGV[0])); print data.dig("state", "private").to_s' "$status_json")
+if [ -z "$public" ]; then
+  printf '%s\n' 'STATUS_FAILED: missing state.public' >&2
+  exit 1
+fi
+SCRIPT
+```
+
 Reading controller deployment state before a remote workflow is also invalid. After remote freshness preflight, the
 first target-state read for remote work MUST be delivered to the target:
 
@@ -1033,12 +1067,25 @@ SCRIPT
 "$TILDE" ssh spinoza << 'SCRIPT'
 tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT
+status_json=$tmpdir/status.json
 mode=refresh
 # Use mode=repair when target status reports missing state.yml or no applied anchors.
 
-tilde plan --mode "$mode" --repo ~/Dropbox/home --host spinoza --format json > "$tmpdir/public.json"
-tilde plan --mode "$mode" --repo ~/Dropbox/home- --host spinoza --format json > "$tmpdir/private.json"
-tilde apply --plan "$tmpdir/public.json" --plan "$tmpdir/private.json"
+tilde status --format json > "$status_json"
+public=$(ruby -rjson -e 'data = JSON.parse(File.read(ARGV[0])); print data.dig("state", "public").to_s' "$status_json")
+private=$(ruby -rjson -e 'data = JSON.parse(File.read(ARGV[0])); print data.dig("state", "private").to_s' "$status_json")
+if [ -z "$public" ]; then
+  printf '%s\n' 'STATUS_FAILED: missing state.public' >&2
+  exit 1
+fi
+
+tilde plan --mode "$mode" --repo "$public" --host spinoza --format json > "$tmpdir/public.json" || exit $?
+if [ -n "$private" ]; then
+  tilde plan --mode "$mode" --repo "$private" --host spinoza --format json > "$tmpdir/private.json" || exit $?
+  tilde apply --plan "$tmpdir/public.json" --plan "$tmpdir/private.json"
+else
+  tilde apply --plan "$tmpdir/public.json"
+fi
 SCRIPT
 ```
 
@@ -1052,10 +1099,24 @@ Remote align uses the same target-local plan/apply shape with align mode:
 "$TILDE" ssh spinoza << 'SCRIPT'
 tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT
+status_json=$tmpdir/status.json
+mode=align
 
-tilde plan --mode align --repo ~/Dropbox/home --host spinoza --format json > "$tmpdir/public.json"
-tilde plan --mode align --repo ~/Dropbox/home- --host spinoza --format json > "$tmpdir/private.json"
-tilde apply --plan "$tmpdir/public.json" --plan "$tmpdir/private.json"
+tilde status --format json > "$status_json"
+public=$(ruby -rjson -e 'data = JSON.parse(File.read(ARGV[0])); print data.dig("state", "public").to_s' "$status_json")
+private=$(ruby -rjson -e 'data = JSON.parse(File.read(ARGV[0])); print data.dig("state", "private").to_s' "$status_json")
+if [ -z "$public" ]; then
+  printf '%s\n' 'STATUS_FAILED: missing state.public' >&2
+  exit 1
+fi
+
+tilde plan --mode "$mode" --repo "$public" --host spinoza --format json > "$tmpdir/public.json" || exit $?
+if [ -n "$private" ]; then
+  tilde plan --mode "$mode" --repo "$private" --host spinoza --format json > "$tmpdir/private.json" || exit $?
+  tilde apply --plan "$tmpdir/public.json" --plan "$tmpdir/private.json"
+else
+  tilde apply --plan "$tmpdir/public.json"
+fi
 SCRIPT
 ```
 

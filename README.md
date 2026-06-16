@@ -141,7 +141,8 @@ For mutating remote workflows, verify target runtime freshness before the first 
 controller repositories before planning. If a stale target runtime or checkout cannot be safely refreshed, stop with
 `deferred`. Status paths outside the `state.yml` model, such as `config.yml` or `hosts/HOST/state.md`, mean stale target
 runtime, not successful state recovery. Use `checkout remote` with `--host`, `--repo`, and `--target`; the route does
-not infer bindings from `--host`.
+not infer bindings from `--host`. Runtime freshness maps the loaded skill root to target `~/.agents/skills/tilde`;
+desired-state freshness maps the selected data repository to the target binding.
 
 For host-aware prompt commands, omitted target means current host. A bare host means `ssh:host`, except when it names
 the current host; use explicit `ssh:host` to force SSH transport. Bare all-caps targets such as `ALL`, `HOME`, and
@@ -149,8 +150,9 @@ the current host; use explicit `ssh:host` to force SSH transport. Bare all-caps 
 host. Do not use the controller's `~/.local/state/tilde/state.yml` to discover remote repository bindings, applied
 anchors, level, platform, or bootstrap state.
 
-Host-group reachability probes use Tilde SSH transport, not raw `ssh`. After remote runtime freshness is verified, use
-target `tilde status --format json` and its `state.public` / `state.private` bindings for target-local plan paths.
+Host-group reachability probes use Tilde SSH transport, not raw `ssh`. After remote runtime freshness is verified, read
+target `tilde status --format json`, bind `state.public` / `state.private` to shell variables, and use those variables
+for target-local plan paths instead of retyping host-convention paths.
 
 Example prompts:
 
