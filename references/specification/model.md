@@ -9,5 +9,5 @@ runtime boundaries, read these sections there:
 - `2. Core Invariants`
 - `3. Persistent State`
 - `11. Managedness Proof`
-- `17. Case-Based Migrations`
+- `17. Operator Workflows`
 - `22. Summary`

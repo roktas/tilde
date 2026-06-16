@@ -6,10 +6,10 @@ set -Eeuo pipefail
 unset CDPATH
 
 readonly -a COMMANDS=(
-	'adopt|agent|Adopt an app, config, package, or path into the public or private data repository.'
+	'adopt|agent|Propose adopting an app, config, package, or path into the public or private data repository.'
 	'align|dual|Reconcile links, copies, seeds, and resets without bootstrap, packages, or module scripts.'
 	'clean|agent|Propose conservative cleanup, including duplicate candidates when relevant.'
-	'create|agent|Create public/private home repository skeletons.'
+	'create|agent|Propose public/private home repository creation.'
 	'deploy|agent|Prepare a host and install desired state.'
 	'doctor|runtime|Diagnose state, repository, target, and managedness problems without executing module code.'
 	'handoff|runtime|Copy and print the privilege handoff command for the local or remote host.'

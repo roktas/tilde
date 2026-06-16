@@ -53,7 +53,9 @@ main() {
 		;;
 	boot)
 		there run bin/tilde boot
-		there run bash -lc 'ruby --version; git --version; curl --version | head -n 1'
+		there run ruby --version
+		there run git --version
+		there run curl --version
 		;;
 	stop)
 		there stop

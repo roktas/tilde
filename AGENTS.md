@@ -12,8 +12,9 @@ This repository contains the Tilde skill and control-plane helpers. It is intend
   docs.
 - Keep durable behavior in `references/specification.md`, reusable workflow in `SKILL.md`, and working drafts under
   `.agents/notes/`.
-- Prefer `bin/tilde COMMAND ...` for runtime helper access. Keep `bin/` limited to `tilde` and the `sudo` shim; command
-  implementations live under `libexec/`.
+- Prefer `bin/tilde COMMAND ...` for runtime helper access. Keep ordinary command implementations under `libexec/`.
+  Keep `bin/` limited to the `tilde` router, the `sudo` shim, and intentionally PATH-visible helper commands such as
+  `line` and `span`.
 - Keep this root `AGENTS.md` limited to Tilde repository development. Target-home layout, cleanup policy, organization
   policy, and data-layer operation refinements belong in data repository `home/AGENTS.md` files, host README files, or
   module README files according to the spec.
