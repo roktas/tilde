@@ -20,7 +20,11 @@ warn() {
 # ------------------------------------------------------------------------------------------------------------------------
 
 cleanup() {
-	[[ -z $cleanup_tmpdir ]] || rm -rf "$cleanup_tmpdir"
+	[[ -z $cleanup_tmpdir ]] && return
+	rm -rf "$cleanup_tmpdir" 2>/dev/null || {
+		sleep 1
+		rm -rf "$cleanup_tmpdir"
+	}
 }
 
 commit_all() {
@@ -68,6 +72,7 @@ EOF
 
 main() {
 	local bare
+	local bad_trap
 	local bundle
 	local err
 	local script_dir
@@ -103,6 +108,10 @@ main() {
 	git -C "$target" rev-parse --abbrev-ref --symbolic-full-name '@{u}' | grep -qx origin/main
 	if grep -nE '(^|[[:space:]])git bundle verify' "$skill_root/libexec/checkout"; then
 		abort "bundle verify must run with repository context"
+	fi
+	bad_trap=$'\ttrap \'rm -f "$bundle"\' EXIT'
+	if grep -Fxq "$bad_trap" "$skill_root/libexec/checkout"; then
+		abort "bundle cleanup trap must not reference a local variable at process exit"
 	fi
 
 	printf 'two\n' >"$source/value.txt"

@@ -4,6 +4,8 @@ set -Eeuo pipefail
 [[ -z ${TRACE:-} ]] || set -x
 unset CDPATH
 
+cleanup_bundle=
+
 abort() {
 	warn "E: $*"
 	exit 1
@@ -22,6 +24,10 @@ branch_commit() {
 	local branch=$2
 
 	git -C "$repo" rev-parse --verify "$branch^{commit}"
+}
+
+cleanup_bundle_file() {
+	[[ -z ${cleanup_bundle:-} ]] || rm -f -- "$cleanup_bundle"
 }
 
 check_clean() {
@@ -295,8 +301,9 @@ command.remote() {
 	bundle=$(mktemp)
 	rm -f "$bundle"
 	remote_bundle=$(remote_bundle_path "$repo" "$branch")
-	trap 'rm -f "$bundle"' EXIT
-	trap 'rm -f "$bundle"; exit 130' HUP INT QUIT TERM
+	cleanup_bundle=$bundle
+	trap cleanup_bundle_file EXIT
+	trap 'cleanup_bundle_file; exit 130' HUP INT QUIT TERM
 
 	pack_bundle "$repo" "$bundle" "$branch" "$allow_unpushed"
 	scp "$bundle" "$host:$remote_bundle"
@@ -359,6 +366,9 @@ fi
 git -C "$repo" branch --set-upstream-to="$remote/$branch" "$branch" >/dev/null 2>&1 || true
 printf 'OK: checkout %s %s\n' "$repo" "$(git -C "$repo" rev-parse --short HEAD)"
 SH
+	cleanup_bundle_file
+	cleanup_bundle=
+	trap - EXIT HUP INT QUIT TERM
 }
 
 # ------------------------------------------------------------------------------------------------------------------------

@@ -185,6 +185,9 @@ packages.
 Package manager state is the source of truth for package presence. Package inventories are ephemeral apply-time
 optimizations only.
 
+Package metadata refresh warnings about incomplete indexes, signature failures, missing repository keys, or failed
+source fetches are deferred, even when the package manager exits successfully.
+
 One-off operator workflows stay outside the desired-state model. Tilde may assist with checks and execution.
 
 If a run times out or reports `state lock busy`, do not remove the lock file blindly. First verify that no Tilde/apply

@@ -524,6 +524,9 @@ uv tool install foo
 
 A package operation that requires privilege or external input returns `deferred`.
 
+Package metadata refresh that reports incomplete indexes, signature verification failures, missing repository keys, or
+failed source fetches returns `deferred` even if the package manager exits successfully.
+
 Package refresh and upgrade operations are not commit-anchor semantics. They MUST NOT advance or rewrite `applied` anchors by themselves.
 
 ### 10.1 Ephemeral Package Inventory
@@ -996,15 +999,10 @@ Repository paths in remote scripts are the target host's configured bindings. Pu
 Inside the remote script body, bare `tilde` is valid because the Tilde SSH transport has already set the target runtime
 PATH.
 
-Remote scripts should be `sh`-compatible by default, especially for macOS targets where Bash behavior may differ. When
-the target is known to have a suitable Bash and Bash-specific syntax is unavoidable, pass the interpreter after `--`;
-the transport MUST run that interpreter as the remote script reader:
-
-```text
-"$TILDE" ssh spinoza -- bash << 'SCRIPT'
-set -euo pipefail
-SCRIPT
-```
+Remote scripts MUST be `sh`-compatible by default. Agents MUST use the plain `"$TILDE" ssh HOST << 'SCRIPT'` form for
+ordinary status, plan, apply, and verification work. Agents MUST NOT pass `-- bash` for macOS targets or for scripts
+that can run under `sh`. Passing an interpreter after `--` is reserved for a verified non-macOS target and a script that
+truly needs syntax absent from `sh`; the transport MUST run that interpreter as the remote script reader.
 
 After a successful mutating remote apply, agents MUST perform a final cheap target-local status read before final
 closeout:

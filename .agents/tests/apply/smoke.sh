@@ -212,12 +212,86 @@ printf 'configure\n' > "$HOME/configure"
 EOF
 }
 
+write_apt_warning_plan() {
+	local file=$1
+	local repo=$2
+	local state=$3
+	local home=$4
+	local host=$5
+
+	ruby - "$file" "$repo" "$state" "$home" "$host" <<'RUBY'
+require "digest"
+require "json"
+require "open3"
+require "time"
+
+file, repo, state, home, host = ARGV
+stdout, stderr, status = Open3.capture3("git", "-C", repo, "rev-parse", "HEAD")
+raise stderr unless status.success?
+
+dirty, stderr, status = Open3.capture3("git", "-C", repo, "status", "--porcelain")
+raise stderr unless status.success?
+
+plan = {
+  "schema" => "tilde.plan/v1",
+  "generated_at" => Time.now.iso8601,
+  "repository" => {
+    "role" => "public",
+    "path" => repo,
+    "commit" => stdout.strip,
+    "dirty" => !dirty.empty?
+  },
+  "target" => {
+    "host" => host,
+    "platform" => "linux",
+    "mode" => "refresh",
+    "scope" => "fast",
+    "level" => "normal",
+    "home" => home,
+    "state_root" => File.join(state, "tilde")
+  },
+  "actions" => [
+    {
+      "id" => "public/linux:package:refresh:deb:*",
+      "kind" => "package",
+      "module_id" => "public/linux",
+      "repo_role" => "public",
+      "operation" => "refresh",
+      "package" => {
+        "type" => "deb",
+        "name" => "*",
+        "value" => "deb:*",
+        "system" => true
+      }
+    }
+  ]
+}
+
+def canonicalize(value)
+  case value
+  when Array
+    value.map { |item| canonicalize(item) }
+  when Hash
+    value.keys.map(&:to_s).sort.to_h { |key| [key, canonicalize(value[key])] }
+  else
+    value
+  end
+end
+
+content = canonicalize(plan.reject { |key, _value| %w[generated_at plan_id].include?(key) })
+plan["plan_id"] = "sha256:#{Digest::SHA256.hexdigest(JSON.generate(content))}"
+File.write(file, JSON.pretty_generate(plan))
+RUBY
+}
+
 # ------------------------------------------------------------------------------------------------------------------------
 # Main
 # ------------------------------------------------------------------------------------------------------------------------
 
 main() {
 	local apply_json
+	local apt_apply_json
+	local apt_plan_json
 	local conflict_apply_json
 	local conflict_plan_json
 	local fake_bin
@@ -253,6 +327,8 @@ main() {
 	repo=$home/Dropbox/home
 	state=$tmpdir/state
 	apply_json=$tmpdir/apply.json
+	apt_apply_json=$tmpdir/apt-warning-apply.json
+	apt_plan_json=$tmpdir/apt-warning-plan.json
 	conflict_apply_json=$tmpdir/conflict-apply.json
 	conflict_plan_json=$tmpdir/conflict-plan.json
 	fake_bin=$tmpdir/fake-bin
@@ -352,6 +428,33 @@ main() {
 		abort "installed packages should be unchanged: #{bad.inspect}" unless bad.empty?
 		ran = packages.select { |result| result.fetch("diagnostics").key?("commands") }
 		abort "package install commands should not run when inventory says present: #{ran.inspect}" unless ran.empty?
+	'
+
+	cat >"$fake_bin/sudo" <<'EOF'
+#!/usr/bin/env sh
+case "$*" in
+"-n env DEBIAN_FRONTEND=noninteractive apt-get update")
+	printf 'W: Failed to fetch https://example.invalid stable InRelease\n' >&2
+	printf 'W: Some index files failed to download. They have been ignored, or old ones used instead.\n' >&2
+	exit 0
+	;;
+*)
+	printf 'unexpected sudo command: %s\n' "$*" >&2
+	exit 9
+	;;
+esac
+EOF
+	chmod +x "$fake_bin/sudo"
+	write_apt_warning_plan "$apt_plan_json" "$repo" "$state" "$home" "$host"
+	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH "$tilde" apply --plan "$apt_plan_json" >"$apt_apply_json"
+
+	APT_APPLY_JSON=$apt_apply_json ruby -rjson -e '
+		apply = JSON.parse(File.read(ENV.fetch("APT_APPLY_JSON")))
+		result = apply.fetch("results").fetch(0)
+		abort "apt warning should defer" unless result.fetch("status") == "deferred"
+		abort "wrong apt warning reason" unless result.dig("diagnostics", "reason") == "apt update incomplete"
+		commands = result.dig("diagnostics", "commands")
+		abort "apt upgrade should not run after incomplete update" unless commands.length == 1
 	'
 
 	echo "apply smoke ok"

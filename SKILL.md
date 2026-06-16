@@ -267,16 +267,10 @@ HEAD `local` in summaries; that word is ambiguous from the controller.
 Inside the remote script body, bare `tilde` is valid because Tilde SSH transport places the target runtime directory at
 the front of `PATH`.
 
-Remote scripts should be `sh`-compatible by default, especially for macOS targets where Bash behavior may differ. When
-the target is known to have a suitable Bash and Bash-specific syntax is unavoidable, pass the interpreter as an
-argument:
-
-```bash
-TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
-"$TILDE" ssh spinoza -- bash << 'SCRIPT'
-# bash-specific syntax here
-SCRIPT
-```
+Remote scripts must be `sh`-compatible by default. Use the plain `"$TILDE" ssh HOST << 'SCRIPT'` form for ordinary
+status, plan, apply, and verification work. Do not pass `-- bash` for macOS targets or for scripts that can run under
+`sh`. Passing an interpreter after `--` is reserved for a verified non-macOS target and a script that truly needs syntax
+absent from `sh`.
 
 Use `"$TILDE" ssh --tty spinoza` for interactive remote sessions that require a pseudo-terminal (e.g., `sudo` password
 prompts).
@@ -371,6 +365,9 @@ For weaker or low-context agents:
   hosts.
 - Keep remote scripts `sh`-compatible unless Bash is explicitly required and the target is known to support it. Do not
   use Bash-only options such as `set -o pipefail` in the default `"$TILDE" ssh HOST << 'SCRIPT'` form.
+- Do not pass `-- bash` for macOS targets or ordinary remote status, plan, apply, and verification scripts.
+- Treat package-manager metadata refresh warnings that report incomplete indexes, signature failures, or missing
+  repository keys as `deferred`; do not summarize them as successful package refreshes.
 - After a successful mutating remote apply, run a final target status read before the final answer.
 - In remote summaries, distinguish `target HEAD` from `applied anchor`; do not call the target repository commit
   `local`.

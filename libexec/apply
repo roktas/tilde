@@ -38,6 +38,12 @@ class Apply
     "package" => :execute_package,
     "section" => :execute_section
   }.freeze
+  APT_UPDATE_INCOMPLETE_PATTERNS = [
+    /\AW: .*GPG error:/,
+    /\AW: .*signature/i,
+    /\AW: Failed to fetch /,
+    /\AW: Some index files failed /
+  ].freeze
   PACKAGE_COMMANDS = {
     %w[install brew] => ->(name) { ["brew", "install", name] },
     %w[install cask] => ->(name) { ["brew", "install", "--cask", name] },
@@ -156,6 +162,17 @@ class Apply
     @apply[:completed] = !stop_after_reached? && @apply[:results].length == actions.length
   end
 
+  def apt_update_command?(command)
+    index = command.index("apt-get")
+
+    index && command[index + 1] == "update"
+  end
+
+  def apt_update_incomplete?(command, stderr)
+    apt_update_command?(command) &&
+      stderr.lines.any? { |line| APT_UPDATE_INCOMPLETE_PATTERNS.any? { |pattern| line.match?(pattern) } }
+  end
+
   def acquire_lock
     @lock = File.open(@lock_path.to_s, File::RDWR | File::CREAT, 0o600)
     return if @lock.flock(File::LOCK_EX | File::LOCK_NB)
@@ -192,6 +209,13 @@ class Apply
       path = File.join(dir, name)
       File.file?(path) && File.executable?(path)
     end
+  end
+
+  def command_deferred_reason(command, stderr, status, sudo_events)
+    return "privilege required" if privilege_deferred?(command, stderr, status, sudo_events)
+    return "apt update incomplete" if status.success? && apt_update_incomplete?(command, stderr)
+
+    nil
   end
 
   def condition_met?(condition)
@@ -438,11 +462,11 @@ class Apply
 
       run = { "command" => command, "stdout" => stdout, "stderr" => stderr, "exit" => status.exitstatus }
       run["sudo"] = sudo_events unless sudo_events.empty?
-      if privilege_deferred?(command, stderr, status, sudo_events)
+      if (reason = command_deferred_reason(command, stderr, status, sudo_events))
         return action_result(
           action,
           "deferred",
-          diagnostics.merge("commands" => runs + [run], "reason" => "privilege required")
+          diagnostics.merge("commands" => runs + [run], "reason" => reason)
         )
       end
       return action_result(action, "notok", diagnostics.merge("commands" => runs + [run])) unless status.success?

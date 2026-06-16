@@ -244,6 +244,7 @@ print_help() {
 	printf 'Target shorthand: omitted target means current host; bare `host` means `ssh:host` except when it names the current host; bare all-caps targets such as `ALL`, `HOME`, and `WORK` expand from the active home policy.\n'
 	printf 'When traversing a host group, skip hosts that fail a bounded noninteractive reachability check and continue with reachable hosts.\n'
 	printf 'For remote targets, generate plans and run live checks on the target host through Tilde SSH transport.\n'
+	printf 'Remote script shell: default Tilde SSH uses `sh`; do not pass `-- bash` for macOS targets or ordinary status, plan, apply, and verification scripts.\n'
 	printf 'For mutating remote workflows, verify target runtime freshness before target status reads, plan, or apply; refresh stale Git-backed target checkouts first, or defer.\n'
 	printf 'For update targets with missing `state.yml` or no `applied` anchors, use `plan --mode repair` for state recovery instead of refresh; missing state is not proof the host was never deployed.\n'
 	printf 'Status paths outside the `state.yml` model, such as `config.yml` or `hosts/HOST/state.md`, mean stale target runtime.\n'
