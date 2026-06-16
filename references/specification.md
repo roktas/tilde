@@ -310,6 +310,24 @@ state with `repair` mode for that run because refresh-only work does not establi
 state is not proof that the host was never deployed; agents SHOULD describe this as state recovery unless bounded
 evidence proves otherwise.
 
+Agents that materialize plan JSON files MUST write them under a per-run temporary directory and remove that directory at
+workflow exit. Fixed plan paths under shared temp locations, such as `/tmp/opencode/HOST-public.json`, are invalid for
+agent workflows because they leak state across runs and hosts.
+
+Example:
+
+```text
+tmpdir=$(mktemp -d)
+trap 'rm -rf "$tmpdir"' EXIT
+
+"$TILDE" plan --mode refresh --repo ~/Dropbox/home --host newton --format json > "$tmpdir/public.json"
+"$TILDE" apply --plan "$tmpdir/public.json"
+```
+
+Refresh mode does not advance `applied` anchors. After a successful update workflow, final status may show target
+repository HEAD ahead of the stored applied anchor. Agents MUST report this as expected refresh behavior and MUST NOT
+say that anchors advanced unless the apply mode was `apply` or `repair` and state actually changed.
+
 ```text
 apply / install:
   Prerequisites

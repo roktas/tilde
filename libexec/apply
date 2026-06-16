@@ -401,12 +401,16 @@ class Apply
   def package_inventory_command(type) = PACKAGE_INVENTORY_COMMANDS[type]
 
   def package_inventory_output(type, command)
-    stdout, _stderr, status = Open3.capture3(*command)
+    log = Tempfile.new(["tilde-sudo", ".jsonl"])
+    log.close
+    stdout, _stderr, status = Open3.capture3(runtime_env(log.path), *command)
     return nil unless status.success?
 
     parse_package_inventory(type, stdout)
   rescue Errno::ENOENT
     nil
+  ensure
+    log&.close!
   end
 
   def package_present?(package)

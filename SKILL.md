@@ -177,6 +177,22 @@ use refresh merely to recreate state, and do not tell the user to run deploy sol
 `state.yml` is not proof that the host was never deployed; describe it as missing state and state recovery unless
 bounded evidence proves otherwise.
 
+When an agent workflow materializes plan JSON files, create them under a per-run temporary directory and remove that
+directory at exit. Do not write fixed plan paths such as `/tmp/opencode/HOST-public.json`, and do not leave plan files
+behind after `tilde apply`:
+
+```bash
+tmpdir=$(mktemp -d)
+trap 'rm -rf "$tmpdir"' EXIT
+
+"$TILDE" plan --mode refresh --repo ~/Dropbox/home --host newton --format json > "$tmpdir/public.json"
+"$TILDE" apply --plan "$tmpdir/public.json"
+```
+
+`refresh` mode does not advance `applied` anchors. After a successful `/tilde update`, final status may show target
+repository HEAD ahead of the stored applied anchor; report that as expected refresh behavior, not as anchor advancement
+and not as failed convergence.
+
 ## Remote Script Execution
 
 ### Remote Freshness Preflight
@@ -494,6 +510,10 @@ For weaker or low-context agents:
 - After remote runtime freshness is verified, read `tilde status --format json` on the target, bind the returned
   repository paths to shell variables, and use those variables for remote plan paths. Do not guess Dropbox or
   Git-backed checkout paths when status or explicit policy can supply them.
+- Use `mktemp -d` and `trap` for all local and remote plan JSON files. Do not write fixed `/tmp/opencode/...` plan
+  paths or leave generated plan files behind after apply.
+- Do not say `applied` anchors advanced after a successful `refresh`/`update` run. Refresh mode does not write anchors;
+  distinguish target HEAD from applied anchors in final status.
 - Keep remote scripts `sh`-compatible unless Bash is explicitly required and the target is known to support it. Do not
   use Bash-only options such as `set -o pipefail` in the default `"$TILDE" ssh HOST << 'SCRIPT'` form.
 - In default remote scripts, avoid Bashisms such as `[[ ]]`, arrays, `source`, `local`, `pipefail`, process

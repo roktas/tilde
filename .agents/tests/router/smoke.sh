@@ -126,6 +126,8 @@ EOF
 	grep -Fq 'When traversing a host group, skip hosts that fail a bounded noninteractive reachability check and continue with reachable hosts.' "$help"
 	grep -Fq 'Run Tilde reachability probes through `"$TILDE" ssh`; do not use raw `ssh` for Tilde remote workflow probes.' "$help"
 	grep -Fq 'For remote targets, generate plans and run live checks on the target host through Tilde SSH transport.' "$help"
+	grep -Fq 'Write plan JSON files under a per-run `mktemp -d` directory and clean them with `trap`; do not leave fixed `/tmp/opencode/...` plan files.' "$help"
+	grep -Fq 'Refresh/update mode does not advance `applied` anchors; report target HEAD separately from applied anchors.' "$help"
 	grep -Fq 'After remote runtime freshness is verified, read target `tilde status --format json` and use `state.public` / `state.private` as plan repository bindings.' "$help"
 	grep -Fq 'Bind remote plan repository paths to variables from target status JSON; do not retype host-convention paths in `plan --repo` commands.' "$help"
 	grep -Fq 'Remote align uses target-local `plan --mode align` plus `apply`; do not run `tilde align --format json` on a remote target.' "$help"

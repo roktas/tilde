@@ -133,7 +133,9 @@ failed remote step successful.
 For agent workflows, `update` ordinarily maps to planning mode `refresh`. If target status shows missing `state.yml` or
 no `applied` anchors, use `repair` mode for that run so state recovery writes recovered bindings and anchors. Plans for
 remote hosts must be generated and applied on the target host. After a successful mutating remote apply, read final
-status on the target before closeout.
+status on the target before closeout. Materialize plan JSON under a per-run `mktemp -d` directory and clean it with a
+trap; do not leave fixed files such as `/tmp/opencode/HOST-public.json`. Successful `refresh` does not advance
+`applied` anchors, so final reports must distinguish target HEAD from applied anchors.
 
 For mutating remote workflows, verify target runtime freshness before the first target status read. If the target
 `~/.agents/skills/tilde` checkout is stale, refresh it from the controller checkout before running target `tilde status`,
