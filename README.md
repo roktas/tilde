@@ -152,9 +152,12 @@ the current host; use explicit `ssh:host` to force SSH transport. Bare all-caps 
 host. Do not use the controller's `~/.local/state/tilde/state.yml` to discover remote repository bindings, applied
 anchors, level, platform, or bootstrap state.
 
-Host-group reachability probes use Tilde SSH transport, not raw `ssh`. After remote runtime freshness is verified, read
-target `tilde status --format json`, bind `state.public` / `state.private` to shell variables, and use those variables
-for target-local plan paths instead of retyping host-convention paths.
+For explicitly requested configured host groups, report the expanded host list and continue; do not ask for permission
+to start the requested workflow. Ask only when the group is undefined, ambiguous, unexpectedly expands outside active
+policy, or a later step requires separate explicit confirmation. Host-group reachability probes use Tilde SSH
+transport, not raw `ssh`. After remote runtime freshness is verified, read target `tilde status --format json`, bind
+`state.public` / `state.private` to shell variables, and use those variables for target-local plan paths instead of
+retyping host-convention paths.
 
 Example prompts:
 

@@ -123,6 +123,7 @@ EOF
 	grep -Fq 'Runtime entrypoint: set `TILDE` to the loaded skill root `bin/tilde`; fallback `~/.agents/skills/tilde/bin/tilde`.' "$help"
 	grep -Fq 'Do not search `PATH` after `tilde: command not found`; retry with `"$TILDE"`.' "$help"
 	grep -Fq 'Target shorthand: omitted target means current host; bare `host` means `ssh:host` except when it names the current host; bare all-caps targets such as `ALL`, `HOME`, and `WORK` expand from the active home policy.' "$help"
+	grep -Fq 'For defined host groups, report the expanded host list and continue; do not ask for permission to start the exact requested workflow.' "$help"
 	grep -Fq 'When traversing a host group, skip hosts that fail a bounded noninteractive reachability check and continue with reachable hosts.' "$help"
 	grep -Fq 'Run Tilde reachability probes through `"$TILDE" ssh`; do not use raw `ssh` for Tilde remote workflow probes.' "$help"
 	grep -Fq 'For remote targets, generate plans and run live checks on the target host through Tilde SSH transport.' "$help"

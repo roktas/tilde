@@ -262,9 +262,11 @@ Commands with their own subject syntax, such as `adopt APP_OR_PATH`, `clean SUBJ
 Bare all-caps targets such as `ALL`, `HOME`, and `WORK` are home-policy host groups, not hostnames. Agents MUST expand a
 host group from the active `~/AGENTS.md` policy before running remote work. Group expansion applies only to unprefixed
 target tokens; `ssh:host` is always an explicit host target. If the policy does not define the requested group, agents
-MUST ask the user for the host list. For mutating commands, agents MUST present the expanded host list and obtain
-confirmation before applying changes. Each expanded host is a separate target workflow with separate status, plan, apply,
-and closeout reporting.
+MUST ask the user for the host list. For explicitly requested configured groups, agents MUST report the expanded host
+list and continue; the prompt itself is consent to run the requested workflow. Agents MUST ask only when the group is
+undefined, ambiguous, unexpectedly expands outside active policy, or a later step requires separate explicit
+confirmation. Each expanded host is a separate target workflow with separate status, plan, apply, and closeout
+reporting.
 
 When traversing a host group, agents MUST perform a bounded noninteractive reachability check before each host workflow:
 

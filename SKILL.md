@@ -78,9 +78,10 @@ Commands with their own subject syntax, such as `adopt APP_OR_PATH`, `clean SUBJ
 
 Bare all-caps targets are not hostnames. Expand them from the active `~/AGENTS.md` home policy before running any remote
 work. Group expansion applies only to unprefixed target tokens; `ssh:host` is always an explicit host target. If the
-policy does not define the requested group, ask the user for the host list. For mutating commands, present the expanded
-host list and obtain confirmation before applying changes. Run each host as a separate target workflow and report
-per-host results.
+policy does not define the requested group, ask the user for the host list. For explicitly requested configured groups,
+report the expanded host list and continue; the prompt itself is consent to run the requested workflow. Ask only when
+the group is undefined, ambiguous, unexpectedly expands outside active policy, or a later step requires separate
+explicit confirmation. Run each host as a separate target workflow and report per-host results.
 
 When traversing a host group, perform a bounded noninteractive reachability check before each host workflow. Skip
 unreachable hosts and continue with the remaining hosts. Report skipped hosts separately; an unreachable host inside a
@@ -503,8 +504,10 @@ For weaker or low-context agents:
 - Missing `state.yml` or missing `applied` anchors means state recovery, not proof that the host was never deployed.
 - Remote status paths outside the `state.yml` model, such as `config.yml` or `hosts/HOST/state.md`, mean stale target
   runtime, not successful current state recovery.
-- Treat bare all-caps targets such as `ALL`, `HOME`, and `WORK` as home-policy host groups, not hostnames; ask the user
-  if the active home policy does not define the requested group.
+- Treat bare all-caps targets such as `ALL`, `HOME`, and `WORK` as home-policy host groups, not hostnames. For defined
+  groups, report the expanded host list and continue; do not ask for permission to start the exact requested workflow.
+  Ask only if the active home policy does not define the requested group, the expansion is ambiguous, or it unexpectedly
+  leaves active policy.
 - When traversing a host group, skip unreachable hosts after a bounded reachability check and continue with reachable
   hosts. Run this check through `"$TILDE" ssh`; do not use raw `ssh` for Tilde remote workflow probes.
 - After remote runtime freshness is verified, read `tilde status --format json` on the target, bind the returned
