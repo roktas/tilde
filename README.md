@@ -72,7 +72,7 @@ Repository names are conventions only. Correctness comes from explicit paths, st
 ## Modules
 
 Each root module is a direct child directory containing `README.md`. README frontmatter may declare `links`, `copies`,
-`packages`, `level`, `hosts`, and platform scopes such as `all`, `linux`, and `macos`.
+`seeds`, `resets`, `packages`, `level`, `hosts`, and platform scopes such as `all`, `linux`, and `macos`.
 
 Recommended module sections:
 
@@ -111,7 +111,7 @@ Do not rely on bare `tilde` being on the controller `PATH`.
 | `repair`   | agent   | Apply current desired state again.                                         |
 | `doctor`   | runtime | Diagnose without executing module code or mutating targets.                |
 | `handoff`  | runtime | Copy and print the privilege handoff command for the local or remote host. |
-| `align`    | dual    | Reconcile links and copies without bootstrap, packages, or module code.    |
+| `align`    | dual    | Reconcile links, copies, seeds, and resets without bootstrap or packages.  |
 | `adopt`    | agent   | Propose adopting an app, config, package, or path.                         |
 | `create`   | agent   | Propose public/private home repository creation.                           |
 | `init`     | agent   | Bind existing public/private repositories.                                 |
@@ -185,8 +185,8 @@ stderr.
 
 Tilde is proposal-first for destructive, privilege-requiring, preference-sensitive, or remote mutations.
 
-No proof means no destructive mutation. Managedness must be proven before removing links, spans, copies, files, or
-packages.
+No proof means no destructive mutation. Managedness must be proven before removing links, spans, file
+materializations, files, or packages.
 
 Package manager state is the source of truth for package presence. Package inventories are ephemeral apply-time
 optimizations only.

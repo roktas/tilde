@@ -139,9 +139,10 @@ Tilde SSH transport so the target host supplies live facts.
 
 ### Dual Command
 
-- `align`: local link/copy reconciliation can run directly through the resolved runtime entrypoint. Remote align remains
-  agent-orchestrated: use `/tilde align spinoza` prompt semantics and deliver the target-side workflow through Tilde SSH
-  transport. Do not run `tilde align --format json` on a remote target; `align` has no `--format` option.
+- `align`: local link, copy, seed, and reset reconciliation can run directly through the resolved runtime entrypoint.
+  Remote align remains agent-orchestrated: use `/tilde align spinoza` prompt semantics and deliver the target-side
+  workflow through Tilde SSH transport. Do not run `tilde align --format json` on a remote target; `align` has no
+  `--format` option.
 
 ### Implementation Routes
 
@@ -164,7 +165,7 @@ Agent commands map to planning modes and module sections as follows.
 | `update` | `refresh`; `repair` for state recovery | `Prerequisites`, `Update`, then `Configure`; state recovery uses repair behavior |
 | `repair` | `repair` | `Prerequisites`, `Install`, `Post Install` when `Install` changed, then `Configure` |
 | `upgrade` | `upgrade` | broad refresh behavior, then package upgrades |
-| `align` | `align` | links and copies only; no bootstrap, packages, or module code |
+| `align` | `align` | links, copies, seeds, and resets only; no bootstrap, packages, or module code |
 
 `create`, `init`, `clean`, `organize`, and `adopt` are proposal-first operator workflows unless a direct helper is
 explicitly documented for the requested step.
@@ -437,5 +438,6 @@ For weaker or low-context agents:
   rerun apply. Broad directory cleanup needs a separate explicit approval.
 - Run `"$TILDE" handoff --host HOST --copy` on the controller after sudo deferral. Do not run handoff through
   `"$TILDE" ssh`, do not invent a two-line `TILDE=...` command, and do not rewrite the printed `Handoff command:`.
-- Remove packages, copies, files, or spans only with explicit managedness proof and proposal-first confirmation.
+- Remove packages, file materializations, files, or spans only with explicit managedness proof and proposal-first
+  confirmation.
 - Prefer a safe `deferred` or `conflict` result over guessing.

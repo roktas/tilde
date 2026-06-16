@@ -182,12 +182,18 @@ all:
     source.txt: ~/.config/app/source.txt
   copies:
     copy.txt: ~/.config/app/copy.txt
+  seeds:
+    seed.txt: ~/.config/app/seed.txt
+  resets:
+    reset.txt: ~/.config/app/reset.txt
 ---
 
 # App
 EOF
 	printf 'source\n' >"$repo/app/source.txt"
 	printf 'copy\n' >"$repo/app/copy.txt"
+	printf 'seed\n' >"$repo/app/seed.txt"
+	printf 'reset\n' >"$repo/app/reset.txt"
 
 	cat >"$repo/section/README.md" <<'EOF'
 # Section
@@ -376,12 +382,18 @@ main() {
 	'
 
 	rm -f "$home/.config/app/source.txt"
+	ln -s "$repo/app/seed.txt" "$home/.config/app/seed.txt"
+	ln -s "$repo/app/reset.txt" "$home/.config/app/reset.txt"
 	rm -f "$home/.profile" "$home/post-install" "$home/configure"
 	HOME=$home XDG_STATE_HOME=$state "$tilde" plan --repo "$repo" --platform linux --host "$host" >"$plan_json"
 	HOME=$home XDG_STATE_HOME=$state "$tilde" apply --plan "$plan_json" >"$apply_json"
 
 	[[ -L $home/.config/app/source.txt ]]
 	grep -Fqx 'copy' "$home/.config/app/copy.txt"
+	[[ ! -L $home/.config/app/seed.txt ]]
+	[[ ! -L $home/.config/app/reset.txt ]]
+	grep -Fqx 'seed' "$home/.config/app/seed.txt"
+	grep -Fqx 'reset' "$home/.config/app/reset.txt"
 	grep -Fqx 'configure' "$home/configure"
 	grep -Fxq 'post' "$home/post-install"
 	grep -Fxq 'export EDITOR=vim' "$home/.profile"
@@ -400,14 +412,22 @@ main() {
 		abort "state must not contain done map" if state.key?("done")
 	'
 
+	printf 'local seed\n' >"$home/.config/app/seed.txt"
+	printf 'local reset\n' >"$home/.config/app/reset.txt"
 	HOME=$home XDG_STATE_HOME=$state "$tilde" plan --repo "$repo" --platform linux --host "$host" >"$second_plan_json"
 	HOME=$home XDG_STATE_HOME=$state "$tilde" apply --plan "$second_plan_json" >"$second_apply_json"
 
 	[[ $(grep -c '^post$' "$home/post-install") -eq 1 ]]
+	grep -Fqx 'local seed' "$home/.config/app/seed.txt"
+	grep -Fqx 'reset' "$home/.config/app/reset.txt"
 	SECOND_APPLY_JSON=$second_apply_json ruby -rjson -e '
 		apply = JSON.parse(File.read(ENV.fetch("SECOND_APPLY_JSON")))
 		post = apply.fetch("results").find { |result| result.fetch("action_id") == "public/section:section:Post Install" }
 		abort "post install should be skipped when install did not change" unless post&.fetch("status") == "skipped"
+		seed = apply.fetch("results").find { |result| result.fetch("action_id") == "public/app:seed:seed.txt->~/.config/app/seed.txt" }
+		abort "seed should leave existing real target unchanged" unless seed&.fetch("status") == "unchanged"
+		reset = apply.fetch("results").find { |result| result.fetch("action_id") == "public/app:reset:reset.txt->~/.config/app/reset.txt" }
+		abort "reset should restore drifted target" unless reset&.fetch("status") == "changed"
 	'
 
 	write_package_repo "$package_repo"

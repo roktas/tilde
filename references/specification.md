@@ -188,6 +188,8 @@ The manifest may include:
 
 - links,
 - copies,
+- seeds,
+- resets,
 - package declarations,
 - helper-based file patches,
 - executable fenced blocks,
@@ -330,7 +332,7 @@ upgrade:
   package upgrade actions after refresh/update actions
 
 align:
-  links and copies only
+  links, copies, seeds, and resets only
   no bootstrap, packages, or module code
 
 doctor:
@@ -355,6 +357,14 @@ separate command.
 ## 8. Module Sections
 
 Module README frontmatter may declare module-level properties and platform-scoped desired state.
+
+Supported desired-state keys are:
+
+- `links`: symlink targets,
+- `copies`: conservative file copies where drift is a conflict,
+- `seeds`: initial file copies where existing real targets are local state,
+- `resets`: repository-authoritative file copies,
+- `packages`: package declarations.
 
 `level` is a module-level property. Prefer declaring it at the top level of the module frontmatter:
 
@@ -639,20 +649,31 @@ A managed line action is based on exact line content.
 
 Line actions MUST NOT infer ownership of surrounding file content.
 
-### 11.4 Copies
+### 11.4 File Materialization
 
-Copy managedness is conservative.
+Tilde supports three file materialization intents: `copies`, `seeds`, and `resets`.
 
-A copied file is not considered safely managed merely because it resembles a source file.
+`copies` is conservative. Missing targets are copied from the repository. Existing targets that differ from the
+repository source are `conflict`. A copied file is not considered safely managed merely because it resembles a source
+file.
 
-Copy cleanup requires explicit proof such as:
+`seeds` creates an initial independent file or directory. If the target is missing, Tilde copies the repository source.
+If the target is a real file or directory, Tilde leaves it unchanged without comparing content. This is for files that
+applications legitimately mutate after first install. If the target is a matching symlink, Tilde replaces that symlink
+with an independent copy. A differing symlink is `conflict`.
+
+`resets` treats the repository source as authoritative. Missing targets, symlink targets, and drifted real targets are
+replaced by a fresh copy of the repository source without an additional conflict prompt. Use `resets` only for files
+whose local drift should be repaired by every apply, repair, or align run.
+
+Materialization cleanup requires explicit proof such as:
 
 - a managed marker,
 - a known checksum sidecar,
 - explicit adoption metadata,
 - or another policy-defined ownership proof.
 
-Without proof, removed copy declarations are reported but not automatically removed.
+Without proof, removed copy, seed, or reset declarations are reported but not automatically removed.
 
 ### 11.5 Packages
 
@@ -822,7 +843,7 @@ This diff identifies cleanup candidates such as:
 - links previously declared but no longer declared,
 - links whose source or target changed,
 - managed spans previously declared but removed,
-- copies previously declared but removed,
+- file materializations previously declared but removed,
 - package declarations previously declared but removed.
 
 Commit diff does not prove the live target is stale. It only identifies candidates.
@@ -1097,6 +1118,8 @@ If apply returns a `conflict`, agents MUST stop after reporting the exact confli
 explicit user response before replacing files, forcing links, copying repository versions over targets, or rerunning
 apply. Consent is not implied by silence, by the existence of a conflict, or by the agent's own question. If resolving
 one conflict reveals another conflict in a later apply, the later conflict requires a separate explicit response.
+`resets` actions are not conflict resolution; they are explicit repository-authoritative desired state and may replace
+their exact targets according to the module declaration.
 
 When the user chooses repository replacement for a conflict, agents SHOULD preserve a backup when practical, remove only
 the exact conflicting target, and rerun apply so the declarative action recreates it. Agents MUST NOT treat a replacement

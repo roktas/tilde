@@ -26,7 +26,7 @@ class Apply
     "public" => 0,
     "private" => 1
   }.freeze
-  SUPPORTED_ACTIONS = %w[entrypoint package section link copy manual].freeze
+  SUPPORTED_ACTIONS = %w[entrypoint package section link copy manual reset seed].freeze
   SUPPORTED_CONDITIONS = %w[graphical].freeze
   SUPPORTED_CONFLICTS = %w[none write-fallback-file].freeze
   SUPPORTED_PACKAGE_TYPES = %w[brew cask deb egg flatpak gem github npm scoop skill].freeze
@@ -36,7 +36,9 @@ class Apply
     "link" => :execute_link,
     "manual" => :execute_manual,
     "package" => :execute_package,
-    "section" => :execute_section
+    "reset" => :execute_reset,
+    "section" => :execute_section,
+    "seed" => :execute_seed
   }.freeze
   APT_UPDATE_INCOMPLETE_PATTERNS = [
     /\AW: .*GPG error:/,
@@ -251,6 +253,17 @@ class Apply
     end
   end
 
+  def install_copy(source, target)
+    FileUtils.mkdir_p(target.dirname)
+
+    temp = Pathname.new("#{target}.tilde-tmp-#{$PROCESS_ID}")
+    FileUtils.rm_rf(temp)
+    copy_source(source, temp)
+    FileUtils.mv(temp.to_s, target.to_s)
+  ensure
+    FileUtils.rm_rf(temp) if temp
+  end
+
   def current_plan_hash(plan)
     content = canonicalize(plan.except("generated_at", "plan_id"))
     "sha256:#{Digest::SHA256.hexdigest(JSON.generate(content))}"
@@ -288,15 +301,31 @@ class Apply
 
     return action_result(action, "conflict", { "reason" => "copy target differs" }) if target.exist? || target.symlink?
 
-    FileUtils.mkdir_p(target.dirname)
-
-    temp = Pathname.new("#{target}.tilde-tmp-#{$PROCESS_ID}")
-    FileUtils.rm_rf(temp)
-    copy_source(source, temp)
-    FileUtils.mv(temp.to_s, target.to_s)
+    install_copy(source, target)
     action_result(action, "changed")
-  ensure
-    FileUtils.rm_rf(temp) if temp
+  end
+
+  def execute_reset(action)
+    source = Pathname.new(action.fetch("source_path"))
+    target = expand_target(action.fetch("target"))
+    return action_result(action, "unchanged") if !target.symlink? && copy_equal?(source, target)
+
+    FileUtils.rm_rf(target) if target.exist? || target.symlink?
+    install_copy(source, target)
+    action_result(action, "changed")
+  end
+
+  def execute_seed(action)
+    source = Pathname.new(action.fetch("source_path"))
+    target = expand_target(action.fetch("target"))
+    return action_result(action, "unchanged") if target.exist? && !target.symlink?
+    if target.symlink? && !copy_equal?(source, target)
+      return action_result(action, "conflict", { "reason" => "seed target symlink differs" })
+    end
+
+    FileUtils.rm_rf(target) if target.symlink?
+    install_copy(source, target)
+    action_result(action, "changed")
   end
 
   def execute_entrypoint(action)

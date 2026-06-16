@@ -219,7 +219,8 @@ EOF
 		abort "missing git bin fan-in link" unless git.fetch("links_to_create").any? { |link| link.fetch("source") == "bin/git-renew" && link.fetch("target") == "~/.local/bin/git-renew" && link.fetch("fan_in") == true }
 		mc = plan.fetch("modules").find { |mod| mod.fetch("name") == "mc" }
 		abort "missing mc module" unless mc
-		abort "missing mc.ini copy" unless mc.fetch("copies_to_create").any? { |copy| copy.fetch("target") == "~/.config/mc/ini" }
+		abort "missing mc.ini seed" unless mc.fetch("seeds_to_create").any? { |seed| seed.fetch("target") == "~/.config/mc/ini" }
+		abort "missing mc skins copy" unless mc.fetch("copies_to_create").any? { |copy| copy.fetch("target") == "~/.local/share/mc/skins" }
 		abort "gnome module should not be planned" if plan.fetch("modules").any? { |mod| mod.fetch("name") == "gnome" }
 	'
 
@@ -613,6 +614,7 @@ EOF
 		abort "align should not include package actions" if plan.fetch("actions").any? { |action| action.fetch("kind") == "package" }
 		abort "align should not include section actions" if plan.fetch("actions").any? { |action| %w[section manual].include?(action.fetch("kind")) }
 		abort "align should include link actions" unless plan.fetch("actions").any? { |action| action.fetch("kind") == "link" }
+		abort "align should include file materialization actions" unless plan.fetch("actions").any? { |action| %w[copy seed reset].include?(action.fetch("kind")) }
 		abort "align modules should not install packages" if plan.fetch("modules").any? { |mod| mod.fetch("packages_to_install").any? }
 		abort "align modules should not keep special sections" if plan.fetch("modules").any? { |mod| mod.fetch("special_sections").any? }
 	'
@@ -737,7 +739,7 @@ EOF
 		mc = plan.fetch("modules").find { |mod| mod.fetch("name") == "mc" }
 		abort "missing mc module in repair plan" unless mc
 		abort "repair must not skip mc from state" if mc.fetch("skipped")
-		abort "repair should include mc copies" if mc.fetch("copies_to_create").empty?
+		abort "repair should include mc file materializations" if mc.fetch("copies_to_create").empty? || mc.fetch("seeds_to_create").empty?
 	'
 
 	echo "plan smoke ok"

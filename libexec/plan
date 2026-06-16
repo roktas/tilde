@@ -211,16 +211,22 @@ class Plan
     }
   end
 
-  def copy_action(mod, copy)
+  def copy_action(mod, copy) = file_action(mod, copy, "copy")
+
+  def seed_action(mod, seed) = file_action(mod, seed, "seed")
+
+  def reset_action(mod, reset) = file_action(mod, reset, "reset")
+
+  def file_action(mod, file, kind)
     {
-      id: "#{mod.fetch(:id)}:copy:#{copy.fetch(:source)}->#{copy.fetch(:target)}",
-      kind: "copy",
+      id: "#{mod.fetch(:id)}:#{kind}:#{file.fetch(:source)}->#{file.fetch(:target)}",
+      kind:,
       module_id: mod.fetch(:id),
       module_name: mod.fetch(:name),
       repo_role: mod.fetch(:repo_role),
-      source: copy.fetch(:source),
-      source_path: copy.fetch(:source_path),
-      target: copy.fetch(:target),
+      source: file.fetch(:source),
+      source_path: file.fetch(:source_path),
+      target: file.fetch(:target),
       conflict: {
         strategy: "none"
       }
@@ -457,8 +463,14 @@ class Plan
     DEFAULT_PACKAGE_TYPE.keys.any? { |platform| name == "#{platform}-" }
   end
 
-  def normalize_copies(config, dir)
-    normalize_map(config["copies"]).map do |source, target|
+  def normalize_copies(config, dir) = normalize_files(config, dir, "copies")
+
+  def normalize_resets(config, dir) = normalize_files(config, dir, "resets")
+
+  def normalize_seeds(config, dir) = normalize_files(config, dir, "seeds")
+
+  def normalize_files(config, dir, key)
+    normalize_map(config[key]).map do |source, target|
       {
         source:,
         source_path: source_path(dir, source),
@@ -629,6 +641,9 @@ class Plan
     home_entrypoint = home_entrypoint_declared?(config)
     links = actions_skipped ? [] : normalize_links(config, dir)
     packages = normalize_packages(config)
+    copies = actions_skipped ? [] : normalize_copies(config, dir)
+    resets = actions_skipped ? [] : normalize_resets(config, dir)
+    seeds = actions_skipped ? [] : normalize_seeds(config, dir)
 
     {
       id: module_id(module_name),
@@ -642,7 +657,9 @@ class Plan
       packages_to_refresh: [],
       packages_to_upgrade: [],
       links_to_create: links,
-      copies_to_create: actions_skipped ? [] : normalize_copies(config, dir),
+      copies_to_create: copies,
+      resets_to_create: resets,
+      seeds_to_create: seeds,
       special_sections: section_actions(body),
       skipped: false,
       skip_reason: nil,
@@ -669,7 +686,9 @@ class Plan
 
   def align_module_actions(mod)
     mod.fetch(:links_to_create).map { |link| link_plan_action(mod, link) } +
-      mod.fetch(:copies_to_create).map { |copy| copy_action(mod, copy) }
+      mod.fetch(:copies_to_create).map { |copy| copy_action(mod, copy) } +
+      mod.fetch(:seeds_to_create).map { |seed| seed_action(mod, seed) } +
+      mod.fetch(:resets_to_create).map { |reset| reset_action(mod, reset) }
   end
 
   def module_actions(mod)
@@ -681,6 +700,8 @@ class Plan
     actions.concat(section_plan_actions(mod, %w[Configure]))
     actions.concat(mod.fetch(:links_to_create).map { |link| link_plan_action(mod, link) })
     actions.concat(mod.fetch(:copies_to_create).map { |copy| copy_action(mod, copy) })
+    actions.concat(mod.fetch(:seeds_to_create).map { |seed| seed_action(mod, seed) })
+    actions.concat(mod.fetch(:resets_to_create).map { |reset| reset_action(mod, reset) })
     actions
   end
 
@@ -785,6 +806,8 @@ class Plan
       puts
       puts_action_list("Links", mod[:links_to_create]) { |link| "`#{link[:source]}` -> `#{link[:target]}`" }
       puts_action_list("Copies", mod[:copies_to_create]) { |copy| "`#{copy[:source]}` -> `#{copy[:target]}`" }
+      puts_action_list("Seeds", mod[:seeds_to_create]) { |seed| "`#{seed[:source]}` -> `#{seed[:target]}`" }
+      puts_action_list("Resets", mod[:resets_to_create]) { |reset| "`#{reset[:source]}` -> `#{reset[:target]}`" }
       puts_action_list("Install Packages", mod[:packages_to_install]) { |pkg| "`#{pkg[:value]}`" }
       puts_action_list("Refresh Packages", mod[:packages_to_refresh]) { |pkg| "`#{pkg[:value]}`" }
       puts_action_list("Upgrade Packages", mod[:packages_to_upgrade]) { |pkg| "`#{pkg[:value]}`" }
