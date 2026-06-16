@@ -30,6 +30,7 @@ cleanup() {
 
 main() {
 	local boot_help
+	local checkout_err
 	local deploy_err
 	local fake_bin
 	local handoff
@@ -43,6 +44,7 @@ main() {
 	local real_bin
 	local ssh_args
 	local ssh_body
+	local ssh_err
 	local script_dir
 	local skill_root
 	local status_help
@@ -65,6 +67,7 @@ main() {
 	help=$tmpdir/help.md
 	status_help=$tmpdir/status-help.md
 	boot_help=$tmpdir/boot-help.txt
+	checkout_err=$tmpdir/checkout.err
 	deploy_err=$tmpdir/deploy.err
 	fake_bin=$tmpdir/bin
 	handoff=$tmpdir/handoff.txt
@@ -77,6 +80,7 @@ main() {
 	align_state=$tmpdir/align-state
 	ssh_args=$tmpdir/ssh.args
 	ssh_body=$tmpdir/ssh.body
+	ssh_err=$tmpdir/ssh.err
 	sudo_alias_root=$tmpdir/alias-root
 	sudo_err=$tmpdir/sudo.err
 	sudo_out=$tmpdir/sudo.out
@@ -88,6 +92,9 @@ main() {
 #!/usr/bin/env sh
 printf '%s\n' "$@" > "$TILDE_FAKE_SSH_ARGS"
 cat > "$TILDE_FAKE_SSH_BODY"
+if [ -n "${TILDE_FAKE_SSH_EXIT:-}" ]; then
+	exit "$TILDE_FAKE_SSH_EXIT"
+fi
 EOF
 	cat >"$fake_bin/wl-copy" <<'EOF'
 #!/usr/bin/env sh
@@ -118,8 +125,11 @@ EOF
 	grep -Fq 'Target shorthand: omitted target means current host; bare `host` means `ssh:host` except when it names the current host; bare all-caps targets such as `ALL`, `HOME`, and `WORK` expand from the active home policy.' "$help"
 	grep -Fq 'When traversing a host group, skip hosts that fail a bounded noninteractive reachability check and continue with reachable hosts.' "$help"
 	grep -Fq 'For remote targets, generate plans and run live checks on the target host through Tilde SSH transport.' "$help"
+	grep -Fq 'Remote align uses target-local `plan --mode align` plus `apply`; do not run `tilde align --format json` on a remote target.' "$help"
+	grep -Fq 'Do not redirect remote Tilde stderr to `/dev/null`; a non-zero remote exit means the step failed or deferred even when stdout is empty.' "$help"
 	grep -Fq 'Remote script shell: default Tilde SSH uses POSIX `sh`; do not use Bash prelude, `pipefail`, `[[ ]]`, arrays, `source`, `local`, or `-- bash` for ordinary status, plan, apply, and verification scripts.' "$help"
 	grep -Fq 'For mutating remote workflows, verify target runtime freshness before target status reads, plan, or apply; refresh stale Git-backed target checkouts first, or defer.' "$help"
+	grep -Fq 'Remote freshness checkout route: use `"$TILDE" checkout remote --host HOST --repo CONTROLLER_REPO --target TARGET_REPO`; never call it with only `--host`.' "$help"
 	grep -Fq 'For update targets with missing `state.yml` or no `applied` anchors, use `plan --mode repair` for state recovery instead of refresh; missing state is not proof the host was never deployed.' "$help"
 	grep -Fq 'Status paths outside the `state.yml` model, such as `config.yml` or `hosts/HOST/state.md`, mean stale target runtime.' "$help"
 	grep -Fq 'After successful mutating remote apply, run a final target status read and report target HEAD separately from applied anchors.' "$help"
@@ -145,6 +155,10 @@ EOF
 	grep -Fq 'Usage: boot' "$boot_help"
 	"$tilde" align --help >"$align_help"
 	grep -Fq 'Usage: "$TILDE" align' "$align_help"
+	if "$tilde" align --format json >"$align_help" 2>&1; then
+		abort "expected align --format to fail"
+	fi
+	grep -Fq 'align has no --format option' "$align_help"
 
 	cat >"$align_repo/AGENTS.md" <<'EOF'
 ---
@@ -219,6 +233,18 @@ EOF
 printf 'options\n'
 EOF
 	tr '\n' ' ' <"$ssh_args" | grep -Fq -- '-o BatchMode=yes -o ConnectTimeout=5 target sh -s -- '
+	if TILDE_FAKE_SSH_EXIT=7 TILDE_FAKE_SSH_ARGS=$ssh_args TILDE_FAKE_SSH_BODY=$ssh_body PATH=$fake_bin:$PATH \
+		"$tilde" ssh target >/dev/null 2>"$ssh_err" <<'EOF'; then
+printf 'fail\n'
+EOF
+		abort "expected ssh route to fail when remote script fails"
+	fi
+	grep -Fq 'E: remote script failed on target with exit 7' "$ssh_err"
+
+	if "$tilde" checkout remote --host target >"$checkout_err" 2>&1; then
+		abort "expected incomplete checkout remote command to fail"
+	fi
+	grep -Fq 'checkout remote requires --repo CONTROLLER_REPO and --target TARGET_REPO' "$checkout_err"
 
 	if "$tilde" deploy >/dev/null 2>"$deploy_err"; then
 		abort "expected agent-orchestrated prompt command to fail as a runtime route"

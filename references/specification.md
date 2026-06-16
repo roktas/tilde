@@ -280,7 +280,9 @@ unreachable, the command result is `deferred`.
 Direct runtime commands such as `help`, `doctor`, `handoff`, and `status` may be run through `bin/tilde`. For remote
 targets, the command must run on the target host through the Tilde SSH transport.
 
-`align` is both a local runtime command and a prompt workflow. Remote align is agent-orchestrated.
+`align` is both a local runtime command and a prompt workflow. Remote align is agent-orchestrated. Agents MUST NOT run
+`tilde align --format json` on a remote target; `align` has no `--format` option. Remote align uses target-local
+`plan --mode align --format json` files and `tilde apply`.
 
 Implementation routes such as `ssh`, `plan`, `apply`, `sudo`, `boot`, `checkout`, `preflight`, and `smoke` are stable
 runtime primitives. They are not user-facing prompt commands.
@@ -959,6 +961,14 @@ Git-backed target runtime or desired-state checkout SHOULD be refreshed from the
 runtime or checkout cannot be refreshed safely because it is dirty, missing, not a Git checkout, or ambiguous, the run
 MUST return `deferred`.
 
+The `checkout remote` route MUST be called with the full controller-to-target mapping:
+
+```text
+"$TILDE" checkout remote --host HOST --repo CONTROLLER_REPO --target TARGET_REPO
+```
+
+Agents MUST NOT call `checkout remote` with only `--host`. The route cannot infer repository bindings from a host name.
+
 For read-only remote workflows such as `status` and `doctor`, a stale target runtime is reported as a stale-runtime
 condition. It is not permission to mutate the remote host.
 
@@ -998,6 +1008,23 @@ SCRIPT
 Repository paths in remote scripts are the target host's configured bindings. Public-only targets omit the private plan.
 Inside the remote script body, bare `tilde` is valid because the Tilde SSH transport has already set the target runtime
 PATH.
+
+Remote align uses the same target-local plan/apply shape with align mode:
+
+```text
+"$TILDE" ssh spinoza << 'SCRIPT'
+tmpdir=$(mktemp -d)
+trap 'rm -rf "$tmpdir"' EXIT
+
+tilde plan --mode align --repo ~/Dropbox/home --host spinoza --format json > "$tmpdir/public.json"
+tilde plan --mode align --repo ~/Dropbox/home- --host spinoza --format json > "$tmpdir/private.json"
+tilde apply --plan "$tmpdir/public.json" --plan "$tmpdir/private.json"
+SCRIPT
+```
+
+Agents MUST NOT redirect remote Tilde diagnostics to `/dev/null` for status, doctor, checkout, plan, apply, align, or
+verification steps. A non-zero remote exit status is failed, deferred, or conflicted work even when stdout is empty. A
+later successful status read does not convert an earlier failed checkout, plan, apply, or align step into success.
 
 Remote scripts MUST be `sh`-compatible by default. Agents MUST use the plain `"$TILDE" ssh HOST << 'SCRIPT'` form for
 ordinary status, plan, apply, and verification work. Agents MUST NOT pass `-- bash` for macOS targets or for scripts

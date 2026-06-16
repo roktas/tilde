@@ -102,8 +102,8 @@ runtime PATH. Normal command implementations live in `libexec/` and are dispatch
 Controller-side runtime calls must go through the resolved entrypoint. Bare `tilde` is valid only when the Tilde runtime
 PATH is already active, such as inside a remote script delivered by Tilde SSH transport.
 
-`bin/tilde` has direct runtime routes for helper and diagnostic commands. It intentionally refuses prompt commands such
-as `update`, `deploy`, and `repair`; those commands are interpreted and orchestrated by the loaded Tilde skill.
+`bin/tilde` has direct runtime routes for helper and diagnostic commands. It intentionally refuses agent-orchestrated
+prompt commands; those commands are interpreted and orchestrated by the loaded Tilde skill.
 
 Implementation routes such as `plan` and `apply` are stable primitives for agent workflows. They are not user-facing
 prompt commands. Use them only inside the workflow patterns in this skill and the specification.
@@ -141,7 +141,7 @@ Tilde SSH transport so the target host supplies live facts.
 
 - `align`: local link/copy reconciliation can run directly through the resolved runtime entrypoint. Remote align remains
   agent-orchestrated: use `/tilde align spinoza` prompt semantics and deliver the target-side workflow through Tilde SSH
-  transport.
+  transport. Do not run `tilde align --format json` on a remote target; `align` has no `--format` option.
 
 ### Implementation Routes
 
@@ -197,6 +197,16 @@ For mutating remote prompt workflows such as `deploy`, `update`, `repair`, `upgr
 - On Dropbox-backed remote hosts, do not replace synced repositories with controller bundles; report stale or unsynced
   target checkouts as `deferred` unless the user asks for a Git-backed checkout refresh.
 
+When using `checkout remote`, always pass the complete source and target binding:
+
+```bash
+TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
+"$TILDE" checkout remote --host ondokuz --repo ~/Dropbox/home --target ~/.local/src/home
+```
+
+Do not call `checkout remote` with only `--host`; the route cannot infer which controller repository maps to which
+target checkout.
+
 For read-only remote workflows such as `status` and `doctor`, detecting a stale target runtime is a reportable stale
 runtime condition, not permission to mutate the remote host. Report it and stop unless the user requested repair or
 update behavior.
@@ -249,6 +259,25 @@ SCRIPT
 
 Replace repository paths with the target host's configured bindings. Omit the private plan when the target has no
 private repository.
+
+For remote align, use the same target-local plan/apply shape with `mode=align`. Do not call the target's direct
+`tilde align` route for a remote prompt workflow, and do not suppress diagnostics:
+
+```bash
+TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
+"$TILDE" ssh spinoza << 'SCRIPT'
+tmpdir=$(mktemp -d)
+trap 'rm -rf "$tmpdir"' EXIT
+
+tilde plan --mode align --repo ~/Dropbox/home --host spinoza --format json > "$tmpdir/public.json"
+tilde plan --mode align --repo ~/Dropbox/home- --host spinoza --format json > "$tmpdir/private.json"
+tilde apply --plan "$tmpdir/public.json" --plan "$tmpdir/private.json"
+SCRIPT
+```
+
+Every remote Tilde step must treat a non-zero exit as failed, deferred, or conflicted, even when stdout is empty. Do not
+redirect stderr to `/dev/null` for remote `status`, `doctor`, `checkout`, `plan`, `apply`, `align`, or verification
+work. A later successful status read does not turn a failed plan, apply, checkout, or align step into success.
 
 After a successful mutating remote apply, verify target convergence with a separate cheap status read so the apply JSON
 stays easy to parse:
@@ -369,7 +398,17 @@ For weaker or low-context agents:
 - Before any controller-side runtime call, resolve `TILDE` to the loaded skill directory's `bin/tilde`, falling back to
   `~/.agents/skills/tilde/bin/tilde`.
 - If bare `tilde` is not found on the controller, do not search for it; rerun through `"$TILDE"`.
-- Do not run the `update`, `deploy`, or `repair` routes through `"$TILDE"`; these are prompt workflows.
+- Do not run agent-orchestrated prompt routes through `"$TILDE"`: `deploy`, `update`, `repair`, `upgrade`, `adopt`,
+  `create`, `init`, `clean`, and `organize`. `align` is a direct route only for current-host reconciliation; remote
+  align is still a prompt workflow.
+- For remote `/tilde align HOST`, do not run `tilde align --format json` on the target. Read target bindings on the
+  target, then run `tilde plan --mode align --format json` for each target repository and `tilde apply` the plan files.
+- Never redirect remote Tilde stderr to `/dev/null`. Non-zero remote exit status means the step failed, deferred, or
+  conflicted, even when the tool output pane says `(no output)`.
+- A final status read is verification only; it does not make an earlier failed remote `checkout`, `plan`, `apply`, or
+  align step successful.
+- Call `checkout remote` only with the complete mapping: `--host HOST --repo CONTROLLER_REPO --target TARGET_REPO`.
+  Do not expect it to infer target paths from `--host`.
 - Use the `plan --mode refresh` implementation route for the `update` prompt command only when target status has
   existing `applied` anchors. If target status shows missing `state.yml` or no `applied` anchors, use
   `plan --mode repair` for state recovery.

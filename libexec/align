@@ -81,6 +81,9 @@ main() {
 			allow_dirty=1
 			shift
 			;;
+		--format | --format=*)
+			abort "align has no --format option; for remote align, generate target-local plans with plan --mode align and apply them"
+			;;
 		--dry-run | dry-run | --plan-only | plan-only)
 			dry_run=1
 			shift

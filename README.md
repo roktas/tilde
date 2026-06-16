@@ -125,6 +125,11 @@ Kind meanings:
 - `runtime`: direct `bin/tilde` route. For remote targets, run it on the target through Tilde SSH transport.
 - `dual`: direct local runtime route plus prompt workflow. Remote targets are agent-orchestrated.
 
+Remote `align` uses target-local `plan --mode align --format json` files followed by `tilde apply`; do not run
+`tilde align --format json` on a remote target. Do not hide remote Tilde stderr with `/dev/null`; a non-zero remote exit
+means the step failed, deferred, or conflicted even when stdout is empty. A later status read does not make an earlier
+failed remote step successful.
+
 For agent workflows, `update` ordinarily maps to planning mode `refresh`. If target status shows missing `state.yml` or
 no `applied` anchors, use `repair` mode for that run so state recovery writes recovered bindings and anchors. Plans for
 remote hosts must be generated and applied on the target host. After a successful mutating remote apply, read final
@@ -135,7 +140,8 @@ For mutating remote workflows, verify target runtime freshness before the first 
 `tilde plan`, or `tilde apply`. On Git-backed remote hosts, also refresh stale public/private target checkouts from the
 controller repositories before planning. If a stale target runtime or checkout cannot be safely refreshed, stop with
 `deferred`. Status paths outside the `state.yml` model, such as `config.yml` or `hosts/HOST/state.md`, mean stale target
-runtime, not successful state recovery.
+runtime, not successful state recovery. Use `checkout remote` with `--host`, `--repo`, and `--target`; the route does
+not infer bindings from `--host`.
 
 For host-aware prompt commands, omitted target means current host. A bare host means `ssh:host`, except when it names
 the current host; use explicit `ssh:host` to force SSH transport. Bare all-caps targets such as `ALL`, `HOME`, and

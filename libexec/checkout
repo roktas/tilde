@@ -293,9 +293,9 @@ command.remote() {
 		esac
 	done
 
-	[[ -n $host ]] || abort "--host is required"
-	[[ -n $repo ]] || abort "--repo is required"
-	[[ -n $target ]] || abort "--target is required"
+	[[ -n $host ]] || abort "checkout remote requires --host HOST"
+	[[ -n $repo ]] || abort "checkout remote requires --repo CONTROLLER_REPO and --target TARGET_REPO"
+	[[ -n $target ]] || abort "checkout remote requires --target TARGET_REPO"
 
 	[[ -n $origin ]] || origin=$(origin_url "$repo")
 	bundle=$(mktemp)

@@ -88,6 +88,7 @@ main() {
 	local host=
 	local interpreter=sh
 	local root=\$HOME/.agents/skills/tilde
+	local status
 	local tempfile
 	local -a remote_args=()
 	local -a script_args=()
@@ -159,10 +160,19 @@ main() {
 	else
 		script_args=("${remote_args[@]}")
 	fi
+	set +e
 	{
 		write_prelude "$root"
 		cat "$tempfile"
 	} | ssh "${ssh_args[@]}" "$host" "$interpreter" -s -- "${script_args[@]}"
+	status=$?
+	set -e
+
+	if ((status != 0)); then
+		warn "E: remote script failed on $host with exit $status"
+	fi
+
+	return "$status"
 }
 
 main "$@"
