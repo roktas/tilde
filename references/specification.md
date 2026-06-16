@@ -1004,6 +1004,24 @@ ordinary status, plan, apply, and verification work. Agents MUST NOT pass `-- ba
 that can run under `sh`. Passing an interpreter after `--` is reserved for a verified non-macOS target and a script that
 truly needs syntax absent from `sh`; the transport MUST run that interpreter as the remote script reader.
 
+In the default remote form, `sh`-compatible means POSIX `sh`, not "Bash without a Bash shebang." Agents MUST NOT use
+the Bash skill prelude in these remote scripts. Agents MUST avoid common Bashisms:
+
+| Bashism | POSIX `sh` form |
+| --- | --- |
+| `set -o pipefail` | avoid critical pipelines; check each command separately |
+| `[[ -n $x ]]` | `[ -n "$x" ]` |
+| `[[ $x =~ re ]]` | `case $x in pattern) ... ;; esac` |
+| `arr=(a b)` and `${arr[@]}` | newline-separated strings, positional parameters, or repeated commands |
+| `source file` | `. file` |
+| `function name { ...; }` | `name() { ...; }` |
+| `local x=...`, `declare`, `mapfile`, `readarray`, `select` | simple variables and explicit loops |
+| `< <(cmd)` and `<<< "$text"` | temp files, pipes, or here-documents |
+| `{foo,bar}` brace expansion | spell out the words |
+| `$'...\n...'` strings | `printf '%s\n' ...` |
+
+`dash` is a common `/bin/sh`; scripts that only work in Bash are invalid in the plain remote form.
+
 After a successful mutating remote apply, agents MUST perform a final cheap target-local status read before final
 closeout:
 

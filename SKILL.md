@@ -272,6 +272,25 @@ status, plan, apply, and verification work. Do not pass `-- bash` for macOS targ
 `sh`. Passing an interpreter after `--` is reserved for a verified non-macOS target and a script that truly needs syntax
 absent from `sh`.
 
+In the default remote form, `sh`-compatible means POSIX `sh`, not "Bash without a Bash shebang." Do not use the Bash
+skill prelude in these remote scripts. Avoid common Bashisms:
+
+| Bashism | POSIX `sh` form |
+| --- | --- |
+| `set -o pipefail` | avoid critical pipelines; check each command separately |
+| `[[ -n $x ]]` | `[ -n "$x" ]` |
+| `[[ $x =~ re ]]` | `case $x in pattern) ... ;; esac` |
+| `arr=(a b)` and `${arr[@]}` | newline-separated strings, positional parameters, or repeated commands |
+| `source file` | `. file` |
+| `function name { ...; }` | `name() { ...; }` |
+| `local x=...`, `declare`, `mapfile`, `readarray`, `select` | simple variables and explicit loops |
+| `< <(cmd)` and `<<< "$text"` | temp files, pipes, or here-documents |
+| `{foo,bar}` brace expansion | spell out the words |
+| `$'...\n...'` strings | `printf '%s\n' ...` |
+
+Also remember that `dash` is a common `/bin/sh`; scripts that only work in Bash are not acceptable in the plain remote
+form.
+
 Use `"$TILDE" ssh --tty spinoza` for interactive remote sessions that require a pseudo-terminal (e.g., `sudo` password
 prompts).
 
@@ -365,6 +384,8 @@ For weaker or low-context agents:
   hosts.
 - Keep remote scripts `sh`-compatible unless Bash is explicitly required and the target is known to support it. Do not
   use Bash-only options such as `set -o pipefail` in the default `"$TILDE" ssh HOST << 'SCRIPT'` form.
+- In default remote scripts, avoid Bashisms such as `[[ ]]`, arrays, `source`, `local`, `pipefail`, process
+  substitution, here-strings, brace expansion, `mapfile`, and `$'...'` strings.
 - Do not pass `-- bash` for macOS targets or ordinary remote status, plan, apply, and verification scripts.
 - Treat package-manager metadata refresh warnings that report incomplete indexes, signature failures, or missing
   repository keys as `deferred`; do not summarize them as successful package refreshes.

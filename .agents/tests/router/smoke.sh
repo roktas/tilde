@@ -118,7 +118,7 @@ EOF
 	grep -Fq 'Target shorthand: omitted target means current host; bare `host` means `ssh:host` except when it names the current host; bare all-caps targets such as `ALL`, `HOME`, and `WORK` expand from the active home policy.' "$help"
 	grep -Fq 'When traversing a host group, skip hosts that fail a bounded noninteractive reachability check and continue with reachable hosts.' "$help"
 	grep -Fq 'For remote targets, generate plans and run live checks on the target host through Tilde SSH transport.' "$help"
-	grep -Fq 'Remote script shell: default Tilde SSH uses `sh`; do not pass `-- bash` for macOS targets or ordinary status, plan, apply, and verification scripts.' "$help"
+	grep -Fq 'Remote script shell: default Tilde SSH uses POSIX `sh`; do not use Bash prelude, `pipefail`, `[[ ]]`, arrays, `source`, `local`, or `-- bash` for ordinary status, plan, apply, and verification scripts.' "$help"
 	grep -Fq 'For mutating remote workflows, verify target runtime freshness before target status reads, plan, or apply; refresh stale Git-backed target checkouts first, or defer.' "$help"
 	grep -Fq 'For update targets with missing `state.yml` or no `applied` anchors, use `plan --mode repair` for state recovery instead of refresh; missing state is not proof the host was never deployed.' "$help"
 	grep -Fq 'Status paths outside the `state.yml` model, such as `config.yml` or `hosts/HOST/state.md`, mean stale target runtime.' "$help"
