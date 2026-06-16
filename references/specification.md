@@ -279,6 +279,9 @@ If the reachability check fails, agents MUST mark that host `skipped`, report th
 remaining hosts. An unreachable host inside a group MUST NOT fail reachable hosts. If every expanded host is
 unreachable, the command result is `deferred`.
 
+Reachability checks for Tilde workflows MUST use Tilde SSH transport. Agents MUST NOT use raw `ssh`, `sh -c`, or
+`bash -lc` for these probes.
+
 Direct runtime commands such as `help`, `doctor`, `handoff`, and `status` may be run through `bin/tilde`. For remote
 targets, the command must run on the target host through the Tilde SSH transport.
 
@@ -1003,6 +1006,19 @@ piped script body. Planning and apply MUST both run on the target host. Platform
 repository bindings, and live checks come from the target host.
 
 Generating a plan on the controller for a remote host is invalid.
+
+After the target runtime is known current, machine-readable target status is the preferred source for repository
+bindings:
+
+```text
+"$TILDE" ssh spinoza << 'SCRIPT'
+tilde status --format json
+SCRIPT
+```
+
+Use the returned `state.public` and `state.private` paths exactly when generating target-local plans. Do not guess
+`~/Dropbox/home`, `~/Dropbox/home-`, `~/.local/src/home`, or `~/.local/src/home-` when status, explicit user arguments,
+or active home policy can supply the target binding.
 
 Reading controller deployment state before a remote workflow is also invalid. After remote freshness preflight, the
 first target-state read for remote work MUST be delivered to the target:

@@ -624,6 +624,26 @@ class Plan
     []
   end
 
+  def empty_files
+    {
+      links_to_create: [],
+      copies_to_create: [],
+      resets_to_create: [],
+      seeds_to_create: []
+    }
+  end
+
+  def module_files(config, dir)
+    return empty_files if actions_skipped?
+
+    {
+      links_to_create: normalize_links(config, dir),
+      copies_to_create: normalize_copies(config, dir),
+      resets_to_create: normalize_resets(config, dir),
+      seeds_to_create: normalize_seeds(config, dir)
+    }
+  end
+
   def planned_module(dir)
     readme = dir.join("README.md")
     frontmatter, body = frontmatter_and_body(readme)
@@ -637,13 +657,9 @@ class Plan
     return nil unless level_allowed?(level)
     return nil unless host_allowed?(config)
 
-    actions_skipped = actions_skipped?
+    files = module_files(config, dir)
     home_entrypoint = home_entrypoint_declared?(config)
-    links = actions_skipped ? [] : normalize_links(config, dir)
     packages = normalize_packages(config)
-    copies = actions_skipped ? [] : normalize_copies(config, dir)
-    resets = actions_skipped ? [] : normalize_resets(config, dir)
-    seeds = actions_skipped ? [] : normalize_seeds(config, dir)
 
     {
       id: module_id(module_name),
@@ -656,10 +672,10 @@ class Plan
       packages_to_install: align? ? [] : package_actions(packages, "apply"),
       packages_to_refresh: [],
       packages_to_upgrade: [],
-      links_to_create: links,
-      copies_to_create: copies,
-      resets_to_create: resets,
-      seeds_to_create: seeds,
+      links_to_create: files.fetch(:links_to_create),
+      copies_to_create: files.fetch(:copies_to_create),
+      resets_to_create: files.fetch(:resets_to_create),
+      seeds_to_create: files.fetch(:seeds_to_create),
       special_sections: section_actions(body),
       skipped: false,
       skip_reason: nil,

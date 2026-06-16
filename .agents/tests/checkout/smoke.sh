@@ -97,6 +97,9 @@ main() {
 	target=$tmpdir/target/home-
 
 	write_private_repo "$source"
+	"$tilde" checkout pack --help | grep -q "checkout pack"
+	"$tilde" checkout receive --help | grep -q "checkout receive"
+	"$tilde" checkout remote --help | grep -q "checkout remote"
 	git init -q --bare "$bare"
 	git -C "$bare" symbolic-ref HEAD refs/heads/main
 	git -C "$source" remote add origin "$bare"

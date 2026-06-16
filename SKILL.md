@@ -85,6 +85,7 @@ per-host results.
 When traversing a host group, perform a bounded noninteractive reachability check before each host workflow. Skip
 unreachable hosts and continue with the remaining hosts. Report skipped hosts separately; an unreachable host inside a
 group is not a failure for reachable hosts. If every expanded host is unreachable, stop with a clear `deferred` result.
+Use Tilde SSH transport for the reachability check itself. Do not use raw `ssh`, even for this cheap probe.
 
 ```bash
 TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
@@ -232,6 +233,19 @@ These bypass Tilde's PATH setup and sudo interceptor.
 
 After the Remote Freshness Preflight, plan and execute on the target host. Platform detection, package inventory,
 repository bindings, and live checks come from the target. A controller-side plan for a remote host is invalid.
+After the target runtime is known current, read target status in JSON when a workflow needs repository bindings:
+
+```bash
+TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
+"$TILDE" ssh spinoza << 'SCRIPT'
+tilde status --format json
+SCRIPT
+```
+
+Use the returned `state.public` and `state.private` paths exactly when generating target-local plans. Do not hard-code
+`~/Dropbox/home`, `~/Dropbox/home-`, `~/.local/src/home`, or `~/.local/src/home-` unless those paths came from target
+status, explicit user arguments, or active home policy for a stale Git-backed target that must be refreshed before
+status can be trusted.
 
 Remote state is target-local. For `/tilde update spinoza`, `/tilde update ssh:spinoza`, `/tilde deploy spinoza`,
 `/tilde deploy ssh:spinoza`, `/tilde doctor spinoza`, `/tilde status spinoza`, and `/tilde align spinoza`, do not read the controller's
@@ -421,7 +435,10 @@ For weaker or low-context agents:
 - Treat bare all-caps targets such as `ALL`, `HOME`, and `WORK` as home-policy host groups, not hostnames; ask the user
   if the active home policy does not define the requested group.
 - When traversing a host group, skip unreachable hosts after a bounded reachability check and continue with reachable
-  hosts.
+  hosts. Run this check through `"$TILDE" ssh`; do not use raw `ssh` for Tilde remote workflow probes.
+- After remote runtime freshness is verified, read `tilde status --format json` on the target and use the returned
+  repository bindings for remote plan paths. Do not guess Dropbox or Git-backed checkout paths when status or explicit
+  policy can supply them.
 - Keep remote scripts `sh`-compatible unless Bash is explicitly required and the target is known to support it. Do not
   use Bash-only options such as `set -o pipefail` in the default `"$TILDE" ssh HOST << 'SCRIPT'` form.
 - In default remote scripts, avoid Bashisms such as `[[ ]]`, arrays, `source`, `local`, `pipefail`, process
