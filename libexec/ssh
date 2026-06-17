@@ -58,6 +58,16 @@ LC_ALL=en_US.UTF-8
 LANG=en_US.UTF-8
 PATH="/opt/homebrew/bin:/usr/local/bin:/home/linuxbrew/.linuxbrew/bin:$HOME/.local/bin:$PATH"
 export LC_ALL LANG PATH
+
+if [ -d "$HOME/.config/environment.d" ]; then
+	for file in "$HOME"/.config/environment.d/*.conf; do
+		[ -r "$file" ] || continue
+
+		set -a
+		. "$file"
+		set +a
+	done
+fi
 SH
 	if [[ -n $root ]]; then
 		if [[ $root == "\$HOME/.agents/skills/tilde" ]]; then

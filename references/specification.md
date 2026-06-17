@@ -989,6 +989,9 @@ Agents delivering remote work MUST use Tilde SSH transport for script delivery.
 This guarantees the Tilde runtime and sudo intercept environment are active on
 the target.
 
+Tilde SSH transport loads non-secret `~/.config/environment.d/*.conf` values before the remote script body. It does not
+load shell credentials.
+
 The remote freshness preflight is the first remote workflow step. Before reading target state, generating plans, applying
 plans, or deciding state-recovery mode, agents MUST perform it.
 

@@ -250,8 +250,8 @@ TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
 "$TILDE" ssh spinoza
 ```
 
-It sets up the correct Tilde runtime environment (PATH, TILDE_ROOT, TILDE_SUDO, locale) and delivers the script body
-through `ssh host sh -s --`.
+It sets up the correct Tilde runtime environment (locale, non-secret `~/.config/environment.d/*.conf` values, PATH,
+TILDE_ROOT, TILDE_SUDO) and delivers the script body through `ssh host sh -s --`.
 
 Do not use raw `ssh`, `sh -c`, or `bash -lc` for multi-command remote work.
 These bypass Tilde's PATH setup and sudo interceptor.

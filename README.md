@@ -155,9 +155,10 @@ anchors, level, platform, or bootstrap state.
 For explicitly requested configured host groups, report the expanded host list and continue; do not ask for permission
 to start the requested workflow. Ask only when the group is undefined, ambiguous, unexpectedly expands outside active
 policy, or a later step requires separate explicit confirmation. Host-group reachability probes use Tilde SSH
-transport, not raw `ssh`. After remote runtime freshness is verified, read target `tilde status --format json`, bind
-`state.public` / `state.private` to shell variables, and use those variables for target-local plan paths instead of
-retyping host-convention paths.
+transport, not raw `ssh`. Tilde SSH loads non-secret `~/.config/environment.d/*.conf` values before the remote script
+body. After remote runtime freshness is verified, read target `tilde status --format json`, bind `state.public` /
+`state.private` to shell variables, and use those variables for target-local plan paths instead of retyping
+host-convention paths.
 
 Example prompts:
 
