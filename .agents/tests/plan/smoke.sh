@@ -290,20 +290,20 @@ EOF
 			abort "missing private codex module" unless codex
 			abort "missing linux codex-switcher package" unless codex.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "github:Lampese/codex-switcher" }
 			abort "linux codex should not install codex cask" if codex.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "cask:codex" }
-			abort "codex wrappers should be removed" if codex.fetch("links_to_create").any? { |link| link.fetch("source") == "bin/codex" || link.fetch("target") == "~/Dropbox/allos/bin/codex" || link.fetch("source") == "bin/codex-switcher" || link.fetch("target") == "~/Dropbox/allos/bin/codex-switcher" }
+			abort "codex wrappers should be removed" if codex.fetch("links_to_create").any? { |link| link.fetch("source") == "bin/codex" || link.fetch("target") == "~/Dropbox/_/bin/codex" || link.fetch("source") == "bin/codex-switcher" || link.fetch("target") == "~/Dropbox/_/bin/codex-switcher" }
 			abort "codex should export CODEX_HOME through environment.d" unless codex.fetch("links_to_create").any? { |link| link.fetch("source") == "environment.d/codex.conf" && link.fetch("target") == "~/.config/environment.d/codex.conf" }
-			abort "codex should link hooks into shared codex state" unless codex.fetch("links_to_create").any? { |link| link.fetch("source") == "hooks/shellcheck" && link.fetch("target") == "~/Dropbox/allos/var/codex/hooks/shellcheck" && link.fetch("fan_in") == true }
-			hook_action = linux_extra.fetch("actions").find { |action| action.fetch("kind") == "link" && action.fetch("target") == "~/Dropbox/allos/var/codex/hooks/shellcheck" }
+			abort "codex should link hooks into shared codex state" unless codex.fetch("links_to_create").any? { |link| link.fetch("source") == "hooks/shellcheck" && link.fetch("target") == "~/Dropbox/_/var/codex/hooks/shellcheck" && link.fetch("fan_in") == true }
+			hook_action = linux_extra.fetch("actions").find { |action| action.fetch("kind") == "link" && action.fetch("target") == "~/Dropbox/_/var/codex/hooks/shellcheck" }
 			abort "missing codex hook action" unless hook_action
 			abort "codex hook should use a relative Dropbox link value" unless hook_action.fetch("link_value") == "../../../../home-/codex/hooks/shellcheck"
-			abort "codex should use shared agent instructions" unless codex.fetch("special_sections").dig("Configure", "body").include?("Dropbox/allos/var/codex/AGENTS.md")
+			abort "codex should use shared agent instructions" unless codex.fetch("special_sections").dig("Configure", "body").include?("Dropbox/_/var/codex/AGENTS.md")
 			abort "codex should ignore local temp files with Dropbox attributes" unless codex.fetch("special_sections").dig("Configure", "body").include?("attr -s com.dropbox.ignored")
-			abort "codex should ignore the shared temp directory" unless codex.fetch("special_sections").dig("Configure", "body").include?("Dropbox/allos/var/codex/.tmp")
+			abort "codex should ignore the shared temp directory" unless codex.fetch("special_sections").dig("Configure", "body").include?("Dropbox/_/var/codex/.tmp")
 			abort "codex should not link skills under ~/.codex" if codex.fetch("links_to_create").any? { |link| link.fetch("target").start_with?("~/.codex/skills/") }
 			copilot = linux.fetch("modules").find { |mod| mod.fetch("name") == "copilot" }
 			abort "missing linux copilot module" unless copilot
 			abort "missing linux copilot-cli cask" unless copilot.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "cask:copilot-cli" }
-			abort "linux copilot wrapper should be removed" if copilot.fetch("links_to_create").any? { |link| link.fetch("source") == "bin/copilot" || link.fetch("target") == "~/Dropbox/allos/bin/copilot" }
+			abort "linux copilot wrapper should be removed" if copilot.fetch("links_to_create").any? { |link| link.fetch("source") == "bin/copilot" || link.fetch("target") == "~/Dropbox/_/bin/copilot" }
 			abort "copilot should export COPILOT_HOME through environment.d" unless copilot.fetch("links_to_create").any? { |link| link.fetch("source") == "environment.d/copilot.conf" && link.fetch("target") == "~/.config/environment.d/copilot.conf" }
 			environment = linux.fetch("modules").find { |mod| mod.fetch("name") == "environment" }
 			abort "missing linux environment module" unless environment
@@ -314,7 +314,7 @@ EOF
 			abort "missing private opencode module" unless opencode
 			abort "missing opencode package" unless opencode.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "brew:opencode" }
 			abort "opencode should not install aicommits package" if opencode.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "brew:aicommits" }
-			abort "opencode should use shared agent instructions" unless opencode.fetch("special_sections").dig("Configure", "body").include?("Dropbox/allos/var/opencode/config/AGENTS.md")
+			abort "opencode should use shared agent instructions" unless opencode.fetch("special_sections").dig("Configure", "body").include?("Dropbox/_/var/opencode/config/AGENTS.md")
 			abort "opencode should not link skills directly" if opencode.fetch("links_to_create").any? { |link| link.fetch("target").include?("/skills/") }
 
 			macos = JSON.parse(File.read(ENV.fetch("PRIVATE_MACOS_PLAN_JSON")))
@@ -332,7 +332,7 @@ EOF
 			copilot = macos.fetch("modules").find { |mod| mod.fetch("name") == "copilot" }
 			abort "missing macos copilot module" unless copilot
 			abort "missing macos copilot-cli cask" unless copilot.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "cask:copilot-cli" }
-			abort "copilot wrapper should be removed" if copilot.fetch("links_to_create").any? { |link| link.fetch("source") == "bin/copilot" || link.fetch("target") == "~/Dropbox/allos/bin/copilot" }
+			abort "copilot wrapper should be removed" if copilot.fetch("links_to_create").any? { |link| link.fetch("source") == "bin/copilot" || link.fetch("target") == "~/Dropbox/_/bin/copilot" }
 			abort "macos dropignore module should be removed" if macos.fetch("modules").any? { |mod| mod.fetch("name") == "dropignore" }
 		'
 	fi
@@ -352,8 +352,8 @@ EOF
 ---
 all:
   links:
-    bin/codex-switcher: ~/Dropbox/allos/bin/codex-switcher
-    hooks/: ~/Dropbox/allos/var/codex/hooks
+    bin/codex-switcher: ~/Dropbox/_/bin/codex-switcher
+    hooks/: ~/Dropbox/_/var/codex/hooks
 ---
 
 # Codex
@@ -374,10 +374,10 @@ EOF
 		abort "missing Dropbox actions" if dropbox_actions.empty?
 		absolute = dropbox_actions.find { |action| action.fetch("link_value").start_with?("/") }
 		abort "Dropbox action should not use host-absolute link value: #{absolute.fetch("id")}" if absolute
-		wrapper = dropbox_actions.find { |action| action.fetch("target") == "~/Dropbox/allos/bin/codex-switcher" }
+		wrapper = dropbox_actions.find { |action| action.fetch("target") == "~/Dropbox/_/bin/codex-switcher" }
 		abort "missing file-provider wrapper link" unless wrapper
 		abort "wrapper should use logical Dropbox-relative value" unless wrapper.fetch("link_value") == "../../home-/codex/bin/codex-switcher"
-		hook = dropbox_actions.find { |action| action.fetch("target") == "~/Dropbox/allos/var/codex/hooks/shellcheck" }
+		hook = dropbox_actions.find { |action| action.fetch("target") == "~/Dropbox/_/var/codex/hooks/shellcheck" }
 		abort "missing file-provider hook link" unless hook
 		abort "hook should use logical Dropbox-relative value" unless hook.fetch("link_value") == "../../../../home-/codex/hooks/shellcheck"
 	'
