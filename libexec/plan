@@ -207,11 +207,26 @@ class Plan
   def core_plan(modules)
     {
       links_to_create: [],
+      links_to_remove: stale_link_actions(modules),
       home_entrypoints_to_write: fallback_entrypoint_needed?(modules) ? fallback_entrypoints : []
     }
   end
 
   def copy_action(mod, copy) = file_action(mod, copy, "copy")
+
+  def directory_action(mod, directory)
+    {
+      id: "#{mod.fetch(:id)}:directory:#{directory.fetch(:target)}",
+      kind: "directory",
+      module_id: mod.fetch(:id),
+      module_name: mod.fetch(:name),
+      repo_role: mod.fetch(:repo_role),
+      target: directory.fetch(:target),
+      conflict: {
+        strategy: "none"
+      }
+    }
+  end
 
   def seed_action(mod, seed) = file_action(mod, seed, "seed")
 
@@ -231,6 +246,46 @@ class Plan
         strategy: "none"
       }
     }
+  end
+
+  def commit_available?(commit)
+    git("cat-file", "-e", "#{commit}^{commit}")
+    true
+  rescue StandardError
+    false
+  end
+
+  def current_link_action_keys
+    current_link_actions
+      .map { |action| link_action_key(action) }
+      .to_h { |key| [key, true] }
+  end
+
+  def current_link_actions
+    current_link_pairs.map do |mod, link|
+      link_plan_action(mod, link)
+    end
+  end
+
+  def current_link_pairs
+    ordered_module_dirs.flat_map do |dir|
+      frontmatter, body = frontmatter_and_body(dir.join("README.md"))
+      next [] unless module_applicable?(frontmatter, body)
+
+      config = active_config(frontmatter)
+      level = module_level(frontmatter, config)
+      module_name = dir.relative_path_from(@repo).to_s
+      validate_module_level(module_name, level)
+      next [] unless level_allowed?(level)
+      next [] unless host_allowed?(config)
+
+      mod = {
+        id: module_id(module_name),
+        name: module_name,
+        repo_role:
+      }
+      normalize_links(config, dir).map { |link| [mod, link] }
+    end
   end
 
   def fallback_entrypoint_needed?(modules)
@@ -375,6 +430,10 @@ class Plan
 
   def frontmatter_and_body(path)
     text = path.read
+    frontmatter_and_body_text(text)
+  end
+
+  def frontmatter_and_body_text(text)
     return [{}, text] unless text.start_with?("---\n")
 
     _, yaml_text, body = text.split(/^---\s*$\n?/, 3)
@@ -455,7 +514,7 @@ class Plan
   end
 
   def ignored_root_dir?(path)
-    name = path.basename.to_s
+    name = path.respond_to?(:basename) ? path.basename.to_s : File.basename(path.to_s)
     name.start_with?(".") || DEFAULT_PACKAGE_TYPE.key?(name) || platform_variant?(name)
   end
 
@@ -464,6 +523,16 @@ class Plan
   end
 
   def normalize_copies(config, dir) = normalize_files(config, dir, "copies")
+
+  def normalize_directories(config)
+    return [] unless config.key?("directories")
+
+    normalize_sequence(config["directories"], "directories").map do |target|
+      raise "directories item must be a string" unless target.is_a?(String)
+
+      { target: }
+    end
+  end
 
   def normalize_resets(config, dir) = normalize_files(config, dir, "resets")
 
@@ -499,8 +568,20 @@ class Plan
   end
 
   def link_actions(dir, source, target)
+    return external_link_actions(dir, source, target) if external_source?(source)
+
     return [link_action(dir, source, target)] unless source.end_with?("/")
 
+    fan_in_link_actions(dir, source, target)
+  end
+
+  def external_link_actions(dir, source, target)
+    raise "external link source cannot use fan-in: #{source}" if source.end_with?("/")
+
+    [link_action(dir, source, target)]
+  end
+
+  def fan_in_link_actions(dir, source, target)
     source_dir = Pathname.new(source_path(dir, source))
     raise "Link fan-in source is not a directory: #{source}" unless source_dir.directory?
 
@@ -514,9 +595,12 @@ class Plan
   end
 
   def link_action(dir, source, target, metadata = {})
+    source_path = external_source?(source) ? external_source_path(source).to_s : source_path(dir, source)
+
     {
       source:,
-      source_path: source_path(dir, source),
+      source_path:,
+      source_external: external_source?(source),
       target:,
       fan_in: false,
       fan_in_source: nil,
@@ -533,6 +617,7 @@ class Plan
       repo_role: mod.fetch(:repo_role),
       source: link.fetch(:source),
       source_path: link.fetch(:source_path),
+      source_external: link.fetch(:source_external, false),
       target: link.fetch(:target),
       link_value: link_value(link.fetch(:source_path), link.fetch(:target)),
       fan_in: link.fetch(:fan_in),
@@ -542,6 +627,31 @@ class Plan
         strategy: "none"
       }
     }
+  end
+
+  def link_action_key(action)
+    [action.fetch(:target), action.fetch(:link_value)]
+  end
+
+  def previous_link_pairs_at(commit)
+    module_dirs_at(commit).flat_map do |dir|
+      readme = readme_at(commit, dir)
+      frontmatter, body = frontmatter_and_body_text(readme)
+      next [] unless module_applicable?(frontmatter, body)
+
+      config = active_config(frontmatter)
+      level = module_level(frontmatter, config)
+      validate_module_level(dir, level)
+      next [] unless level_allowed?(level)
+      next [] unless host_allowed?(config)
+
+      mod = {
+        id: module_id(dir),
+        name: dir,
+        repo_role:
+      }
+      normalize_links_at(commit, config, dir).map { |link| [mod, link] }
+    end
   end
 
   def module_id(module_name)
@@ -557,6 +667,18 @@ class Plan
     return source_path unless source_dropbox && target_dropbox
 
     source_dropbox.relative_path_from(target_dropbox.dirname).to_s
+  end
+
+  def external_source?(source)
+    value = source.to_s
+    value.start_with?("~/") || value.start_with?("/")
+  end
+
+  def external_source_path(source)
+    path = target_path(source)
+    raise "External link source escapes home: #{source}" unless path_inside?(path, Pathname.new(Dir.home))
+
+    path
   end
 
   def path_inside?(path, root)
@@ -618,6 +740,68 @@ class Plan
     value
   end
 
+  def module_dirs_at(commit)
+    dirs = root_readme_dirs_at(commit)
+    platform_dirs = platform_module_dirs(dirs)
+
+    platform_dirs + dirs.reject { |dir| platform_dirs.include?(dir) || ignored_root_dir?(dir) }
+  end
+
+  def root_readme_dirs_at(commit)
+    git("ls-tree", "-r", "--name-only", commit)
+      .lines(chomp: true)
+      .filter_map { |path| path.end_with?("/README.md") ? File.dirname(path) : nil }
+      .sort
+      .uniq
+      .reject { |path| path == "." || path.include?("/") }
+  end
+
+  def platform_module_dirs(dirs)
+    [@platform, "#{@platform}-"].select { |dir| dirs.include?(dir) }
+  end
+
+  def normalize_links_at(commit, config, dir)
+    normalize_map(config["links"]).flat_map do |source, targets|
+      normalize_link_targets(targets, source).flat_map do |target|
+        link_actions_at_commit(commit, dir, source, target)
+      end
+    end
+  end
+
+  def link_actions_at_commit(commit, dir, source, target)
+    if external_source?(source)
+      raise "external link source cannot use fan-in: #{source}" if source.end_with?("/")
+
+      return [link_action_at(dir, source, target)]
+    end
+
+    return [link_action_at(dir, source, target)] unless source.end_with?("/")
+
+    source_dir = File.join(dir, source)
+    tree_children_at(commit, source_dir).filter_map do |child|
+      child_path = Pathname.new(child)
+      next if suppressed_fan_in_child?(source, target, child_path)
+
+      child_source = File.join(source, child_path.basename.to_s)
+      child_target = File.join(target, child_path.basename.to_s)
+      link_action_at(dir, child_source, child_target, fan_in_metadata(source, target))
+    end
+  end
+
+  def link_action_at(dir, source, target, metadata = {})
+    source_path = external_source?(source) ? external_source_path(source).to_s : source_path_at(dir, source)
+
+    {
+      source:,
+      source_path:,
+      source_external: external_source?(source),
+      target:,
+      fan_in: false,
+      fan_in_source: nil,
+      fan_in_target: nil
+    }.merge(metadata)
+  end
+
   def package_actions(packages, mode)
     return packages if mode == "apply" && apply_like?
 
@@ -626,6 +810,7 @@ class Plan
 
   def empty_files
     {
+      directories_to_create: [],
       links_to_create: [],
       copies_to_create: [],
       resets_to_create: [],
@@ -637,6 +822,7 @@ class Plan
     return empty_files if actions_skipped?
 
     {
+      directories_to_create: normalize_directories(config),
       links_to_create: normalize_links(config, dir),
       copies_to_create: normalize_copies(config, dir),
       resets_to_create: normalize_resets(config, dir),
@@ -672,6 +858,7 @@ class Plan
       packages_to_install: align? ? [] : package_actions(packages, "apply"),
       packages_to_refresh: [],
       packages_to_upgrade: [],
+      directories_to_create: files.fetch(:directories_to_create),
       links_to_create: files.fetch(:links_to_create),
       copies_to_create: files.fetch(:copies_to_create),
       resets_to_create: files.fetch(:resets_to_create),
@@ -684,14 +871,17 @@ class Plan
   end
 
   def planned_modules
+    configure_update_packages(ordered_module_dirs.filter_map { |dir| planned_module(dir) })
+  end
+
+  def ordered_module_dirs
     platform_dir = @repo.join(@platform)
     platform_variant_dir = @repo.join("#{@platform}-")
     dirs = []
     dirs << platform_dir if platform_dir.join("README.md").file?
     dirs << platform_variant_dir if platform_variant_dir.join("README.md").file?
     dirs.concat(module_dirs.reject { |dir| [platform_dir, platform_variant_dir].include?(dir) })
-
-    configure_update_packages(dirs.filter_map { |dir| planned_module(dir) })
+    dirs
   end
 
   def home_entrypoint_declared?(config)
@@ -701,7 +891,8 @@ class Plan
   end
 
   def align_module_actions(mod)
-    mod.fetch(:links_to_create).map { |link| link_plan_action(mod, link) } +
+    mod.fetch(:directories_to_create).map { |dir| directory_action(mod, dir) } +
+      mod.fetch(:links_to_create).map { |link| link_plan_action(mod, link) } +
       mod.fetch(:copies_to_create).map { |copy| copy_action(mod, copy) } +
       mod.fetch(:seeds_to_create).map { |seed| seed_action(mod, seed) } +
       mod.fetch(:resets_to_create).map { |reset| reset_action(mod, reset) }
@@ -714,6 +905,7 @@ class Plan
     actions.concat(section_plan_actions(mod, %w[Install]))
     actions.concat(section_plan_actions(mod, ["Post Install"], run_if: { section_changed: "Install" }))
     actions.concat(section_plan_actions(mod, %w[Configure]))
+    actions.concat(mod.fetch(:directories_to_create).map { |dir| directory_action(mod, dir) })
     actions.concat(mod.fetch(:links_to_create).map { |link| link_plan_action(mod, link) })
     actions.concat(mod.fetch(:copies_to_create).map { |copy| copy_action(mod, copy) })
     actions.concat(mod.fetch(:seeds_to_create).map { |seed| seed_action(mod, seed) })
@@ -736,6 +928,7 @@ class Plan
 
   def ordered_actions(plan)
     actions = plan.fetch(:core).fetch(:home_entrypoints_to_write).map { |entrypoint| entrypoint_action(entrypoint) }
+    actions.concat(plan.fetch(:core).fetch(:links_to_remove))
     used = {}
 
     ordered_module_actions(plan.fetch(:modules)).each do |action|
@@ -777,6 +970,19 @@ class Plan
     end
   end
 
+  def previous_link_actions
+    commit = previous_commit
+    return [] unless commit && commit_available?(commit)
+
+    previous_link_pairs_at(commit).map do |mod, link|
+      link_plan_action(mod, link)
+    end
+  end
+
+  def previous_commit
+    @state&.dig("applied", repo_role)
+  end
+
   def plan_id(plan)
     "sha256:#{content_hash(plan)}"
   end
@@ -808,6 +1014,10 @@ class Plan
       "`#{link[:source]}` -> `#{link[:target]}`"
     end
 
+    puts_action_list("Stale Links", plan.fetch(:core).fetch(:links_to_remove)) do |link|
+      "`#{link[:target]}` if still `#{link[:link_value]}`"
+    end
+
     plan[:modules].each do |mod|
       puts("## #{mod[:name]}")
       puts
@@ -820,6 +1030,7 @@ class Plan
       puts("Level: #{mod[:level]}")
       puts("Virtual: #{mod[:virtual] ? 'yes' : 'no'}")
       puts
+      puts_action_list("Directories", mod[:directories_to_create]) { |dir| "`#{dir[:target]}`" }
       puts_action_list("Links", mod[:links_to_create]) { |link| "`#{link[:source]}` -> `#{link[:target]}`" }
       puts_action_list("Copies", mod[:copies_to_create]) { |copy| "`#{copy[:source]}` -> `#{copy[:target]}`" }
       puts_action_list("Seeds", mod[:seeds_to_create]) { |seed| "`#{seed[:source]}` -> `#{seed[:target]}`" }
@@ -870,6 +1081,51 @@ class Plan
     raise "Source escapes repository: #{source}" unless path.to_s == repo || path.to_s.start_with?("#{repo}/")
 
     path.to_s
+  end
+
+  def source_path_at(dir, source)
+    path = (@repo + dir + source).cleanpath
+    repo = @repo.to_s
+
+    raise "Source escapes repository: #{source}" unless path.to_s == repo || path.to_s.start_with?("#{repo}/")
+
+    path.to_s
+  end
+
+  def readme_at(commit, dir)
+    git("show", "#{commit}:#{dir}/README.md")
+  end
+
+  def stale_link_actions(_modules)
+    current = current_link_action_keys
+
+    previous_link_actions.filter_map do |action|
+      next if current.include?(link_action_key(action))
+
+      stale_link_action(action)
+    end
+  end
+
+  def stale_link_action(action)
+    {
+      id: "#{action.fetch(:id)}:remove",
+      kind: "unlink",
+      module_id: action.fetch(:module_id),
+      module_name: action.fetch(:module_name),
+      repo_role: action.fetch(:repo_role),
+      source: action.fetch(:source),
+      target: action.fetch(:target),
+      link_value: action.fetch(:link_value),
+      conflict: {
+        strategy: "none"
+      }
+    }
+  end
+
+  def tree_children_at(commit, path)
+    git("ls-tree", "--name-only", "#{commit}:#{path}").lines(chomp: true)
+  rescue StandardError
+    []
   end
 
   def suppressed_fan_in_child?(source, target, child)

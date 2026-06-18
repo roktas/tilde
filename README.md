@@ -71,8 +71,12 @@ Repository names are conventions only. Correctness comes from explicit paths, st
 
 ## Modules
 
-Each root module is a direct child directory containing `README.md`. README frontmatter may declare `links`, `copies`,
-`seeds`, `resets`, `packages`, `level`, `hosts`, and platform scopes such as `all`, `linux`, and `macos`.
+Each root module is a direct child directory containing `README.md`. README frontmatter may declare `directories`,
+`links`, `copies`, `seeds`, `resets`, `packages`, `level`, `hosts`, and platform scopes such as `all`, `linux`, and
+`macos`.
+
+Link sources are repository-relative by default. A source beginning with `~/` or `/` is a target-home source for
+managed links between live home paths. Dropbox-to-Dropbox links are written relative to the target directory.
 
 Recommended module sections:
 
@@ -111,7 +115,7 @@ Do not rely on bare `tilde` being on the controller `PATH`.
 | `repair`   | agent   | Apply current desired state again.                                         |
 | `doctor`   | runtime | Diagnose without executing module code or mutating targets.                |
 | `handoff`  | runtime | Copy and print the privilege handoff command for the local or remote host. |
-| `align`    | dual    | Reconcile links, copies, seeds, and resets without bootstrap or packages.  |
+| `align`    | dual    | Reconcile directories, links, copies, seeds, and resets without bootstrap or packages. |
 | `adopt`    | agent   | Propose adopting an app, config, package, or path.                         |
 | `create`   | agent   | Propose public/private home repository creation.                           |
 | `init`     | agent   | Bind existing public/private repositories.                                 |

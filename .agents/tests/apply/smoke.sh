@@ -183,8 +183,12 @@ EOF
 	cat >"$repo/app/README.md" <<'EOF'
 ---
 all:
+  directories:
+    - ~/shared
+    - ~/.config/app/cache
   links:
     source.txt: ~/.config/app/source.txt
+    ~/shared: ~/.config/app/shared
   copies:
     copy.txt: ~/.config/app/copy.txt
   seeds:
@@ -321,6 +325,8 @@ main() {
 	local second_apply_json
 	local second_plan_json
 	local skill_root
+	local stale_apply_json
+	local stale_plan_json
 	local state
 	local tilde
 	local tmpdir
@@ -352,6 +358,8 @@ main() {
 	refresh_state=$tmpdir/refresh-state
 	second_apply_json=$tmpdir/second-apply.json
 	second_plan_json=$tmpdir/second-plan.json
+	stale_apply_json=$tmpdir/stale-apply.json
+	stale_plan_json=$tmpdir/stale-plan.json
 
 	mkdir -p "$fake_bin" "$home/Dropbox" "$refresh_state/tilde" "$state/tilde"
 	write_fake_packages "$fake_bin"
@@ -394,6 +402,10 @@ main() {
 	HOME=$home XDG_STATE_HOME=$state "$tilde" apply --plan "$plan_json" >"$apply_json"
 
 	[[ -L $home/.config/app/source.txt ]]
+	[[ -L $home/.config/app/shared ]]
+	[[ -d $home/shared ]]
+	[[ -d $home/.config/app/cache ]]
+	[[ $(readlink "$home/.config/app/shared") == "$home/shared" ]]
 	grep -Fqx 'copy' "$home/.config/app/copy.txt"
 	[[ ! -L $home/.config/app/seed.txt ]]
 	[[ ! -L $home/.config/app/reset.txt ]]
@@ -433,6 +445,46 @@ main() {
 		abort "seed should leave existing real target unchanged" unless seed&.fetch("status") == "unchanged"
 		reset = apply.fetch("results").find { |result| result.fetch("action_id") == "public/app:reset:reset.txt->~/.config/app/reset.txt" }
 		abort "reset should restore drifted target" unless reset&.fetch("status") == "changed"
+	'
+
+	cat >"$repo/app/README.md" <<'EOF'
+---
+all:
+  directories:
+    - ~/shared
+    - ~/.config/app/cache
+  links:
+    ~/shared: ~/.config/app/shared
+  copies:
+    copy.txt: ~/.config/app/copy.txt
+  seeds:
+    seed.txt: ~/.config/app/seed.txt
+  resets:
+    reset.txt: ~/.config/app/reset.txt
+---
+
+# App
+EOF
+	git -C "$repo" add app/README.md
+	git -C "$repo" commit -q -m remove-source-link
+	HOME=$home XDG_STATE_HOME=$state "$tilde" plan --repo "$repo" --mode refresh --platform linux --host "$host" >"$stale_plan_json"
+
+	STALE_PLAN_JSON=$stale_plan_json ruby -rjson -e '
+		plan = JSON.parse(File.read(ENV.fetch("STALE_PLAN_JSON")))
+		unlink = plan.fetch("actions").find { |action| action.fetch("kind") == "unlink" && action.fetch("target") == "~/.config/app/source.txt" }
+		abort "missing stale link removal action" unless unlink
+		abort "stale link removal should keep old link value" unless unlink.fetch("link_value").end_with?("/app/source.txt")
+	'
+
+	HOME=$home XDG_STATE_HOME=$state "$tilde" apply --plan "$stale_plan_json" >"$stale_apply_json"
+	[[ ! -L $home/.config/app/source.txt ]]
+	[[ -L $home/.config/app/shared ]]
+
+	STALE_APPLY_JSON=$stale_apply_json ruby -rjson -e '
+		apply = JSON.parse(File.read(ENV.fetch("STALE_APPLY_JSON")))
+		unlink = apply.fetch("results").find { |result| result.fetch("kind") == "unlink" && result.fetch("action_id").include?("source.txt->~/.config/app/source.txt") }
+		abort "missing stale link removal result" unless unlink
+		abort "stale link should be removed" unless unlink.fetch("status") == "removed"
 	'
 
 	write_package_repo "$package_repo"

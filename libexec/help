@@ -7,7 +7,7 @@ unset CDPATH
 
 readonly -a COMMANDS=(
 	'adopt|agent|Propose adopting an app, config, package, or path into the public or private data repository.'
-	'align|dual|Reconcile links, copies, seeds, and resets without bootstrap, packages, or module scripts.'
+	'align|dual|Reconcile directories, links, copies, seeds, and resets without bootstrap, packages, or module scripts.'
 	'clean|agent|Propose conservative cleanup, including duplicate candidates when relevant.'
 	'create|agent|Propose public/private home repository creation.'
 	'deploy|agent|Prepare a host and install desired state.'

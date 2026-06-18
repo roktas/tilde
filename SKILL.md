@@ -167,7 +167,7 @@ Agent commands map to planning modes and module sections as follows.
 | `update` | `refresh`; `repair` for state recovery | `Prerequisites`, `Update`, then `Configure`; state recovery uses repair behavior |
 | `repair` | `repair` | `Prerequisites`, `Install`, `Post Install` when `Install` changed, then `Configure` |
 | `upgrade` | `upgrade` | broad refresh behavior, then package upgrades |
-| `align` | `align` | links, copies, seeds, and resets only; no bootstrap, packages, or module code |
+| `align` | `align` | directories, links, copies, seeds, and resets only; no bootstrap, packages, or module code |
 
 `create`, `init`, `clean`, `organize`, and `adopt` are proposal-first operator workflows unless a direct helper is
 explicitly documented for the requested step.
@@ -433,6 +433,11 @@ optimizations only.
 
 Module code blocks call Tilde helpers by their plain names, such as `line` and `span`. Privileged helper calls use the
 same plain form with `sudo`, such as `sudo line ...`.
+
+README frontmatter may declare `directories` along with `links`, `copies`, `seeds`, `resets`, and `packages`. Link
+sources are repository-relative by default. A source that starts with `~/` or `/` is a target-home source and must stay
+inside the target home. Use target-home sources for live home paths such as Dropbox-backed shared state directories and
+XDG entrypoints; Dropbox-to-Dropbox symlink values must be relative to the target directory.
 
 ## Safety
 

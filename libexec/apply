@@ -26,19 +26,21 @@ class Apply
     "public" => 0,
     "private" => 1
   }.freeze
-  SUPPORTED_ACTIONS = %w[entrypoint package section link copy manual reset seed].freeze
+  SUPPORTED_ACTIONS = %w[entrypoint package section link copy directory manual reset seed unlink].freeze
   SUPPORTED_CONDITIONS = %w[graphical].freeze
   SUPPORTED_CONFLICTS = %w[none write-fallback-file].freeze
   SUPPORTED_PACKAGE_TYPES = %w[brew cask deb egg flatpak gem github npm scoop skill].freeze
   ACTION_HANDLERS = {
     "copy" => :execute_copy,
+    "directory" => :execute_directory,
     "entrypoint" => :execute_entrypoint,
     "link" => :execute_link,
     "manual" => :execute_manual,
     "package" => :execute_package,
     "reset" => :execute_reset,
     "section" => :execute_section,
-    "seed" => :execute_seed
+    "seed" => :execute_seed,
+    "unlink" => :execute_unlink
   }.freeze
   APT_UPDATE_INCOMPLETE_PATTERNS = [
     /\AW: .*GPG error:/,
@@ -305,6 +307,18 @@ class Apply
     action_result(action, "changed")
   end
 
+  def execute_directory(action)
+    target = expand_target(action.fetch("target"))
+    return action_result(action, "unchanged") if target.directory? && !target.symlink?
+
+    if target.exist? || target.symlink?
+      return action_result(action, "conflict", { "reason" => "directory target differs" })
+    end
+
+    FileUtils.mkdir_p(target)
+    action_result(action, "changed")
+  end
+
   def execute_reset(action)
     source = Pathname.new(action.fetch("source_path"))
     target = expand_target(action.fetch("target"))
@@ -352,6 +366,26 @@ class Apply
     FileUtils.mkdir_p(target.dirname)
     File.symlink(value, target.to_s)
     action_result(action, "changed")
+  end
+
+  def execute_unlink(action)
+    target = expand_target(action.fetch("target"))
+    return action_result(action, "skipped", { "reason" => "target absent" }) unless target.symlink?
+
+    actual = File.readlink(target.to_s)
+    unless actual == action.fetch("link_value")
+      return action_result(
+        action,
+        "skipped",
+        {
+          "reason" => "target not managed",
+          "actual" => actual
+        }
+      )
+    end
+
+    FileUtils.rm_f(target.to_s)
+    action_result(action, "removed")
   end
 
   def execute_manual(action)
@@ -1200,6 +1234,12 @@ class Apply
 
   def validate_source!(action)
     source = Pathname.new(action.fetch("source_path")).expand_path
+    if action["source_external"]
+      raise "source escapes home: #{source}" unless path_inside?(source, @home)
+
+      return
+    end
+
     raise "source is not readable: #{source}" unless source.readable?
     return if action.fetch("module_id") == "core"
 

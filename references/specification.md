@@ -187,6 +187,7 @@ Planning produces a desired manifest for the selected host, platform, level, and
 The manifest may include:
 
 - links,
+- directories,
 - copies,
 - seeds,
 - resets,
@@ -355,7 +356,7 @@ upgrade:
   package upgrade actions after refresh/update actions
 
 align:
-  links, copies, seeds, and resets only
+  directories, links, copies, seeds, and resets only
   no bootstrap, packages, or module code
 
 doctor:
@@ -384,6 +385,7 @@ Module README frontmatter may declare module-level properties and platform-scope
 Supported desired-state keys are:
 
 - `links`: symlink targets,
+- `directories`: directories that must exist,
 - `copies`: conservative file copies where drift is a conflict,
 - `seeds`: initial file copies where existing real targets are local state,
 - `resets`: repository-authoritative file copies,
@@ -399,6 +401,11 @@ all:
 ```
 
 When top-level `level` is absent, `all.level` has the same meaning.
+
+Link sources are repository-relative by default. A link source that starts with `~/` or `/` is a target-home source and
+MUST stay inside the target home. Use target-home sources for managed links between home-managed live paths, such as
+Dropbox-backed shared state directories and XDG entrypoints. When both source and target are inside `~/Dropbox`, Tilde
+MUST write the symlink value relative to the target directory rather than using an absolute host path.
 
 Recommended module README section order:
 
@@ -646,7 +653,10 @@ A link target is managed when:
 - the symlink resolves to a current desired source, or
 - the symlink resolves to an old desired source derived from the last applied commit anchors.
 
-Missing links may be created. Correct links are `unchanged`. Wrong or dangling managed links may be replaced or proposed for replacement. Regular files or directories at the target are `conflict` unless an explicit backup strategy is active.
+Missing links may be created. Correct links are `unchanged`. Links removed from current desired state may be removed
+only when the live target is a symlink and its link value exactly matches an old desired source derived from the last
+applied commit anchors. Wrong or dangling managed links may be replaced or proposed for replacement. Regular files or
+directories at the target are `conflict` unless an explicit backup strategy is active.
 
 ### 11.2 Spans
 

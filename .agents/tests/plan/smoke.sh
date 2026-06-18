@@ -277,10 +277,10 @@ EOF
 	rm -f "$XDG_STATE_HOME/tilde/state.yml"
 
 	if [[ -n $private_repo ]]; then
-		"$tilde" plan --repo "$private_repo" --allow-dirty --platform linux --host smoke >"$private_plan_json"
-		"$tilde" plan --repo "$private_repo" --allow-dirty --level extra --platform linux --host smoke >"$private_extra_plan_json"
-		"$tilde" plan --repo "$private_repo" --allow-dirty --platform macos --host smoke >"$private_macos_plan_json"
-		"$tilde" plan --repo "$private_repo" --allow-dirty --level extra --platform macos --host smoke >"$private_macos_extra_plan_json"
+		"$tilde" plan --repo "$private_repo" --allow-dirty --platform linux --host newton >"$private_plan_json"
+		"$tilde" plan --repo "$private_repo" --allow-dirty --level extra --platform linux --host newton >"$private_extra_plan_json"
+		"$tilde" plan --repo "$private_repo" --allow-dirty --platform macos --host kant >"$private_macos_plan_json"
+		"$tilde" plan --repo "$private_repo" --allow-dirty --level extra --platform macos --host kant >"$private_macos_extra_plan_json"
 
 		PRIVATE_PLAN_JSON=$private_plan_json PRIVATE_EXTRA_PLAN_JSON=$private_extra_plan_json PRIVATE_MACOS_PLAN_JSON=$private_macos_plan_json PRIVATE_MACOS_EXTRA_PLAN_JSON=$private_macos_extra_plan_json ruby -rjson -e '
 			linux = JSON.parse(File.read(ENV.fetch("PRIVATE_PLAN_JSON")))
@@ -291,20 +291,19 @@ EOF
 			abort "missing linux codex-switcher package" unless codex.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "github:Lampese/codex-switcher" }
 			abort "linux codex should not install codex cask" if codex.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "cask:codex" }
 			abort "codex wrappers should be removed" if codex.fetch("links_to_create").any? { |link| link.fetch("source") == "bin/codex" || link.fetch("target") == "~/Dropbox/_/bin/codex" || link.fetch("source") == "bin/codex-switcher" || link.fetch("target") == "~/Dropbox/_/bin/codex-switcher" }
-			abort "codex should export CODEX_HOME through environment.d" unless codex.fetch("links_to_create").any? { |link| link.fetch("source") == "environment.d/codex.conf" && link.fetch("target") == "~/.config/environment.d/codex.conf" }
 			abort "codex should link hooks into shared codex state" unless codex.fetch("links_to_create").any? { |link| link.fetch("source") == "hooks/shellcheck" && link.fetch("target") == "~/Dropbox/_/var/codex/hooks/shellcheck" && link.fetch("fan_in") == true }
 			hook_action = linux_extra.fetch("actions").find { |action| action.fetch("kind") == "link" && action.fetch("target") == "~/Dropbox/_/var/codex/hooks/shellcheck" }
 			abort "missing codex hook action" unless hook_action
 			abort "codex hook should use a relative Dropbox link value" unless hook_action.fetch("link_value") == "../../../../home-/codex/hooks/shellcheck"
 			abort "codex should use shared agent instructions" unless codex.fetch("special_sections").dig("Configure", "body").include?("Dropbox/_/var/codex/AGENTS.md")
-			abort "codex should ignore local temp files with Dropbox attributes" unless codex.fetch("special_sections").dig("Configure", "body").include?("attr -s com.dropbox.ignored")
-			abort "codex should ignore the shared temp directory" unless codex.fetch("special_sections").dig("Configure", "body").include?("Dropbox/_/var/codex/.tmp")
 			abort "codex should not link skills under ~/.codex" if codex.fetch("links_to_create").any? { |link| link.fetch("target").start_with?("~/.codex/skills/") }
 			copilot = linux.fetch("modules").find { |mod| mod.fetch("name") == "copilot" }
 			abort "missing linux copilot module" unless copilot
 			abort "missing linux copilot-cli cask" unless copilot.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "cask:copilot-cli" }
 			abort "linux copilot wrapper should be removed" if copilot.fetch("links_to_create").any? { |link| link.fetch("source") == "bin/copilot" || link.fetch("target") == "~/Dropbox/_/bin/copilot" }
 			abort "copilot should export COPILOT_HOME through environment.d" unless copilot.fetch("links_to_create").any? { |link| link.fetch("source") == "environment.d/copilot.conf" && link.fetch("target") == "~/.config/environment.d/copilot.conf" }
+			abort "copilot should create shared state directory" unless copilot.fetch("directories_to_create").any? { |dir| dir.fetch("target") == "~/Dropbox/_/var/copilot" }
+			abort "copilot should expose shared instructions" unless copilot.fetch("links_to_create").any? { |link| link.fetch("source") == "~/Dropbox/home/agents/AGENTS.md" && link.fetch("target") == "~/Dropbox/_/var/copilot/copilot-instructions.md" && link.fetch("source_external") == true }
 			environment = linux.fetch("modules").find { |mod| mod.fetch("name") == "environment" }
 			abort "missing linux environment module" unless environment
 			abort "environment should link linux session.conf" unless environment.fetch("links_to_create").any? { |link| link.fetch("source") == "environment.d/session.linux.conf" && link.fetch("target") == "~/.config/environment.d/session.conf" }
@@ -314,7 +313,11 @@ EOF
 			abort "missing private opencode module" unless opencode
 			abort "missing opencode package" unless opencode.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "brew:opencode" }
 			abort "opencode should not install aicommits package" if opencode.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "brew:aicommits" }
-			abort "opencode should use shared agent instructions" unless opencode.fetch("special_sections").dig("Configure", "body").include?("Dropbox/_/var/opencode/config/AGENTS.md")
+			abort "opencode should create shared config directory" unless opencode.fetch("directories_to_create").any? { |dir| dir.fetch("target") == "~/Dropbox/_/var/opencode/config" }
+			abort "opencode should create shared data directory" unless opencode.fetch("directories_to_create").any? { |dir| dir.fetch("target") == "~/Dropbox/_/var/opencode/share" }
+			abort "opencode should link XDG config to shared state" unless opencode.fetch("links_to_create").any? { |link| link.fetch("source") == "~/Dropbox/_/var/opencode/config" && link.fetch("target") == "~/.config/opencode" && link.fetch("source_external") == true }
+			abort "opencode should link XDG data to shared state" unless opencode.fetch("links_to_create").any? { |link| link.fetch("source") == "~/Dropbox/_/var/opencode/share" && link.fetch("target") == "~/.local/share/opencode" && link.fetch("source_external") == true }
+			abort "opencode should use shared agent instructions" unless opencode.fetch("links_to_create").any? { |link| link.fetch("source") == "~/Dropbox/home/agents/AGENTS.md" && link.fetch("target") == "~/Dropbox/_/var/opencode/config/AGENTS.md" && link.fetch("source_external") == true }
 			abort "opencode should not link skills directly" if opencode.fetch("links_to_create").any? { |link| link.fetch("target").include?("/skills/") }
 
 			macos = JSON.parse(File.read(ENV.fetch("PRIVATE_MACOS_PLAN_JSON")))
@@ -324,7 +327,6 @@ EOF
 			abort "missing macos codex module" unless macos_codex
 			abort "missing macos codex cask" unless macos_codex.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "cask:codex" }
 			abort "macos codex should not install codex-switcher release" if macos_codex.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "github:Lampese/codex-switcher" }
-			abort "macos codex should use Dropbox File Provider ignore attributes" unless macos_codex.fetch("special_sections").dig("Configure", "body").include?("com.apple.fileprovider.ignore#P")
 			macos_environment = macos.fetch("modules").find { |mod| mod.fetch("name") == "environment" }
 			abort "missing macos environment module" unless macos_environment
 			abort "environment should link macos session.conf" unless macos_environment.fetch("links_to_create").any? { |link| link.fetch("source") == "environment.d/session.macos.conf" && link.fetch("target") == "~/.config/environment.d/session.conf" }
