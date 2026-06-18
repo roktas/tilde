@@ -134,6 +134,9 @@ Remote `align` uses target-local `plan --mode align --format json` files followe
 means the step failed, deferred, or conflicted even when stdout is empty. A later status read does not make an earlier
 failed remote step successful.
 
+After `tilde apply`, inspect action results. `completed: true` means all planned actions were processed, but the run is
+incomplete if any action is `deferred`, `conflict`, or `notok`.
+
 For agent workflows, `update` ordinarily maps to planning mode `refresh`. If target status shows missing `state.yml` or
 no `applied` anchors, use `repair` mode for that run so state recovery writes recovered bindings and anchors. Plans for
 remote hosts must be generated and applied on the target host. After a successful mutating remote apply, read final

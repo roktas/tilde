@@ -253,6 +253,7 @@ print_help() {
 	printf 'Bind remote plan repository paths to variables from target status JSON; do not retype host-convention paths in `plan --repo` commands.\n'
 	printf 'Remote align uses target-local `plan --mode align` plus `apply`; do not run `tilde align --format json` on a remote target.\n'
 	printf 'Do not redirect remote Tilde stderr to `/dev/null`; a non-zero remote exit means the step failed or deferred even when stdout is empty.\n'
+	printf 'After `tilde apply`, inspect action results; `completed: true` is incomplete if any action is `deferred`, `conflict`, or `notok`.\n'
 	printf 'Remote script shell: default Tilde SSH uses POSIX `sh`; do not use Bash prelude, `pipefail`, `[[ ]]`, arrays, `source`, `local`, or `-- bash` for ordinary status, plan, apply, and verification scripts.\n'
 	printf 'For mutating remote workflows, verify target runtime freshness before target status reads, plan, or apply; refresh stale Git-backed target checkouts first, or defer.\n'
 	printf 'Runtime freshness checkout maps the loaded skill root to target `~/.agents/skills/tilde`; desired-state checkout maps the selected data repo to the target binding.\n'

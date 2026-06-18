@@ -370,6 +370,10 @@ Every remote Tilde step must treat a non-zero exit as failed, deferred, or confl
 redirect stderr to `/dev/null` for remote `status`, `doctor`, `checkout`, `plan`, `apply`, `align`, or verification
 work. A later successful status read does not turn a failed plan, apply, checkout, or align step into success.
 
+After `tilde apply`, inspect the JSON action results. `completed: true` only means the action list was processed; it is
+not full success when any result is `deferred`, `conflict`, or `notok`. Treat such a run as incomplete and report the
+exact action status and reason.
+
 After a successful mutating remote apply, verify target convergence with a separate cheap status read so the apply JSON
 stays easy to parse:
 
@@ -501,6 +505,8 @@ For weaker or low-context agents:
   target, then run `tilde plan --mode align --format json` for each target repository and `tilde apply` the plan files.
 - Never redirect remote Tilde stderr to `/dev/null`. Non-zero remote exit status means the step failed, deferred, or
   conflicted, even when the tool output pane says `(no output)`.
+- After `tilde apply`, inspect action results. Do not report success only because JSON was printed or `completed` is
+  true; any `deferred`, `conflict`, or `notok` action means the run is incomplete.
 - A final status read is verification only; it does not make an earlier failed remote `checkout`, `plan`, `apply`, or
   align step successful.
 - Call `checkout remote` only with the complete mapping: `--host HOST --repo CONTROLLER_REPO --target TARGET_REPO`.

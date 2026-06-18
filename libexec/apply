@@ -15,6 +15,10 @@ require "time"
 require "tmpdir"
 require "yaml"
 
+ENV["LC_ALL"] = "en_US.UTF-8"
+ENV["LANG"] = "en_US.UTF-8"
+Encoding.default_external = Encoding::UTF_8
+
 TILDE_ROOT = Pathname.new(__dir__).parent.expand_path
 
 class Apply
@@ -49,16 +53,16 @@ class Apply
     /\AW: Some index files failed /
   ].freeze
   PACKAGE_COMMANDS = {
-    %w[install brew] => ->(name) { ["brew", "install", name] },
-    %w[install cask] => ->(name) { ["brew", "install", "--cask", name] },
-    %w[install deb] => ->(name) { %w[sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y] + [name] },
-    %w[install egg] => ->(name) { ["uv", "tool", "install", name] },
-    %w[install flatpak] => ->(name) { ["flatpak", "install", "-y", "--user", "flathub", name] },
-    %w[install gem] => ->(name) { ["gem", "install", "--user-install", "--no-document", name] },
-    %w[install npm] => ->(name) { ["bun", "install", "-g", name] },
-    %w[install scoop] => ->(name) { ["scoop", "install", name] },
-    %w[refresh brew] => ->(name) { name == "*" ? [%w[brew update], %w[brew upgrade]] : ["brew", "upgrade", name] },
-    %w[refresh cask] => ->(name) { ["brew", "upgrade", "--cask", name] },
+    %w[install brew] => -> (name) { ["brew", "install", name] },
+    %w[install cask] => -> (name) { ["brew", "install", "--cask", name] },
+    %w[install deb] => -> (name) { %w[sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y] + [name] },
+    %w[install egg] => -> (name) { ["uv", "tool", "install", name] },
+    %w[install flatpak] => -> (name) { ["flatpak", "install", "-y", "--user", "flathub", name] },
+    %w[install gem] => -> (name) { ["gem", "install", "--user-install", "--no-document", name] },
+    %w[install npm] => -> (name) { ["bun", "install", "-g", name] },
+    %w[install scoop] => -> (name) { ["scoop", "install", name] },
+    %w[refresh brew] => -> (name) { name == "*" ? [%w[brew update], %w[brew upgrade]] : ["brew", "upgrade", name] },
+    %w[refresh cask] => -> (name) { ["brew", "upgrade", "--cask", name] },
     %w[refresh deb] => lambda { |name|
       if name == "*"
         [
@@ -69,12 +73,12 @@ class Apply
         %w[sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install --only-upgrade -y] + [name]
       end
     },
-    %w[refresh egg] => ->(name) { ["uv", "tool", "upgrade", name] },
-    %w[refresh flatpak] => ->(name) { ["flatpak", "update", "-y", "--user", name] },
-    %w[refresh gem] => ->(name) { ["gem", "update", "--user-install", "--no-document", name] },
-    %w[refresh npm] => ->(name) { ["bun", "update", "-g", name] },
-    %w[refresh scoop] => ->(name) { name == "*" ? [%w[scoop update], %w[scoop update *]] : ["scoop", "update", name] },
-    %w[upgrade brew] => ->(name) { ["brew", "upgrade", name] },
+    %w[refresh egg] => -> (name) { ["uv", "tool", "upgrade", name] },
+    %w[refresh flatpak] => -> (name) { ["flatpak", "update", "-y", "--user", name] },
+    %w[refresh gem] => -> (name) { ["gem", "update", "--user-install", "--no-document", name] },
+    %w[refresh npm] => -> (name) { ["bun", "update", "-g", name] },
+    %w[refresh scoop] => -> (name) { name == "*" ? [%w[scoop update], %w[scoop update *]] : ["scoop", "update", name] },
+    %w[upgrade brew] => -> (name) { ["brew", "upgrade", name] },
     %w[upgrade cask] => lambda { |name|
       name == "*" ? %w[brew upgrade --cask --greedy] : ["brew", "upgrade", "--cask", name]
     },
@@ -85,18 +89,18 @@ class Apply
         %w[sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install --only-upgrade -y] + [name]
       end
     },
-    %w[upgrade egg] => ->(name) { ["uv", "tool", "upgrade", name] },
+    %w[upgrade egg] => -> (name) { ["uv", "tool", "upgrade", name] },
     %w[upgrade flatpak] => lambda { |name|
       name == "*" ? %w[flatpak update -y --user] : ["flatpak", "update", "-y", "--user", name]
     },
-    %w[upgrade gem] => ->(name) { ["gem", "update", "--user-install", "--no-document", name] },
-    %w[upgrade npm] => ->(name) { ["bun", "update", "-g", name] },
-    %w[upgrade scoop] => ->(name) { name == "*" ? %w[scoop update *] : ["scoop", "update", name] }
+    %w[upgrade gem] => -> (name) { ["gem", "update", "--user-install", "--no-document", name] },
+    %w[upgrade npm] => -> (name) { ["bun", "update", "-g", name] },
+    %w[upgrade scoop] => -> (name) { name == "*" ? %w[scoop update *] : ["scoop", "update", name] }
   }.freeze
   PACKAGE_INVENTORY_COMMANDS = {
     "brew" => %w[brew list --formula -1],
     "cask" => %w[brew list --cask -1],
-    "deb" => ["dpkg-query", "-W", "-f", '${binary:Package}\n'],
+    "deb" => ["dpkg-query", "-W", "-f", "${binary:Package}\\n"],
     "egg" => %w[uv tool list],
     "flatpak" => %w[flatpak list --app --columns=application],
     "gem" => %w[gem list --no-versions],
@@ -133,12 +137,17 @@ class Apply
     apply_actions
     write_state if advance_anchors?
     puts(JSON.pretty_generate(@apply))
+    !apply_failed?
   end
 
   private
 
   def action_failure?(result)
     !RESULT_OK.include?(result.fetch(:status))
+  end
+
+  def apply_failed?
+    !@apply.fetch(:completed) || @apply.fetch(:results).any? { |result| action_failure?(result) }
   end
 
   def action_result(action, status, diagnostics = {})
@@ -217,6 +226,7 @@ class Apply
 
   def command_deferred_reason(command, stderr, status, sudo_events)
     return "privilege required" if privilege_deferred?(command, stderr, status, sudo_events)
+    return "homebrew locale encoding failure" if homebrew_locale_failure?(command, stderr)
     return "apt update incomplete" if status.success? && apt_update_incomplete?(command, stderr)
 
     nil
@@ -293,7 +303,7 @@ class Apply
   def execute(action)
     send(ACTION_HANDLERS.fetch(action.fetch("kind")), action)
   rescue StandardError => e
-    action_result(action, "notok", { "error" => e.message })
+    action_result(action, "notok", {"error" => e.message})
   end
 
   def execute_copy(action)
@@ -301,7 +311,7 @@ class Apply
     target = expand_target(action.fetch("target"))
     return action_result(action, "unchanged") if copy_equal?(source, target)
 
-    return action_result(action, "conflict", { "reason" => "copy target differs" }) if target.exist? || target.symlink?
+    return action_result(action, "conflict", {"reason" => "copy target differs"}) if target.exist? || target.symlink?
 
     install_copy(source, target)
     action_result(action, "changed")
@@ -312,7 +322,7 @@ class Apply
     return action_result(action, "unchanged") if target.directory? && !target.symlink?
 
     if target.exist? || target.symlink?
-      return action_result(action, "conflict", { "reason" => "directory target differs" })
+      return action_result(action, "conflict", {"reason" => "directory target differs"})
     end
 
     FileUtils.mkdir_p(target)
@@ -334,7 +344,7 @@ class Apply
     target = expand_target(action.fetch("target"))
     return action_result(action, "unchanged") if target.exist? && !target.symlink?
     if target.symlink? && !copy_equal?(source, target)
-      return action_result(action, "conflict", { "reason" => "seed target symlink differs" })
+      return action_result(action, "conflict", {"reason" => "seed target symlink differs"})
     end
 
     FileUtils.rm_rf(target) if target.symlink?
@@ -348,7 +358,7 @@ class Apply
     return action_result(action, "unchanged") if target.file? && target.read == source.read
 
     if target.exist? || target.symlink?
-      return action_result(action, "conflict", { "reason" => "entrypoint target differs" })
+      return action_result(action, "conflict", {"reason" => "entrypoint target differs"})
     end
 
     FileUtils.mkdir_p(target.dirname)
@@ -361,7 +371,7 @@ class Apply
     value = action.fetch("link_value")
     return action_result(action, "unchanged") if target.symlink? && File.readlink(target.to_s) == value
 
-    return action_result(action, "conflict", { "reason" => "link target differs" }) if target.exist? || target.symlink?
+    return action_result(action, "conflict", {"reason" => "link target differs"}) if target.exist? || target.symlink?
 
     FileUtils.mkdir_p(target.dirname)
     File.symlink(value, target.to_s)
@@ -370,7 +380,7 @@ class Apply
 
   def execute_unlink(action)
     target = expand_target(action.fetch("target"))
-    return action_result(action, "skipped", { "reason" => "target absent" }) unless target.symlink?
+    return action_result(action, "skipped", {"reason" => "target absent"}) unless target.symlink?
 
     actual = File.readlink(target.to_s)
     unless actual == action.fetch("link_value")
@@ -410,7 +420,7 @@ class Apply
     return execute_skill(action) if type == "skill"
 
     commands = commands_for(action)
-    return action_result(action, "deferred", { "reason" => "unsupported package operation" }) unless commands
+    return action_result(action, "deferred", {"reason" => "unsupported package operation"}) unless commands
 
     execute_commands(action, commands)
   end
@@ -437,7 +447,7 @@ class Apply
   def package_inventory_output(type, command)
     log = Tempfile.new(["tilde-sudo", ".jsonl"])
     log.close
-    stdout, _stderr, status = Open3.capture3(runtime_env(log.path), *command)
+    stdout, _stderr, status = Open3.capture3(command_env(log.path, command), *command)
     return nil unless status.success?
 
     parse_package_inventory(type, stdout)
@@ -465,20 +475,21 @@ class Apply
   def package_preflight_result(action, package)
     type = package.fetch("type")
     unless SUPPORTED_PACKAGE_TYPES.include?(type)
-      return action_result(action, "deferred", { "reason" => "unsupported package handler: #{type}" })
+      return action_result(action, "deferred", {"reason" => "unsupported package handler: #{type}"})
     end
 
     condition = action["condition"] || package["condition"]
     unless condition_met?(condition)
-      return action_result(action, "ignored", { "reason" => "condition not met: #{condition}" })
+      return action_result(action, "ignored", {"reason" => "condition not met: #{condition}"})
     end
+
     return package_present_result(action) if package_install_present?(action, package)
 
     nil
   end
 
   def package_present_result(action)
-    action_result(action, "unchanged", { "reason" => "package already present" })
+    action_result(action, "unchanged", {"reason" => "package already present"})
   end
 
   def parse_egg_inventory(output)
@@ -519,7 +530,7 @@ class Apply
     commands.each do |command|
       stdout, stderr, status, sudo_events = capture_command(command)
       unless status
-        run = { "command" => command, "stdout" => stdout, "stderr" => stderr, "exit" => nil }
+        run = {"command" => command, "stdout" => stdout, "stderr" => stderr, "exit" => nil}
         return action_result(
           action,
           "deferred",
@@ -527,7 +538,7 @@ class Apply
         )
       end
 
-      run = { "command" => command, "stdout" => stdout, "stderr" => stderr, "exit" => status.exitstatus }
+      run = {"command" => command, "stdout" => stdout, "stderr" => stderr, "exit" => status.exitstatus}
       run["sudo"] = sudo_events unless sudo_events.empty?
       if (reason = command_deferred_reason(command, stderr, status, sudo_events))
         return action_result(
@@ -536,6 +547,7 @@ class Apply
           diagnostics.merge("commands" => runs + [run], "reason" => reason)
         )
       end
+
       return action_result(action, "notok", diagnostics.merge("commands" => runs + [run])) unless status.success?
 
       runs << run
@@ -547,7 +559,7 @@ class Apply
   def capture_command(command)
     log = Tempfile.new(["tilde-sudo", ".jsonl"])
     log.close
-    stdout, stderr, status = Open3.capture3(runtime_env(log.path), *command)
+    stdout, stderr, status = Open3.capture3(command_env(log.path, command), *command)
     [stdout, stderr, status, sudo_events(log.path)]
   rescue Errno::ENOENT => e
     ["", e.message, nil, []]
@@ -558,9 +570,10 @@ class Apply
   def execute_github(action)
     repo = action.fetch("package").fetch("name")
     unless repo.match?(%r{\A[^/]+/[^/]+\z})
-      return action_result(action, "notok", { "reason" => "github package must be owner/repo: #{repo}" })
+      return action_result(action, "notok", {"reason" => "github package must be owner/repo: #{repo}"})
     end
-    return action_result(action, "notok", { "reason" => "missing gh command" }) unless command_available?("gh")
+
+    return action_result(action, "notok", {"reason" => "missing gh command"}) unless command_available?("gh")
 
     release = github_release(repo)
     return action_result(action, "notok", release.fetch(:diagnostics)) unless release.fetch(:ok)
@@ -579,18 +592,18 @@ class Apply
   def execute_skill(action)
     source = action.fetch("package").fetch("name")
     target = skill_target(source)
-    return action_result(action, "notok", { "reason" => "unsupported skill source: #{source}" }) unless target
+    return action_result(action, "notok", {"reason" => "unsupported skill source: #{source}"}) unless target
 
     FileUtils.mkdir_p(target.dirname)
     if target.exist?
       unless target.join(".git").directory?
-        return action_result(action, "notok", { "reason" => "skill target is not a git checkout: #{target}" })
+        return action_result(action, "notok", {"reason" => "skill target is not a git checkout: #{target}"})
       end
 
       status = git_capture(target, "status", "--porcelain")
       return action_result(action, "notok", status.fetch(:diagnostics)) unless status.fetch(:ok)
       unless status.fetch(:stdout).strip.empty?
-        return action_result(action, "notok", { "reason" => "skill target is dirty: #{target}" })
+        return action_result(action, "notok", {"reason" => "skill target is dirty: #{target}"})
       end
 
       upstream = skill_upstream(target)
@@ -602,16 +615,16 @@ class Apply
           ["git", "-C", target.to_s, "fetch", "--prune"],
           ["git", "-C", target.to_s, "merge", "--ff-only", upstream.fetch(:ref)]
         ],
-        { "target" => target.to_s }
+        {"target" => target.to_s}
       )
     else
-      execute_commands(action, [["git", "clone", skill_url(source), target.to_s]], { "target" => target.to_s })
+      execute_commands(action, [["git", "clone", skill_url(source), target.to_s]], {"target" => target.to_s})
     end
   end
 
   def execute_section(action)
     unless action.fetch("bash_only")
-      return action_result(action, "deferred", { "reason" => "section is not bash-only" })
+      return action_result(action, "deferred", {"reason" => "section is not bash-only"})
     end
 
     blocks = []
@@ -654,14 +667,14 @@ class Apply
 
   def github_asset(assets)
     ranked = ranked_github_assets(assets)
-    return { ok: false, diagnostics: { "reason" => "no matching github release asset" } } if ranked.empty?
+    return {ok: false, diagnostics: {"reason" => "no matching github release asset"}} if ranked.empty?
 
     ambiguous = ambiguous_github_assets(ranked)
     if ambiguous.any?
-      return { ok: false, diagnostics: { "reason" => "ambiguous github release asset", "assets" => ambiguous } }
+      return {ok: false, diagnostics: {"reason" => "ambiguous github release asset", "assets" => ambiguous}}
     end
 
-    { ok: true, name: ranked.first.last }
+    {ok: true, name: ranked.first.last}
   end
 
   def ranked_github_assets(assets)
@@ -698,15 +711,14 @@ class Apply
 
   def github_arch_score(text)
     arch = RbConfig::CONFIG.fetch("host_cpu").downcase
-    aliases =
-      case arch
-      when /x86_64|amd64/
-        %w[x86_64 amd64 x64]
-      when /aarch64|arm64/
-        %w[aarch64 arm64]
-      else
-        [arch]
-      end
+    aliases = case arch
+    when /x86_64|amd64/
+      %w[x86_64 amd64 x64]
+    when /aarch64|arm64/
+      %w[aarch64 arm64]
+    else
+      [arch]
+    end
 
     return 20 if aliases.any? { |name| text.include?(name) }
     return 5 if text.match?(/(?:universal|all)/)
@@ -737,26 +749,26 @@ class Apply
         "stdout" => stdout,
         "stderr" => stderr,
         "exit" => status.exitstatus
-      }.merge(ok ? {} : { "reason" => "github release download failed" })
+      }.merge(ok ? {} : {"reason" => "github release download failed"})
     }
   end
 
   def github_release(repo)
     command = ["gh", "release", "view", "--repo", repo, "--json", "tagName,assets"]
     stdout, stderr, status = Open3.capture3(*command)
-    diagnostics = { "command" => command, "stdout" => stdout, "stderr" => stderr, "exit" => status.exitstatus }
+    diagnostics = {"command" => command, "stdout" => stdout, "stderr" => stderr, "exit" => status.exitstatus}
     unless status.success?
-      return { ok: false, diagnostics: diagnostics.merge("reason" => "github release metadata failed") }
+      return {ok: false, diagnostics: diagnostics.merge("reason" => "github release metadata failed")}
     end
 
     data = JSON.parse(stdout)
-    { ok: true, tag: data["tagName"], assets: Array(data["assets"]) }
+    {ok: true, tag: data["tagName"], assets: Array(data["assets"])}
   rescue JSON::ParserError => e
-    { ok: false, diagnostics: diagnostics.merge("reason" => "invalid github release metadata", "error" => e.message) }
+    {ok: false, diagnostics: diagnostics.merge("reason" => "invalid github release metadata", "error" => e.message)}
   end
 
   def install_github_asset(action, repo, tag, asset, path)
-    diagnostics = { "repo" => repo, "tag" => tag, "asset" => asset, "path" => path.to_s }
+    diagnostics = {"repo" => repo, "tag" => tag, "asset" => asset, "path" => path.to_s}
     if path.basename.to_s.downcase.end_with?(".deb")
       return execute_commands(
         action,
@@ -829,14 +841,13 @@ class Apply
 
   def extract_github_archive?(path, dir)
     name = path.basename.to_s.downcase
-    command =
-      if name.match?(/\.(?:tar\.gz|tgz|tar)\z/)
-        ["tar", "-xf", path.to_s, "-C", dir.to_s]
-      elsif name.end_with?(".zip")
-        ["unzip", "-q", path.to_s, "-d", dir.to_s]
-      else
-        return false
-      end
+    command = if name.match?(/\.(?:tar\.gz|tgz|tar)\z/)
+      ["tar", "-xf", path.to_s, "-C", dir.to_s]
+    elsif name.end_with?(".zip")
+      ["unzip", "-q", path.to_s, "-d", dir.to_s]
+    else
+      return false
+    end
 
     _stdout, _stderr, status = Open3.capture3(*command)
     status.success?
@@ -965,13 +976,13 @@ class Apply
   def skill_upstream(target)
     upstream = git_capture(target, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
     if upstream.fetch(:ok)
-      return { ok: true, ref: upstream.fetch(:stdout).strip, diagnostics: upstream.fetch(:diagnostics) }
+      return {ok: true, ref: upstream.fetch(:stdout).strip, diagnostics: upstream.fetch(:diagnostics)}
     end
 
     origin = git_capture(target, "symbolic-ref", "refs/remotes/origin/HEAD", "--short")
-    return { ok: true, ref: origin.fetch(:stdout).strip, diagnostics: origin.fetch(:diagnostics) } if origin.fetch(:ok)
+    return {ok: true, ref: origin.fetch(:stdout).strip, diagnostics: origin.fetch(:diagnostics)} if origin.fetch(:ok)
 
-    { ok: false, diagnostics: upstream.fetch(:diagnostics).merge("reason" => "skill checkout has no upstream") }
+    {ok: false, diagnostics: upstream.fetch(:diagnostics).merge("reason" => "skill checkout has no upstream")}
   end
 
   def skill_url(source)
@@ -996,9 +1007,9 @@ class Apply
 
   def result_for(action, failed_modules)
     if failed_modules.key?(action.fetch("module_id"))
-      action_result(action, "ignored", { "reason" => "previous module action failed" })
+      action_result(action, "ignored", {"reason" => "previous module action failed"})
     elsif !run_if_met?(action)
-      action_result(action, "skipped", { "reason" => run_if_reason(action) })
+      action_result(action, "skipped", {"reason" => run_if_reason(action)})
     else
       execute(action)
     end
@@ -1047,6 +1058,18 @@ class Apply
     stderr.match?(/password|not allowed|no tty|terminal is required|a tty is required|authentication/i)
   end
 
+  def command_env(log, command)
+    env = runtime_env(log)
+    env["RUBYOPT"] = rubyopt if homebrew_command?(command)
+    env
+  end
+
+  def homebrew_command?(command) = command.first == "brew"
+
+  def homebrew_locale_failure?(command, stderr)
+    homebrew_command?(command) && stderr.match?(/US-ASCII|Encoding::InvalidByteSequenceError|invalid byte sequence/i)
+  end
+
   def runtime_env(log)
     path = [TILDE_ROOT.join("bin").to_s, ENV.fetch("PATH", "")].reject(&:empty?).join(File::PATH_SEPARATOR)
     {
@@ -1059,9 +1082,15 @@ class Apply
     }
   end
 
+  def rubyopt
+    values = ENV.fetch("RUBYOPT", "").split
+    values << "-EUTF-8:UTF-8" unless values.include?("-EUTF-8:UTF-8")
+    values.join(" ")
+  end
+
   def section_block_result(action, block, index, blocks)
     stdout, stderr, status, sudo_events = run_block(block)
-    result = { "index" => index + 1, "stdout" => stdout, "stderr" => stderr, "exit" => status.exitstatus }
+    result = {"index" => index + 1, "stdout" => stdout, "stderr" => stderr, "exit" => status.exitstatus}
     result["sudo"] = sudo_events unless sudo_events.empty?
     blocks << result
 
@@ -1164,7 +1193,7 @@ class Apply
     conditions = conditions.compact.uniq
     return if conditions.empty?
 
-    raise "conflicting conditions: #{conditions.join(', ')}" if conditions.length > 1
+    raise "conflicting conditions: #{conditions.join(", ")}" if conditions.length > 1
 
     condition = conditions.first
     raise "unsupported condition: #{condition}" unless SUPPORTED_CONDITIONS.include?(condition)
@@ -1178,7 +1207,7 @@ class Apply
   end
 
   def validate_plan!(plan)
-    raise "unsupported plan schema: #{plan['schema']}" unless plan["schema"] == PLAN_SCHEMA
+    raise "unsupported plan schema: #{plan["schema"]}" unless plan["schema"] == PLAN_SCHEMA
     raise "missing plan id" unless plan["plan_id"].to_s.start_with?("sha256:")
     raise "plan id mismatch" unless plan.fetch("plan_id") == current_plan_hash(plan)
     raise "target home mismatch" unless Pathname.new(plan.fetch("target").fetch("home")).expand_path == @home
@@ -1327,8 +1356,7 @@ def main(argv)
     end
     .parse!(argv)
 
-  Apply.new(options).run
-  0
+  Apply.new(options).run ? 0 : 1
 rescue StandardError => e
   warn("error: #{e.message}")
   1

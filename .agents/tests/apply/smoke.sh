@@ -31,6 +31,14 @@ if [ "${LC_ALL:-}" != en_US.UTF-8 ] || [ "${LANG:-}" != en_US.UTF-8 ]; then
 	printf 'missing runtime locale: LC_ALL=%s LANG=%s\n' "${LC_ALL:-}" "${LANG:-}" >&2
 	exit 9
 fi
+case " ${RUBYOPT:-} " in
+*" -EUTF-8:UTF-8 "*)
+	;;
+*)
+	printf 'missing Ruby UTF-8 option: RUBYOPT=%s\n' "${RUBYOPT:-}" >&2
+	exit 9
+	;;
+esac
 
 case "$*" in
 "list --formula -1")
@@ -38,6 +46,8 @@ case "$*" in
 	;;
 "list --cask -1")
 	printf 'visual-studio-code\n'
+	;;
+"update" | "upgrade")
 	;;
 *)
 	printf 'unexpected brew command: %s\n' "$*" >&2
@@ -227,20 +237,21 @@ printf 'configure\n' > "$HOME/configure"
 EOF
 }
 
-write_apt_warning_plan() {
+write_refresh_plan() {
 	local file=$1
 	local repo=$2
 	local state=$3
 	local home=$4
 	local host=$5
+	local type=$6
 
-	ruby - "$file" "$repo" "$state" "$home" "$host" <<'RUBY'
+	ruby - "$file" "$repo" "$state" "$home" "$host" "$type" <<'RUBY'
 require "digest"
 require "json"
 require "open3"
 require "time"
 
-file, repo, state, home, host = ARGV
+file, repo, state, home, host, type = ARGV
 stdout, stderr, status = Open3.capture3("git", "-C", repo, "rev-parse", "HEAD")
 raise stderr unless status.success?
 
@@ -267,15 +278,15 @@ plan = {
   },
   "actions" => [
     {
-      "id" => "public/linux:package:refresh:deb:*",
+      "id" => "public/linux:package:refresh:#{type}:*",
       "kind" => "package",
       "module_id" => "public/linux",
       "repo_role" => "public",
       "operation" => "refresh",
       "package" => {
-        "type" => "deb",
+        "type" => type,
         "name" => "*",
-        "value" => "deb:*",
+        "value" => "#{type}:*",
         "system" => true
       }
     }
@@ -299,6 +310,14 @@ File.write(file, JSON.pretty_generate(plan))
 RUBY
 }
 
+write_apt_warning_plan() {
+	write_refresh_plan "$1" "$2" "$3" "$4" "$5" deb
+}
+
+write_brew_refresh_plan() {
+	write_refresh_plan "$1" "$2" "$3" "$4" "$5" brew
+}
+
 # ------------------------------------------------------------------------------------------------------------------------
 # Main
 # ------------------------------------------------------------------------------------------------------------------------
@@ -307,6 +326,8 @@ main() {
 	local apply_json
 	local apt_apply_json
 	local apt_plan_json
+	local brew_apply_json
+	local brew_plan_json
 	local conflict_apply_json
 	local conflict_plan_json
 	local fake_bin
@@ -352,6 +373,8 @@ main() {
 	package_apply_json=$tmpdir/package-apply.json
 	package_plan_json=$tmpdir/package-plan.json
 	package_repo=$tmpdir/package-repo
+	brew_apply_json=$tmpdir/brew-refresh-apply.json
+	brew_plan_json=$tmpdir/brew-refresh-plan.json
 	plan_json=$tmpdir/plan.json
 	refresh_apply_json=$tmpdir/refresh-apply.json
 	refresh_plan_json=$tmpdir/refresh-plan.json
@@ -384,7 +407,9 @@ main() {
 	mkdir -p "$home/.config/app"
 	printf 'unmanaged\n' >"$home/.config/app/source.txt"
 	HOME=$home XDG_STATE_HOME=$state "$tilde" plan --repo "$repo" --platform linux --host "$host" >"$conflict_plan_json"
-	HOME=$home XDG_STATE_HOME=$state "$tilde" apply --plan "$conflict_plan_json" >"$conflict_apply_json"
+	if HOME=$home XDG_STATE_HOME=$state "$tilde" apply --plan "$conflict_plan_json" >"$conflict_apply_json"; then
+		abort "conflict apply should fail"
+	fi
 	[[ ! -f $state/tilde/state.yml ]]
 
 	CONFLICT_APPLY_JSON=$conflict_apply_json ruby -rjson -e '
@@ -507,6 +532,17 @@ EOF
 		abort "package install commands should not run when inventory says present: #{ran.inspect}" unless ran.empty?
 	'
 
+	write_brew_refresh_plan "$brew_plan_json" "$repo" "$state" "$home" "$host"
+	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH "$tilde" apply --plan "$brew_plan_json" >"$brew_apply_json"
+
+	BREW_APPLY_JSON=$brew_apply_json ruby -rjson -e '
+		apply = JSON.parse(File.read(ENV.fetch("BREW_APPLY_JSON")))
+		result = apply.fetch("results").fetch(0)
+		abort "brew refresh should pass" unless result.fetch("status") == "ok"
+		commands = result.dig("diagnostics", "commands")
+		abort "brew update and upgrade should run" unless commands.map { |run| run.fetch("command") } == [%w[brew update], %w[brew upgrade]]
+	'
+
 	cat >"$fake_bin/sudo" <<'EOF'
 #!/usr/bin/env sh
 case "$*" in
@@ -523,7 +559,9 @@ esac
 EOF
 	chmod +x "$fake_bin/sudo"
 	write_apt_warning_plan "$apt_plan_json" "$repo" "$state" "$home" "$host"
-	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH "$tilde" apply --plan "$apt_plan_json" >"$apt_apply_json"
+	if HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH "$tilde" apply --plan "$apt_plan_json" >"$apt_apply_json"; then
+		abort "deferred apt apply should fail"
+	fi
 
 	APT_APPLY_JSON=$apt_apply_json ruby -rjson -e '
 		apply = JSON.parse(File.read(ENV.fetch("APT_APPLY_JSON")))

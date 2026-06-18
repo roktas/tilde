@@ -966,6 +966,10 @@ If a run fails or is deferred:
 - show the failure in command output,
 - allow the next run to retry idempotently.
 
+The `apply` runtime route MUST emit its structured JSON result before exit. If `completed` is false, or any required
+action result is `deferred`, `conflict`, or `notok`, `apply` MUST exit non-zero after writing that JSON. Agents MUST
+inspect the action results instead of treating a printed JSON document or `completed: true` alone as full success.
+
 If `state.yml` is missing or has no `applied` section, Tilde uses fresh-run semantics:
 
 - generate the current desired manifest,
