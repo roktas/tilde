@@ -1058,6 +1058,10 @@ Use the returned `state.public` and `state.private` paths exactly when generatin
 `~/Dropbox/home`, `~/Dropbox/home-`, `~/.local/src/home`, or `~/.local/src/home-` when status, explicit user arguments,
 or active home policy can supply the target binding.
 
+For Git-backed targets whose status binds repositories outside Dropbox, controller-side `~/Dropbox/...` source paths are
+not target paths. Agents MUST NOT create target-side `~/Dropbox` for repository binding, cleanup, shared app state, or
+convenience paths unless active target policy explicitly says that host has Dropbox-backed storage.
+
 When a remote workflow needs repository bindings in a target-side script, agents MUST bind them from target status JSON
 before planning. Agents MUST NOT retype host-convention paths in `tilde plan --repo ...` commands:
 

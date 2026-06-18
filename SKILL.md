@@ -272,6 +272,10 @@ Use the returned `state.public` and `state.private` paths exactly when generatin
 status, explicit user arguments, or active home policy for a stale Git-backed target that must be refreshed before
 status can be trusted.
 
+For Git-backed targets whose status binds repositories outside Dropbox, controller-side `~/Dropbox/...` source paths are
+not target paths. Do not create target-side `~/Dropbox` for repository binding, cleanup, shared app state, or convenience
+paths unless active target policy explicitly says that host has Dropbox-backed storage.
+
 When a remote workflow needs repository bindings in a target-side script, bind them from target status JSON before
 planning. Do not retype host-convention paths in `tilde plan --repo ...` commands:
 
@@ -513,6 +517,9 @@ For weaker or low-context agents:
 - After remote runtime freshness is verified, read `tilde status --format json` on the target, bind the returned
   repository paths to shell variables, and use those variables for remote plan paths. Do not guess Dropbox or
   Git-backed checkout paths when status or explicit policy can supply them.
+- Do not create `~/Dropbox` on a target just because controller source repositories live under Dropbox, an example uses
+  `~/Dropbox/home`, or post-update cleanup mentions Dropbox. If target status binds Git-backed repositories under
+  `~/.local/src`, use those paths and skip Dropbox-only maintenance when `~/Dropbox` is absent.
 - Use `mktemp -d` and `trap` for all local and remote plan JSON files. Do not write fixed `/tmp/opencode/...` plan
   paths or leave generated plan files behind after apply.
 - Do not say `applied` anchors advanced after a successful `refresh`/`update` run. Refresh mode does not write anchors;
