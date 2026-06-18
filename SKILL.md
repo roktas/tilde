@@ -228,7 +228,7 @@ controller_runtime=${TILDE%/bin/tilde}
 For Git-backed desired-state checkout freshness, pass the selected controller data repository and the target checkout:
 
 ```bash
-"$TILDE" checkout remote --host ondokuz --repo ~/Dropbox/home --target ~/.local/src/home
+"$TILDE" checkout remote --host vps --repo ~/Dropbox/home --target ~/.local/src/home
 ```
 
 Do not call `checkout remote` with only `--host`; the route cannot infer which controller repository maps to which

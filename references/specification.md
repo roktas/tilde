@@ -1026,7 +1026,7 @@ For Git-backed desired-state checkout freshness, the controller repository is th
 target is the target host's bound checkout:
 
 ```text
-"$TILDE" checkout remote --host ondokuz --repo ~/Dropbox/home --target ~/.local/src/home
+"$TILDE" checkout remote --host vps --repo ~/Dropbox/home --target ~/.local/src/home
 ```
 
 Agents MUST NOT call `checkout remote` with only `--host`. The route cannot infer repository bindings from a host name.

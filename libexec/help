@@ -25,7 +25,7 @@ readonly -a COMMANDS=(
 readonly -a EXAMPLES=(
 	'/tilde deploy|Discover local repositories and deploy this host.'
 	'/tilde deploy spinoza|Deploy a remote host using target discovery.'
-	'/tilde deploy ondokuz --public PUBLIC_REPO|Deploy a Git-backed VPS with the public data repository.'
+	'/tilde deploy vps --public PUBLIC_REPO|Deploy a Git-backed VPS with the public data repository.'
 	'/tilde update spinoza|Update a remote host by planning and applying on that target.'
 	'/tilde update WORK|Update every host in the WORK group defined by the active home policy.'
 	'/tilde doctor spinoza|Run diagnostics on the remote target through Tilde SSH transport.'
