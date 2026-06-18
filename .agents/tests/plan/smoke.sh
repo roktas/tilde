@@ -295,8 +295,8 @@ EOF
 			hook_action = linux_extra.fetch("actions").find { |action| action.fetch("kind") == "link" && action.fetch("target") == "~/Dropbox/_/var/codex/hooks/shellcheck" }
 			abort "missing codex hook action" unless hook_action
 			abort "codex hook should use a relative Dropbox link value" unless hook_action.fetch("link_value") == "../../../../home-/codex/hooks/shellcheck"
-			abort "codex should use shared agent instructions" unless codex.fetch("special_sections").dig("Configure", "body").include?("Dropbox/_/var/codex/AGENTS.md")
-			abort "codex should not link skills under ~/.codex" if codex.fetch("links_to_create").any? { |link| link.fetch("target").start_with?("~/.codex/skills/") }
+			abort "codex should expose shared agent instructions" unless codex.fetch("links_to_create").any? { |link| link.fetch("source") == "~/Dropbox/home/agents/AGENTS.md" && link.fetch("target") == "~/Dropbox/_/var/codex/AGENTS.md" && link.fetch("source_external") == true }
+			abort "codex should link shared auth into default home" unless codex.fetch("links_to_create").any? { |link| link.fetch("source") == "~/Dropbox/_/var/codex/auth.json" && link.fetch("target") == "~/.codex/auth.json" && link.fetch("source_external") == true }
 			copilot = linux.fetch("modules").find { |mod| mod.fetch("name") == "copilot" }
 			abort "missing linux copilot module" unless copilot
 			abort "missing linux copilot-cli cask" unless copilot.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "cask:copilot-cli" }
