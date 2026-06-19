@@ -210,6 +210,9 @@ For mutating remote prompt workflows such as `deploy`, `update`, `repair`, `upgr
   before running target `tilde status`, `tilde plan`, or `tilde apply`.
 - If the target runtime is stale but cannot be refreshed safely because it is dirty, missing, not a Git checkout, or
   otherwise ambiguous, stop with `deferred`. Do not continue into state recovery with the stale runtime.
+- Do not patch, edit, or `sed` the target runtime checkout to work around a deploy failure. Capture the exact diff for
+  later source-repository review, then stop with `deferred`; stashing or discarding target runtime changes is a separate
+  recovery step that needs explicit user approval.
 - On Git-backed remote hosts, also refresh the target public/private desired-state checkouts from the controller
   repositories before planning. If a target checkout is dirty or cannot be fast-forwarded from the controller bundle,
   stop with `deferred`.
@@ -496,6 +499,8 @@ For weaker or low-context agents:
   before the first target `status`, `plan`, or `apply`.
 - Do not run target `tilde status`, `tilde plan`, or `tilde apply` through a stale target runtime. Refresh the target
   runtime first, or stop with `deferred` if it cannot be safely refreshed.
+- Do not patch target runtime or desired-state checkouts during deploy/update/repair to work around a bug. Save the
+  diff, report it, and fix the controller source repository through normal review and commit flow.
 - Never read controller `~/.local/state/tilde/state.yml` for a remote target.
 - Never execute `/tilde ...` or `$tilde ...` in a shell; they are prompt markers, not runtime commands.
 - Before any controller-side runtime call, resolve `TILDE` to the loaded skill directory's `bin/tilde`, falling back to
