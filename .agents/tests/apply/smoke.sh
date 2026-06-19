@@ -277,14 +277,15 @@ write_refresh_plan() {
 	local home=$4
 	local host=$5
 	local type=$6
+	local name=${7:-*}
 
-	ruby - "$file" "$repo" "$state" "$home" "$host" "$type" <<'RUBY'
+	ruby - "$file" "$repo" "$state" "$home" "$host" "$type" "$name" <<'RUBY'
 require "digest"
 require "json"
 require "open3"
 require "time"
 
-file, repo, state, home, host, type = ARGV
+file, repo, state, home, host, type, name = ARGV
 stdout, stderr, status = Open3.capture3("git", "-C", repo, "rev-parse", "HEAD")
 raise stderr unless status.success?
 
@@ -311,17 +312,17 @@ plan = {
   },
   "actions" => [
     {
-      "id" => "public/linux:package:refresh:#{type}:*",
+      "id" => "public/linux:package:refresh:#{type}:#{name}",
       "kind" => "package",
       "module_id" => "public/linux",
       "repo_role" => "public",
       "operation" => "refresh",
       "package" => {
         "type" => type,
-        "name" => "*",
-        "value" => "#{type}:*",
-        "system" => true
-      }
+        "name" => name,
+        "value" => "#{type}:#{name}",
+        "system" => name == "*"
+      }.compact
     }
   ]
 }
@@ -351,6 +352,10 @@ write_brew_refresh_plan() {
 	write_refresh_plan "$1" "$2" "$3" "$4" "$5" brew
 }
 
+write_skill_refresh_plan() {
+	write_refresh_plan "$1" "$2" "$3" "$4" "$5" skill "$6"
+}
+
 # ------------------------------------------------------------------------------------------------------------------------
 # Main
 # ------------------------------------------------------------------------------------------------------------------------
@@ -378,6 +383,8 @@ main() {
 	local script_dir
 	local second_apply_json
 	local second_plan_json
+	local skill_apply_json
+	local skill_plan_json
 	local skill_root
 	local stale_apply_json
 	local stale_plan_json
@@ -414,6 +421,8 @@ main() {
 	refresh_state=$tmpdir/refresh-state
 	second_apply_json=$tmpdir/second-apply.json
 	second_plan_json=$tmpdir/second-plan.json
+	skill_apply_json=$tmpdir/skill-refresh-apply.json
+	skill_plan_json=$tmpdir/skill-refresh-plan.json
 	stale_apply_json=$tmpdir/stale-apply.json
 	stale_plan_json=$tmpdir/stale-plan.json
 
@@ -580,6 +589,20 @@ EOF
 		abort "installed packages should be unchanged: #{bad.inspect}" unless bad.empty?
 		ran = packages.reject { |result| result.equal?(standard) }.select { |result| result.fetch("diagnostics").key?("commands") }
 		abort "package install commands should not run when inventory says present: #{ran.inspect}" unless ran.empty?
+	'
+
+	mkdir -p "$home/.agents/skills/badskill/.git"
+	write_skill_refresh_plan "$skill_plan_json" "$repo" "$state" "$home" "$host" "github.com/example/badskill"
+	if HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH "$tilde" apply --plan "$skill_plan_json" >"$skill_apply_json"; then
+		abort "invalid skill checkout refresh should fail"
+	fi
+
+	SKILL_APPLY_JSON=$skill_apply_json ruby -rjson -e '
+		apply = JSON.parse(File.read(ENV.fetch("SKILL_APPLY_JSON"), encoding: "UTF-8"))
+		result = apply.fetch("results").fetch(0)
+		abort "skill refresh should return notok" unless result.fetch("status") == "notok"
+		command = result.dig("diagnostics", "command")
+		abort "skill refresh should report git status command" unless command&.include?("status")
 	'
 
 	write_brew_refresh_plan "$brew_plan_json" "$repo" "$state" "$home" "$host"

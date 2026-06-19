@@ -188,6 +188,17 @@ EOF
 	  abort "dropbox repo step" unless data["next"].include?("use-target-dropbox-repositories")
 	' "$out"
 
+	printf 'scratch\n' >"$remote_home/.agents/skills/tilde/scratch.txt"
+	PATH=$tmpdir:$PATH TILDE_FAKE_REMOTE_HOME=$remote_home TILDE_FAKE_SSH_ARGS=$ssh_args \
+		"$tilde" preflight remote spinoza --format json >"$out"
+	ruby -rjson -e '
+	  data = JSON.parse(File.read(ARGV[0]))
+	  abort "runtime should be dirty" unless data.dig("runtime", "dirty") == true
+	  abort "dirty runtime should block runtime link" if data["next"].include?("link-dropbox-runtime")
+	  abort "missing clean runtime step" unless data["next"].include?("clean-target-runtime")
+	' "$out"
+	rm -f "$remote_home/.agents/skills/tilde/scratch.txt"
+
 	echo "deploy smoke ok"
 }
 

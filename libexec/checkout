@@ -215,7 +215,7 @@ runtime_link() {
 	[[ -d $source/.git ]] || abort "source is not a Git checkout: $source"
 	[[ -x $source/bin/tilde ]] || abort "source is missing bin/tilde: $source"
 	source_commit=$(git -C "$source" rev-parse HEAD) || abort "source has no commit: $source"
-	source_status=$(git -C "$source" status --porcelain=v1 --untracked-files=no) || abort "source status failed: $source"
+	source_status=$(git -C "$source" status --porcelain=v1) || abort "source status failed: $source"
 	[[ -z $source_status ]] || abort "source is dirty: $source"
 	[[ -z $expected || $source_commit == "$expected" ]] || abort "source commit mismatch: $source_commit != $expected"
 
@@ -230,7 +230,7 @@ runtime_link() {
 
 	if [[ -e $target ]]; then
 		if [[ -d $target/.git ]]; then
-			target_status=$(git -C "$target" status --porcelain=v1 --untracked-files=no) ||
+			target_status=$(git -C "$target" status --porcelain=v1) ||
 				abort "target status failed: $target"
 			[[ -z $target_status ]] || abort "target checkout is dirty: $target"
 			[[ -x $target/bin/tilde ]] || abort "target checkout is not a runtime checkout: $target"
@@ -311,7 +311,7 @@ empty_dir() {
 [ -x "$source_path/bin/tilde" ] || abort "source is missing bin/tilde: $source_path"
 command -v git >/dev/null 2>&1 || abort "git is missing"
 source_commit=$(git -C "$source_path" rev-parse HEAD) || abort "source has no commit: $source_path"
-source_status=$(git -C "$source_path" status --porcelain=v1 --untracked-files=no) || abort "source status failed: $source_path"
+source_status=$(git -C "$source_path" status --porcelain=v1) || abort "source status failed: $source_path"
 [ -z "$source_status" ] || abort "source is dirty: $source_path"
 if [ -n "$expected" ] && [ "$source_commit" != "$expected" ]; then
 	abort "source commit mismatch: $source_commit != $expected"
@@ -328,7 +328,7 @@ fi
 
 if [ -e "$target_path" ]; then
 	if [ -d "$target_path/.git" ]; then
-		target_status=$(git -C "$target_path" status --porcelain=v1 --untracked-files=no) || abort "target status failed: $target_path"
+		target_status=$(git -C "$target_path" status --porcelain=v1) || abort "target status failed: $target_path"
 		[ -z "$target_status" ] || abort "target checkout is dirty: $target_path"
 		[ -x "$target_path/bin/tilde" ] || abort "target checkout is not a runtime checkout: $target_path"
 	elif ! empty_dir "$target_path"; then

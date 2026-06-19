@@ -170,6 +170,19 @@ main() {
 	printf 'runtime source\n' >"$runtime_source/.runtime-source"
 	git -C "$runtime_source" add .runtime-source
 	git -C "$runtime_source" commit -q -m runtime-source
+	printf 'untracked source\n' >"$runtime_source/untracked.txt"
+	if "$tilde" checkout runtime-link --source "$runtime_source" --target "$link_target" --expected "$(git -C "$runtime_source" rev-parse HEAD)" >/dev/null 2>"$err"; then
+		abort "expected untracked runtime source to fail"
+	fi
+	grep -q "source is dirty" "$err"
+	rm -f "$runtime_source/untracked.txt"
+	printf 'untracked target\n' >"$link_target/untracked.txt"
+	if "$tilde" checkout runtime-link --source "$runtime_source" --target "$link_target" --expected "$(git -C "$runtime_source" rev-parse HEAD)" >/dev/null 2>"$err"; then
+		abort "expected untracked runtime target to fail"
+	fi
+	grep -q "target checkout is dirty" "$err"
+	[[ -e $link_target/untracked.txt ]]
+	rm -f "$link_target/untracked.txt"
 	"$tilde" checkout runtime-link --source "$runtime_source" --target "$link_target" --expected "$(git -C "$runtime_source" rev-parse HEAD)"
 	[[ -L $link_target ]]
 	[[ $(readlink "$link_target") == "$runtime_source" ]]

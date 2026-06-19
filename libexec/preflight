@@ -335,7 +335,7 @@ if [ -d "$runtime/.git" ]; then
 	emit runtime_git true
 	if command -v git >/dev/null 2>&1; then
 		emit runtime_commit "$(git -C "$runtime" rev-parse HEAD 2>/dev/null || true)"
-		if [ -n "$(git -C "$runtime" status --porcelain=v1 --untracked-files=no 2>/dev/null)" ]; then
+		if [ -n "$(git -C "$runtime" status --porcelain=v1 2>/dev/null)" ]; then
 			emit runtime_dirty true
 		else
 			emit runtime_dirty false
@@ -361,7 +361,7 @@ if [ -d "$dropbox_runtime/.git" ]; then
 	emit dropbox_runtime_git true
 	if command -v git >/dev/null 2>&1; then
 		emit dropbox_runtime_commit "$(git -C "$dropbox_runtime" rev-parse HEAD 2>/dev/null || true)"
-		if [ -n "$(git -C "$dropbox_runtime" status --porcelain=v1 --untracked-files=no 2>/dev/null)" ]; then
+		if [ -n "$(git -C "$dropbox_runtime" status --porcelain=v1 2>/dev/null)" ]; then
 			emit dropbox_runtime_dirty true
 		else
 			emit dropbox_runtime_dirty false
@@ -493,6 +493,18 @@ dropbox_runtime_ready = dropbox_runtime["exists"] &&
   dropbox_runtime["bin"] &&
   dropbox_runtime["current"] &&
   !dropbox_runtime["dirty"]
+runtime_blocker = if runtime["exists"] && !runtime["dropbox_link"]
+  if runtime["symlink"]
+    "remove-or-replace-runtime-link"
+  elsif runtime["git"] && runtime["dirty"]
+    "clean-target-runtime"
+  elsif runtime["git"] && !runtime["bin"]
+    "replace-invalid-runtime"
+  elsif !runtime["git"]
+    "remove-or-replace-non-git-runtime"
+  end
+end
+runtime_replaceable = !runtime["exists"] || (!runtime["symlink"] && runtime["git"] && runtime["bin"] && !runtime["dirty"])
 
 next_steps = []
 if status.to_i != 0
@@ -502,13 +514,13 @@ elsif bool.call("bootstrap_needed")
   next_steps << "run-boot"
 else
   if raw["backend"] == "dropbox" && dropbox_runtime_ready && !runtime["dropbox_link"]
-    next_steps << "link-dropbox-runtime"
+    next_steps << (runtime_replaceable ? "link-dropbox-runtime" : runtime_blocker)
   elsif raw["backend"] == "dropbox" && dropbox_runtime["exists"] && !dropbox_runtime_ready
     next_steps << "wait-for-dropbox-runtime"
   end
 
-  if !runtime["git"] && runtime["exists"] && !runtime["dropbox_link"]
-    next_steps << "remove-or-replace-non-git-runtime"
+  if runtime_blocker
+    next_steps << runtime_blocker unless next_steps.include?(runtime_blocker)
   elsif !runtime["current"] && !dropbox_runtime_ready
     next_steps << "checkout-runtime"
   end

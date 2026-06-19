@@ -664,8 +664,8 @@ class Apply
     stdout.strip
   end
 
-  def git_capture(repo, *)
-    stdout, stderr, status = Open3.capture3("git", "-C", repo.to_s, *)
+  def git_capture(repo, *args)
+    stdout, stderr, status = Open3.capture3("git", "-C", repo.to_s, *args)
     {
       ok: status.success?,
       stdout:,

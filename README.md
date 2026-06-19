@@ -4,11 +4,18 @@ Tilde is an agent skill and control plane for reconciling a host with desired st
 repositories. The canonical contract is [references/specification.md](references/specification.md). That specification
 defines the stateless provisioning model used by the skill and runtime helpers.
 
-- Tilde primarily targets Linux and macOS hosts.
+- Tilde primarily targets Debian-based Linux distributions and macOS hosts.
+- It can run on a single machine, but the main operating model is provisioning a machine farm over SSH.
+- Tailscale is strongly recommended for that SSH fabric.
+- Git is the primary transport and synchronization mechanism; Dropbox-backed hosts are also supported.
 - After the base system bootstrap, most user tools are installed with Homebrew on both platforms.
 - Linux desktop hosts additionally use Flatpak for desktop applications that are better managed outside Homebrew.
 - The skill has been developed with Codex 5.5, but its workflow, guardrails, and deterministic helper routes are tuned
-  for day-to-day use with Deepseek Flash V4, especially the max variant.
+  for day-to-day use with DeepSeek Flash V4, especially the max variant.
+
+> [!WARNING]
+> Tilde is currently pre-alpha software. Deployment experience is used to continuously refine and train the skill, so
+> make sure you are using the latest version before each deployment.
 
 ## Install
 
