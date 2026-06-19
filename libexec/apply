@@ -174,6 +174,10 @@ class Apply
     @actions ||= @plans.flat_map { |plan| plan.fetch("actions") }
   end
 
+  def action_index
+    @action_index ||= actions.to_h { |action| [action.fetch("id"), action] }
+  end
+
   def apply_actions
     failed_modules = {}
 
@@ -913,7 +917,7 @@ class Apply
   end
 
   def advance_anchors?
-    %w[apply repair].include?(target.fetch("mode")) &&
+    target.fetch("converges", %w[apply repair].include?(target.fetch("mode"))) &&
       @apply.fetch(:completed) &&
       @apply.fetch(:results).all? { |result| RESULT_OK.include?(result.fetch(:status)) }
   end
@@ -1043,9 +1047,13 @@ class Apply
     condition = action["run_if"]
     return true unless condition
 
-    section = condition["section_changed"]
-    return true unless section
+    return install_changed?(action) if condition["install_changed"]
+    return section_changed?(action, condition["section_changed"]) if condition["section_changed"]
 
+    true
+  end
+
+  def section_changed?(action, section)
     @apply.fetch(:results).any? do |result|
       result.fetch(:module_id) == action.fetch("module_id") &&
         result.fetch(:kind) == "section" &&
@@ -1054,8 +1062,32 @@ class Apply
     end
   end
 
+  def install_changed?(action)
+    @apply.fetch(:results).any? do |result|
+      result.fetch(:module_id) == action.fetch("module_id") &&
+        install_change_result?(result)
+    end
+  end
+
+  def install_change_result?(result)
+    if package_install_result?(result)
+      return result.fetch(:status) == "ok"
+    end
+
+    result.fetch(:kind) == "section" &&
+      result.dig(:diagnostics, "name") == "Install" &&
+      result.fetch(:status) == "changed"
+  end
+
+  def package_install_result?(result)
+    action = action_index[result.fetch(:action_id)]
+    action&.fetch("kind") == "package" && action&.fetch("operation") == "install"
+  end
+
   def run_if_reason(action)
     condition = action["run_if"] || {}
+    return "Install phase did not change in this run" if condition["install_changed"]
+
     section = condition["section_changed"]
     section ? "#{section} did not change in this run" : "run condition not met"
   end
@@ -1306,9 +1338,15 @@ class Apply
   end
 
   def validate_target_match!(plan, first_target)
+    plan_target = plan.fetch("target")
     %w[host platform mode scope level home state_root].each do |key|
-      raise "plan target #{key} mismatch" unless plan.fetch("target").fetch(key) == first_target.fetch(key)
+      raise "plan target #{key} mismatch" unless plan_target.fetch(key) == first_target.fetch(key)
     end
+
+    return unless plan_target.key?("converges") || first_target.key?("converges")
+    return if plan_target["converges"] == first_target["converges"]
+
+    raise "plan target converges mismatch"
   end
 
   def repository_for(role)

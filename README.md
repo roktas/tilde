@@ -138,15 +138,15 @@ After `tilde apply`, inspect action results. `completed: true` means all planned
 incomplete if any action is `deferred`, `conflict`, or `notok`.
 
 For agent workflows, `update` ordinarily maps to planning mode `refresh`. If target status shows missing `state.yml` or
-no `applied` anchors, use `repair` mode for that run so state recovery writes recovered bindings and anchors. Plans for
-remote hosts must be generated and applied on the target host. After a successful mutating remote apply, read final
-status on the target before closeout. Materialize plan JSON under a per-run `mktemp -d` directory and clean it with a
-trap; do not leave fixed files such as `/tmp/opencode/HOST-public.json`. Successful `refresh` does not advance
-`applied` anchors, so final reports must distinguish target HEAD from applied anchors.
+no `applied` anchors, use `repair` mode for that run so state recovery writes recovered bindings and anchors without
+running `Update` sections. Plans for remote hosts must be generated and applied on the target host. After a successful
+mutating remote apply, read final status on the target before closeout. Materialize plan JSON under a per-run
+`mktemp -d` directory and clean it with a trap; do not leave fixed files such as `/tmp/opencode/HOST-public.json`.
+Successful Tilde-generated `refresh` plans advance `applied` anchors after every required action succeeds.
 
-`update` / `refresh` does not install newly declared packages or reconcile newly declared links, copies, seeds, or
-resets. Use `repair` when changed module frontmatter should be applied to an already deployed host. Repair checks every
-current declaration against live state; it is not limited to the repository diff.
+`update` / `refresh` reconciles current desired-state declarations, including newly declared packages, links, copies,
+seeds, and resets. Use `repair` when the intent is desired-state convergence without package refreshes, package
+upgrades, or `Update` sections.
 
 For mutating remote workflows, verify target runtime freshness before the first target status read. If the target
 `~/.agents/skills/tilde` checkout is stale, refresh it from the controller checkout before running target `tilde status`,

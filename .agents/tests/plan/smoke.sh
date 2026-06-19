@@ -592,6 +592,18 @@ EOF
 test -n "$HOME"
 ```
 
+## Install
+
+```bash
+printf 'install\n'
+```
+
+## Post Install
+
+```bash
+printf 'post-install\n'
+```
+
 ## Update
 
 ```bash
@@ -614,6 +626,7 @@ EOF
 		plan = JSON.parse(File.read(ENV.fetch("ALIGN_PLAN_JSON")))
 		abort "wrong align mode" unless plan.fetch("mode") == "align"
 		abort "align should not have scope" unless plan["scope"].nil?
+		abort "align should not advance anchors" if plan.fetch("target").fetch("converges")
 		abort "align should not include package actions" if plan.fetch("actions").any? { |action| action.fetch("kind") == "package" }
 		abort "align should not include section actions" if plan.fetch("actions").any? { |action| %w[section manual].include?(action.fetch("kind")) }
 		abort "align should include link actions" unless plan.fetch("actions").any? { |action| action.fetch("kind") == "link" }
@@ -626,11 +639,15 @@ EOF
 		plan = JSON.parse(File.read(ENV.fetch("REFRESH_PLAN_JSON")))
 		abort "wrong refresh mode" unless plan.fetch("mode") == "refresh"
 		abort "wrong refresh scope" unless plan.fetch("scope") == "fast"
+		abort "refresh should advance anchors after success" unless plan.fetch("target").fetch("converges")
 		abort "refresh should not create core links" unless plan.fetch("core").fetch("links_to_create").empty?
 		abort "refresh should not write fallback home entrypoints" unless plan.fetch("core").fetch("home_entrypoints_to_write").empty?
 		neovim = plan.fetch("modules").find { |mod| mod.fetch("name") == "neovim" }
 		abort "missing neovim module" unless neovim
-		abort "refresh should not create links" unless neovim.fetch("links_to_create").empty?
+		git = plan.fetch("modules").find { |mod| mod.fetch("name") == "git" }
+		abort "missing git module" unless git
+		abort "refresh should include declared packages" unless git.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "brew:git" }
+		abort "refresh should include declared links" if git.fetch("links_to_create").empty?
 		linux = plan.fetch("modules").find { |mod| mod.fetch("name") == "linux" }
 		abort "missing linux module" unless linux
 		abort "missing fast brew refresh" unless linux.fetch("packages_to_refresh").any? { |pkg| pkg.fetch("value") == "brew:*" }
@@ -639,8 +656,17 @@ EOF
 		smoke = plan.fetch("modules").find { |mod| mod.fetch("name") == "zz-refresh-smoke" }
 		abort "missing refresh smoke module" unless smoke
 		abort "refresh should include prerequisite section" unless smoke.fetch("special_sections").key?("Prerequisites")
+		abort "refresh should include install section" unless smoke.fetch("special_sections").key?("Install")
+		abort "refresh should include post-install section" unless smoke.fetch("special_sections").key?("Post Install")
 		abort "refresh should include update section" unless smoke.fetch("special_sections").key?("Update")
 		abort "refresh should include configure section" unless smoke.fetch("special_sections").key?("Configure")
+		actions = plan.fetch("actions")
+		smoke_indexes = %w[Prerequisites Install Post\ Install Update Configure].to_h do |name|
+			[name, actions.index { |action| action.fetch("module_id") == "public/zz-refresh-smoke" && action.fetch("name", nil) == name }]
+		end
+		abort "refresh should include all smoke section actions" if smoke_indexes.values.any?(&:nil?)
+		abort "refresh should run install before update" unless smoke_indexes.fetch("Install") < smoke_indexes.fetch("Update")
+		abort "refresh should run update before configure" unless smoke_indexes.fetch("Update") < smoke_indexes.fetch("Configure")
 	'
 
 	FULL_REFRESH_PLAN_JSON=$full_refresh_plan_json ruby -rjson -e '
@@ -652,10 +678,16 @@ EOF
 		abort "missing managed npm refresh" unless javascript.fetch("packages_to_refresh").any? { |pkg| pkg.fetch("value") == "npm:@biomejs/biome" }
 		neovim = plan.fetch("modules").find { |mod| mod.fetch("name") == "neovim" }
 		abort "missing neovim module" unless neovim
+		git = plan.fetch("modules").find { |mod| mod.fetch("name") == "git" }
+		abort "missing git module" unless git
+		abort "full refresh should include declared packages" unless git.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "brew:git" }
+		abort "full refresh should include declared links" if git.fetch("links_to_create").empty?
 		abort "missing neovim update section" unless neovim.fetch("special_sections").key?("Update")
 		smoke = plan.fetch("modules").find { |mod| mod.fetch("name") == "zz-refresh-smoke" }
 		abort "missing full refresh smoke module" unless smoke
 		abort "full refresh should include prerequisite section" unless smoke.fetch("special_sections").key?("Prerequisites")
+		abort "full refresh should include install section" unless smoke.fetch("special_sections").key?("Install")
+		abort "full refresh should include post-install section" unless smoke.fetch("special_sections").key?("Post Install")
 		abort "full refresh should include update section" unless smoke.fetch("special_sections").key?("Update")
 		abort "full refresh should include configure section" unless smoke.fetch("special_sections").key?("Configure")
 	'
@@ -664,6 +696,7 @@ EOF
 		plan = JSON.parse(File.read(ENV.fetch("UPGRADE_PLAN_JSON")))
 		abort "wrong upgrade mode" unless plan.fetch("mode") == "upgrade"
 		abort "wrong upgrade scope" unless plan.fetch("scope") == "full"
+		abort "upgrade should advance anchors after success" unless plan.fetch("target").fetch("converges")
 		linux = plan.fetch("modules").find { |mod| mod.fetch("name") == "linux" }
 		abort "missing linux module" unless linux
 		abort "upgrade should include fast brew refresh" unless linux.fetch("packages_to_refresh").any? { |pkg| pkg.fetch("value") == "brew:*" }
@@ -674,10 +707,16 @@ EOF
 		abort "upgrade should include managed npm refresh" unless javascript.fetch("packages_to_refresh").any? { |pkg| pkg.fetch("value") == "npm:@biomejs/biome" }
 		neovim = plan.fetch("modules").find { |mod| mod.fetch("name") == "neovim" }
 		abort "missing neovim module" unless neovim
+		git = plan.fetch("modules").find { |mod| mod.fetch("name") == "git" }
+		abort "missing git module" unless git
+		abort "upgrade should include declared packages" unless git.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "brew:git" }
+		abort "upgrade should include declared links" if git.fetch("links_to_create").empty?
 		abort "upgrade should include update section" unless neovim.fetch("special_sections").key?("Update")
 		smoke = plan.fetch("modules").find { |mod| mod.fetch("name") == "zz-refresh-smoke" }
 		abort "missing upgrade smoke module" unless smoke
 		abort "upgrade should include prerequisite section" unless smoke.fetch("special_sections").key?("Prerequisites")
+		abort "upgrade should include install section" unless smoke.fetch("special_sections").key?("Install")
+		abort "upgrade should include post-install section" unless smoke.fetch("special_sections").key?("Post Install")
 		abort "upgrade should include update section" unless smoke.fetch("special_sections").key?("Update")
 		abort "upgrade should include configure section" unless smoke.fetch("special_sections").key?("Configure")
 		actions = plan.fetch("actions")
@@ -734,6 +773,7 @@ EOF
 	REPAIR_PLAN_JSON=$repair_plan_json ruby -rjson -e '
 		plan = JSON.parse(File.read(ENV.fetch("REPAIR_PLAN_JSON")))
 		abort "wrong repair mode" unless plan.fetch("mode") == "repair"
+		abort "repair should advance anchors after success" unless plan.fetch("target").fetch("converges")
 		git = plan.fetch("modules").find { |mod| mod.fetch("name") == "git" }
 		abort "missing git module in repair plan" unless git
 		abort "git should be repaired" if git.fetch("skipped")
@@ -743,6 +783,8 @@ EOF
 		abort "missing mc module in repair plan" unless mc
 		abort "repair must not skip mc from state" if mc.fetch("skipped")
 		abort "repair should include mc file materializations" if mc.fetch("copies_to_create").empty? || mc.fetch("seeds_to_create").empty?
+		abort "repair should not include update sections" if plan.fetch("modules").any? { |mod| mod.fetch("special_sections").key?("Update") }
+		abort "repair should not include update actions" if plan.fetch("actions").any? { |action| action.fetch("name", nil) == "Update" }
 	'
 
 	echo "plan smoke ok"

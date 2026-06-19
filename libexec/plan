@@ -121,7 +121,13 @@ class Plan
 
   def apply_like? = align? || apply? || repair?
 
-  def actions_skipped? = !apply_like?
+  def install_like? = apply? || refresh? || repair? || upgrade?
+
+  def materialize_like? = apply_like? || refresh? || upgrade?
+
+  def actions_skipped? = !materialize_like?
+
+  def converges? = apply? || refresh? || repair? || upgrade?
 
   def bash_blocks(body)
     fenced_blocks(body).filter_map do |info, content|
@@ -803,7 +809,7 @@ class Plan
   end
 
   def package_actions(packages, mode)
-    return packages if mode == "apply" && apply_like?
+    return packages if mode == "apply" && install_like?
 
     []
   end
@@ -891,6 +897,10 @@ class Plan
   end
 
   def align_module_actions(mod)
+    materialization_actions(mod)
+  end
+
+  def materialization_actions(mod)
     mod.fetch(:directories_to_create).map { |dir| directory_action(mod, dir) } +
       mod.fetch(:links_to_create).map { |link| link_plan_action(mod, link) } +
       mod.fetch(:copies_to_create).map { |copy| copy_action(mod, copy) } +
@@ -903,12 +913,8 @@ class Plan
     actions.concat(section_plan_actions(mod, %w[Prerequisites]))
     actions.concat(package_plan_actions(mod, "install", mod.fetch(:packages_to_install)))
     actions.concat(section_plan_actions(mod, %w[Install]))
-    actions.concat(section_plan_actions(mod, ["Post Install"], run_if: {section_changed: "Install"}))
-    actions.concat(mod.fetch(:directories_to_create).map { |dir| directory_action(mod, dir) })
-    actions.concat(mod.fetch(:links_to_create).map { |link| link_plan_action(mod, link) })
-    actions.concat(mod.fetch(:copies_to_create).map { |copy| copy_action(mod, copy) })
-    actions.concat(mod.fetch(:seeds_to_create).map { |seed| seed_action(mod, seed) })
-    actions.concat(mod.fetch(:resets_to_create).map { |reset| reset_action(mod, reset) })
+    actions.concat(section_plan_actions(mod, ["Post Install"], run_if: {install_changed: true}))
+    actions.concat(materialization_actions(mod))
     actions.concat(section_plan_actions(mod, %w[Configure]))
     actions
   end
@@ -917,6 +923,10 @@ class Plan
     actions = []
     actions.concat(package_plan_actions(mod, "refresh", mod.fetch(:packages_to_refresh)))
     actions.concat(section_plan_actions(mod, %w[Prerequisites]))
+    actions.concat(package_plan_actions(mod, "install", mod.fetch(:packages_to_install)))
+    actions.concat(section_plan_actions(mod, %w[Install]))
+    actions.concat(section_plan_actions(mod, ["Post Install"], run_if: {install_changed: true}))
+    actions.concat(materialization_actions(mod))
     actions.concat(section_plan_actions(mod, %w[Update]))
     actions.concat(section_plan_actions(mod, %w[Configure]))
     actions
@@ -1216,7 +1226,7 @@ class Plan
 
   def selected_special_sections(body)
     sections = special_sections(body)
-    return sections.slice("Prerequisites", "Update", "Configure") if refresh? || upgrade?
+    return sections if refresh? || upgrade?
 
     sections.except("Update")
   end
@@ -1318,6 +1328,7 @@ class Plan
       mode: @mode,
       scope: @scope,
       level: @level,
+      converges: converges?,
       home: Dir.home,
       state_root: state_root.to_s,
       state_path: state_path.to_s

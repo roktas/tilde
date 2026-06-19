@@ -163,10 +163,10 @@ Agent commands map to planning modes and module sections as follows.
 
 | Prompt command | Plan mode | Module behavior |
 | --- | --- | --- |
-| `deploy` | `apply` | `Prerequisites`, `Install`, `Post Install` when `Install` changed, declared files and links, then `Configure` |
-| `update` | `refresh`; `repair` for state recovery | `Prerequisites`, `Update`, then `Configure`; state recovery uses repair behavior |
-| `repair` | `repair` | `Prerequisites`, `Install`, `Post Install` when `Install` changed, declared files and links, then `Configure` |
-| `upgrade` | `upgrade` | broad refresh behavior, then package upgrades |
+| `deploy` | `apply` | `Prerequisites`, declared package installs, `Install`, `Post Install` when the install phase changed, declared files and links, then `Configure` |
+| `update` | `refresh`; `repair` for state recovery | package refresh, `Prerequisites`, declared package installs, `Install`, `Post Install` when the install phase changed, declared files and links, `Update`, then `Configure` |
+| `repair` | `repair` | `Prerequisites`, declared package installs, `Install`, `Post Install` when the install phase changed, declared files and links, then `Configure` |
+| `upgrade` | `upgrade` | update behavior, then broad package upgrades |
 | `align` | `align` | directories, links, copies, seeds, and resets only; no bootstrap, packages, or module code |
 
 `create`, `init`, `clean`, `organize`, and `adopt` are proposal-first operator workflows unless a direct helper is
@@ -176,13 +176,13 @@ The prompt command is `update`; the ordinary plan mode is `refresh`. Do not call
 status shows missing `state.yml` or no `applied` anchors, recover state with `plan --mode repair` for that run; do not
 use refresh merely to recreate state, and do not tell the user to run deploy solely to initialize state. Missing
 `state.yml` is not proof that the host was never deployed; describe it as missing state and state recovery unless
-bounded evidence proves otherwise.
+bounded evidence proves otherwise. State recovery uses repair because it avoids `Update` sections while recreating
+fully converged bindings and anchors.
 
-`update` / `refresh` does not run Install, declared package installs, or ordinary declared link/copy/seed/reset
-reconciliation. If a repository change adds a package, link, copy, seed, reset, or other install-time desired state, use
-`repair` (or `deploy` for a fresh host) to reconcile it. `repair` rechecks every current Install and package
-declaration against live target state; it is not limited to declarations added since the last anchor. Present packages
-return `unchanged`, missing packages are installed, and a fully successful repair may advance `applied` anchors.
+`update` / `refresh` reconciles current desired-state declarations, including newly declared packages, links, copies,
+seeds, and resets. Present packages return `unchanged`, missing packages are installed, and a fully successful
+Tilde-generated refresh plan may advance `applied` anchors. Use `repair` when the intent is desired-state convergence
+without package refreshes, package upgrades, or `Update` sections.
 
 When an agent workflow materializes plan JSON files, create them under a per-run temporary directory and remove that
 directory at exit. Do not write fixed plan paths such as `/tmp/opencode/HOST-public.json`, and do not leave plan files
@@ -196,9 +196,8 @@ trap 'rm -rf "$tmpdir"' EXIT
 "$TILDE" apply --plan "$tmpdir/public.json"
 ```
 
-`refresh` mode does not advance `applied` anchors. After a successful `/tilde update`, final status may show target
-repository HEAD ahead of the stored applied anchor; report that as expected refresh behavior, not as anchor advancement
-and not as failed convergence.
+Successful Tilde-generated `refresh` plans advance `applied` anchors after every required action succeeds. If a refresh
+apply returns `deferred`, `conflict`, or `notok`, anchors stay unchanged and the run did not fully converge.
 
 ## Remote Script Execution
 
@@ -438,9 +437,10 @@ Module README code sections use this stateless contract:
 
 - `Prerequisites`: external requirements and read-only checks only. Failed checks return `deferred`.
 - `Install`: idempotently ensure packages, tools, directories, applications, repositories, or local resources are present.
-- `Post Install`: runs only when `Install` changed something in the current run; correctness must not depend on it.
-- `Configure`: idempotent desired configuration. In apply and repair modes, it runs after declared directories, links,
-  copies, seeds, and resets are materialized.
+- `Post Install`: runs only when declared package installs or `Install` changed something in the current run; correctness
+  must not depend on it.
+- `Configure`: idempotent desired configuration. It runs after declared directories, links, copies, seeds, and resets
+  are materialized, and after `Update` in update mode.
 - `Update`: explicit refresh or upgrade work.
 - `Notes`: informational only; never executed.
 
@@ -546,9 +546,9 @@ For weaker or low-context agents:
 - Use the `plan --mode refresh` implementation route for the `update` prompt command only when target status has
   existing `applied` anchors. If target status shows missing `state.yml` or no `applied` anchors, use
   `plan --mode repair` for state recovery.
-- Do not expect `/tilde update HOST` to install a package that was newly added to module frontmatter or to create newly
-  declared links, copies, seeds, or resets. For that desired-state reconciliation, run `/tilde repair HOST`; repair
-  checks all current declarations against live state, not only the repository diff.
+- Expect `/tilde update HOST` to install packages newly added to module frontmatter and to create newly declared links,
+  copies, seeds, or resets. Use `/tilde repair HOST` only when the intent is convergence without package refreshes,
+  package upgrades, or `Update` sections, or when missing state requires recovery.
 - For host-aware prompt commands, omitted target means current host. Treat bare `host` as `ssh:host`, except when it
   names the current host; then run the local workflow. Use explicit `ssh:host` to force SSH transport.
 - Missing `state.yml` or missing `applied` anchors means state recovery, not proof that the host was never deployed.
@@ -571,8 +571,8 @@ For weaker or low-context agents:
   paths such as `$HOME/Library/CloudStorage/Dropbox` unless the active policy explicitly names them for cleanup.
 - Use `mktemp -d` and `trap` for all local and remote plan JSON files. Do not write fixed `/tmp/opencode/...` plan
   paths or leave generated plan files behind after apply.
-- Do not say `applied` anchors advanced after a successful `refresh`/`update` run. Refresh mode does not write anchors;
-  distinguish target HEAD from applied anchors in final status.
+- After a successful Tilde-generated `refresh`/`update` run, verify final status and report the updated `applied`
+  anchors. If any action was `deferred`, `conflict`, or `notok`, anchors remain unchanged.
 - Keep remote scripts `sh`-compatible unless Bash is explicitly required and the target is known to support it. Do not
   use Bash-only options such as `set -o pipefail` in the default `"$TILDE" ssh HOST << 'SCRIPT'` form.
 - In default remote scripts, avoid Bashisms such as `[[ ]]`, arrays, `source`, `local`, `pipefail`, process

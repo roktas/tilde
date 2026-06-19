@@ -309,14 +309,13 @@ prompt command -> plan mode
 
 The prompt command is `update`; the ordinary planning mode is `refresh`. Implementations MUST NOT invent a
 `--mode update`. If target status shows missing `state.yml` or no `applied` anchors, an update workflow MUST recover
-state with `repair` mode for that run because refresh-only work does not establish fully converged anchors. Missing
-state is not proof that the host was never deployed; agents SHOULD describe this as state recovery unless bounded
-evidence proves otherwise.
+state with `repair` mode for that run because state recovery should recreate fully converged bindings and anchors
+without running `Update` sections. Missing state is not proof that the host was never deployed; agents SHOULD describe
+this as state recovery unless bounded evidence proves otherwise.
 
-Refresh mode MUST NOT run Install, package-install declarations, or ordinary declared directory, link, copy, seed, and
-reset reconciliation. A repository change that adds a package or another install-time declaration is reconciled by an
-apply/deploy or repair workflow, not by an ordinary update. Repair re-evaluates every current Install and package
-declaration against live target state; it is not a diff-only mode for newly added declarations.
+Refresh mode reconciles current desired-state declarations. A repository change that adds a package, link, copy, seed,
+reset, or other install-time declaration is reconciled by ordinary update. Repair remains available when the intent is
+desired-state convergence without package refresh actions, broad package upgrade actions, or `Update` sections.
 
 Agents that materialize plan JSON files MUST write them under a per-run temporary directory and remove that directory at
 workflow exit. Fixed plan paths under shared temp locations, such as `/tmp/opencode/HOST-public.json`, are invalid for
@@ -332,34 +331,39 @@ trap 'rm -rf "$tmpdir"' EXIT
 "$TILDE" apply --plan "$tmpdir/public.json"
 ```
 
-Refresh mode does not advance `applied` anchors. After a successful update workflow, final status may show target
-repository HEAD ahead of the stored applied anchor. Agents MUST report this as expected refresh behavior and MUST NOT
-say that anchors advanced unless the apply mode was `apply` or `repair` and state actually changed.
+Tilde-generated refresh plans are convergent update plans. After a successful update workflow, final status MUST show
+the current repository HEAD recorded under `applied` anchors. Agents MUST NOT report update convergence from target
+repository HEAD alone; they MUST verify the target-local state file after apply.
 
 ```text
 apply / install:
   Prerequisites
+  package install actions
   Install
-  Post Install, only if Install changed in the current run
+  Post Install, only if the install phase changed in the current run
   directories, links, copies, seeds, and resets
   Configure
 
 refresh / update:
+  package refresh actions
   Prerequisites
+  package install actions
+  Install
+  Post Install, only if the install phase changed in the current run
+  directories, links, copies, seeds, and resets
   Update
   Configure
 
 repair:
   Prerequisites
+  package install actions
   Install
-  Post Install, only if Install changed in the current run
+  Post Install, only if the install phase changed in the current run
   directories, links, copies, seeds, and resets
   Configure
 
 upgrade:
-  Prerequisites
-  Update
-  Configure
+  refresh/update actions
   package upgrade actions after refresh/update actions
 
 align:
@@ -486,13 +490,15 @@ Install blocks and package handlers MUST be idempotent or safely repeatable.
 
 If the target is already present, Install returns `unchanged`.
 
-If Install creates or installs something in the current run, Install returns `changed` or `ok` as appropriate. A changed Install phase enables `Post Install` for the same module in that run.
+If package install actions or Install create or install something in the current run, they return `ok` or `changed` as
+appropriate. A changed install phase enables `Post Install` for the same module in that run.
 
 ### 8.3 Post Install
 
-`Post Install` contains install-event hooks that run only when the module's Install phase changed something in the current run.
+`Post Install` contains install-event hooks that run only when the module's install phase changed something in the
+current run. The install phase includes declared package installs and the module's `Install` section.
 
-If Install is `unchanged`, `Post Install` is skipped.
+If the install phase is unchanged, `Post Install` is skipped.
 
 `Post Install` is an optimization and event hook. It is not a correctness layer.
 
@@ -506,7 +512,8 @@ Required final configuration MUST live in `Configure`, not only in `Post Install
 
 `Configure` is the correctness layer for desired configuration.
 
-It runs after Install in apply/install and repair modes, and after Update in update mode.
+It runs after declared directories, links, copies, seeds, and resets are materialized. In update mode, it also runs
+after `Update`.
 
 Examples:
 
@@ -592,7 +599,9 @@ A package operation that requires privilege or external input returns `deferred`
 Package metadata refresh that reports incomplete indexes, signature verification failures, missing repository keys, or
 failed source fetches returns `deferred` even if the package manager exits successfully.
 
-Package refresh and upgrade operations are not commit-anchor semantics. They MUST NOT advance or rewrite `applied` anchors by themselves.
+Package refresh and upgrade operations are not commit-anchor semantics by themselves. A full Tilde-generated
+refresh/update plan MAY advance `applied` anchors only because it also reconciles current desired state and every
+required action succeeds.
 
 ### 10.1 Ephemeral Package Inventory
 
@@ -960,6 +969,8 @@ Because all actions must be idempotent or guarded, rerunning repair is safe.
 
 If a previous run failed, the commit anchors remain at the last fully successful commit pair. The next run still computes diff from those anchors to current HEAD.
 
+Repair differs from update by skipping package refresh actions, broad package upgrade actions, and `Update` sections.
+
 ## 17. Operator Workflows
 
 One-off operator/agent workflows live outside the desired-state model. They are proposal-first and operator-approved.
@@ -1287,8 +1298,8 @@ file conflicts, requires a separate explicit approval that names the directory a
 
 If the persistent state file is missing or malformed, Tilde recovers repository bindings from explicit command
 arguments, repository frontmatter, and bounded target discovery. A successful desired-state recovery run writes
-`state.yml` with the recovered bindings and fully converged anchors. Refresh-only package and update-section runs do not
-establish fully converged anchors. Missing state alone does not prove that the host was never deployed.
+`state.yml` with the recovered bindings and fully converged anchors. Package-only refresh or update-section-only plans
+do not establish fully converged anchors. Missing state alone does not prove that the host was never deployed.
 
 Home-policy cleanup hooks, such as Dropbox conflicted-copy cleanup after update, MUST remain bounded to the literal
 paths named by active policy. A Dropbox path resolved through a symlink or platform-specific cloud-storage location is

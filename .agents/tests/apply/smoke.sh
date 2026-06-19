@@ -419,13 +419,21 @@ main() {
 
 	HOME=$home XDG_STATE_HOME=$refresh_state "$tilde" plan --repo "$repo" --mode refresh --platform linux --host "$host" >"$refresh_plan_json"
 	HOME=$home XDG_STATE_HOME=$refresh_state "$tilde" apply --plan "$refresh_plan_json" >"$refresh_apply_json"
-	[[ ! -f $refresh_state/tilde/state.yml ]]
+	[[ -f $refresh_state/tilde/state.yml ]]
+	[[ -L $home/.config/app/source.txt ]]
+	grep -Fxq 'post' "$home/post-install"
 
-	REFRESH_APPLY_JSON=$refresh_apply_json ruby -rjson -e '
+	REFRESH_APPLY_JSON=$refresh_apply_json REFRESH_STATE_FILE=$refresh_state/tilde/state.yml HEAD=$head ruby -rjson -ryaml -e '
 		apply = JSON.parse(File.read(ENV.fetch("REFRESH_APPLY_JSON"), encoding: "UTF-8"))
 		abort "refresh apply should complete" unless apply.fetch("completed")
+		abort "refresh should run install" unless apply.fetch("results").any? { |result| result.fetch("action_id") == "public/section:section:Install" }
+		abort "refresh should run post install" unless apply.fetch("results").any? { |result| result.fetch("action_id") == "public/section:section:Post Install" && result.fetch("status") == "ok" }
 		abort "refresh should run configure" unless apply.fetch("results").any? { |result| result.fetch("action_id") == "public/section:section:Configure" }
+		state = YAML.safe_load(File.read(ENV.fetch("REFRESH_STATE_FILE"), encoding: "UTF-8"))
+		abort "refresh should advance public anchor" unless state.fetch("applied").fetch("public") == ENV.fetch("HEAD")
 	'
+	rm -rf "$home/.config" "$home/shared"
+	rm -f "$home/.profile" "$home/post-install" "$home/configure" "$home/ordered-configure"
 
 	mkdir -p "$home/.config/app"
 	printf 'unmanaged\n' >"$home/.config/app/source.txt"
