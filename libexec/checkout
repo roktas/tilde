@@ -55,6 +55,31 @@ check_pushed() {
 		abort "branch is not at upstream: $branch ($commit != $upstream $upstream_commit)"
 }
 
+display_path() {
+	local path=$1
+
+	local home_alias='~'
+
+	case $path in
+	"$HOME")
+		printf '%s' "$home_alias"
+		;;
+	"$HOME"/*)
+		printf '%s/%s' "$home_alias" "${path#"$HOME"/}"
+		;;
+	*)
+		printf '%s' "$path"
+		;;
+	esac
+}
+
+empty_dir() {
+	local dir=$1
+
+	[[ -d $dir ]] || return 1
+	[[ -z $(find "$dir" -mindepth 1 -maxdepth 1 -print -quit) ]]
+}
+
 ensure_parent() {
 	local path=$1
 
@@ -62,6 +87,22 @@ ensure_parent() {
 
 	parent=$(dirname -- "$path")
 	mkdir -p "$parent"
+}
+
+expand_path() {
+	local path=$1
+
+	case $path in
+	\~)
+		printf '%s\n' "$HOME"
+		;;
+	\~/*)
+		printf '%s/%s\n' "$HOME" "${path#\~/}"
+		;;
+	*)
+		printf '%s\n' "$path"
+		;;
+	esac
 }
 
 ensure_remote() {
@@ -114,7 +155,7 @@ receive_bundle() {
 	[[ -r $bundle ]] || abort "bundle is missing or unreadable: $bundle"
 	checkout_ref="refs/tilde/checkout/$branch"
 
-	if [[ -e $repo && ! -d $repo/.git ]]; then
+	if [[ -e $repo && ! -d $repo/.git ]] && ! empty_dir "$repo"; then
 		abort "target exists but is not a Git checkout: $repo"
 	fi
 
@@ -159,6 +200,147 @@ remote_bundle_path() {
 	name=${repo##*/}
 	slug=$(printf '%s-%s' "$name" "$branch" | tr -c 'A-Za-z0-9_.-' '_')
 	printf '/tmp/tilde-checkout-%s-%s.bundle\n' "$slug" "$$"
+}
+
+runtime_link() {
+	local source=$1
+	local target=$2
+	local expected=$3
+
+	local current
+	local source_commit
+	local source_status
+	local target_status
+
+	[[ -d $source/.git ]] || abort "source is not a Git checkout: $source"
+	[[ -x $source/bin/tilde ]] || abort "source is missing bin/tilde: $source"
+	source_commit=$(git -C "$source" rev-parse HEAD) || abort "source has no commit: $source"
+	source_status=$(git -C "$source" status --porcelain=v1 --untracked-files=no) || abort "source status failed: $source"
+	[[ -z $source_status ]] || abort "source is dirty: $source"
+	[[ -z $expected || $source_commit == "$expected" ]] || abort "source commit mismatch: $source_commit != $expected"
+
+	if [[ -L $target ]]; then
+		current=$(readlink "$target")
+		if [[ $current == "$source" || $current == "$(display_path "$source")" ]]; then
+			printf 'OK: runtime link %s -> %s\n' "$(display_path "$target")" "$(display_path "$source")"
+			return
+		fi
+		abort "target symlink points elsewhere: $target -> $current"
+	fi
+
+	if [[ -e $target ]]; then
+		if [[ -d $target/.git ]]; then
+			target_status=$(git -C "$target" status --porcelain=v1 --untracked-files=no) ||
+				abort "target status failed: $target"
+			[[ -z $target_status ]] || abort "target checkout is dirty: $target"
+			[[ -x $target/bin/tilde ]] || abort "target checkout is not a runtime checkout: $target"
+		elif ! empty_dir "$target"; then
+			abort "target exists but is not a clean runtime checkout: $target"
+		fi
+		rm -rf -- "$target"
+	fi
+
+	ensure_parent "$target"
+	ln -s "$source" "$target"
+	printf 'OK: runtime link %s -> %s\n' "$(display_path "$target")" "$(display_path "$source")"
+}
+
+runtime_link_local() {
+	local source=$1
+	local target=$2
+	local expected=$3
+
+	source=$(expand_path "$source")
+	target=$(expand_path "$target")
+	runtime_link "$source" "$target" "$expected"
+}
+
+runtime_link_remote() {
+	local host=$1
+	local source=$2
+	local target=$3
+	local expected=$4
+
+	"$(tilde_root)/bin/tilde" ssh --no-root "$host" -- "$source" "$target" "$expected" <<'SH'
+source_path=$1
+target_path=$2
+expected=$3
+
+case $source_path in
+\~)
+	source_path=$HOME
+	;;
+\~/*)
+	source_path=$HOME/${source_path#\~/}
+	;;
+esac
+case $target_path in
+\~)
+	target_path=$HOME
+	;;
+\~/*)
+	target_path=$HOME/${target_path#\~/}
+	;;
+esac
+
+abort() {
+	printf 'E: %s\n' "$*" >&2
+	exit 1
+}
+
+display_path() {
+	case $1 in
+	"$HOME")
+		printf '~'
+		;;
+	"$HOME"/*)
+		printf '~/%s' "${1#"$HOME"/}"
+		;;
+	*)
+		printf '%s' "$1"
+		;;
+	esac
+}
+
+empty_dir() {
+	[ -d "$1" ] || return 1
+	[ -z "$(find "$1" -mindepth 1 -maxdepth 1 -print -quit)" ]
+}
+
+[ -d "$source_path/.git" ] || abort "source is not a Git checkout: $source_path"
+[ -x "$source_path/bin/tilde" ] || abort "source is missing bin/tilde: $source_path"
+command -v git >/dev/null 2>&1 || abort "git is missing"
+source_commit=$(git -C "$source_path" rev-parse HEAD) || abort "source has no commit: $source_path"
+source_status=$(git -C "$source_path" status --porcelain=v1 --untracked-files=no) || abort "source status failed: $source_path"
+[ -z "$source_status" ] || abort "source is dirty: $source_path"
+if [ -n "$expected" ] && [ "$source_commit" != "$expected" ]; then
+	abort "source commit mismatch: $source_commit != $expected"
+fi
+
+if [ -L "$target_path" ]; then
+	current=$(readlink "$target_path")
+	if [ "$current" = "$source_path" ] || [ "$current" = "$(display_path "$source_path")" ]; then
+		printf 'OK: runtime link %s -> %s\n' "$(display_path "$target_path")" "$(display_path "$source_path")"
+		exit 0
+	fi
+	abort "target symlink points elsewhere: $target_path -> $current"
+fi
+
+if [ -e "$target_path" ]; then
+	if [ -d "$target_path/.git" ]; then
+		target_status=$(git -C "$target_path" status --porcelain=v1 --untracked-files=no) || abort "target status failed: $target_path"
+		[ -z "$target_status" ] || abort "target checkout is dirty: $target_path"
+		[ -x "$target_path/bin/tilde" ] || abort "target checkout is not a runtime checkout: $target_path"
+	elif ! empty_dir "$target_path"; then
+		abort "target exists but is not a clean runtime checkout: $target_path"
+	fi
+	rm -rf "$target_path"
+fi
+
+mkdir -p "$(dirname -- "$target_path")"
+ln -s "$source_path" "$target_path"
+printf 'OK: runtime link %s -> %s\n' "$(display_path "$target_path")" "$(display_path "$source_path")"
+SH
 }
 
 tilde_root() {
@@ -347,6 +529,11 @@ abort() {
 	exit 1
 }
 
+empty_dir() {
+	[ -d "$1" ] || return 1
+	[ -z "$(find "$1" -mindepth 1 -maxdepth 1 -print -quit)" ]
+}
+
 repo=$1
 bundle=$2
 branch=$3
@@ -360,7 +547,7 @@ if [ ! -r "$bundle" ]; then
 	abort "bundle is missing or unreadable: $bundle"
 fi
 
-if [ -e "$repo" ] && [ ! -d "$repo/.git" ]; then
+if [ -e "$repo" ] && [ ! -d "$repo/.git" ] && ! empty_dir "$repo"; then
 	abort "target exists but is not a Git checkout: $repo"
 fi
 
@@ -416,6 +603,69 @@ SH
 	trap - EXIT HUP INT QUIT TERM
 }
 
+command.runtime-link() {
+	local expected=
+	local host=
+	local source=
+	local target=\~/.agents/skills/tilde
+
+	while (($# > 0)); do
+		case $1 in
+		--help | -h)
+			usage_runtime_link
+			return
+			;;
+		--expected)
+			(($# > 1)) || abort "--expected needs a commit"
+			expected=$2
+			shift 2
+			;;
+		--expected=*)
+			expected=${1#*=}
+			shift
+			;;
+		--host)
+			(($# > 1)) || abort "--host needs a value"
+			host=$2
+			shift 2
+			;;
+		--host=*)
+			host=${1#*=}
+			shift
+			;;
+		--source)
+			(($# > 1)) || abort "--source needs a path"
+			source=$2
+			shift 2
+			;;
+		--source=*)
+			source=${1#*=}
+			shift
+			;;
+		--target)
+			(($# > 1)) || abort "--target needs a path"
+			target=$2
+			shift 2
+			;;
+		--target=*)
+			target=${1#*=}
+			shift
+			;;
+		*)
+			abort "unknown runtime-link option: $1"
+			;;
+		esac
+	done
+
+	[[ -n $source ]] || abort "runtime-link requires --source SOURCE"
+
+	if [[ -n $host ]]; then
+		runtime_link_remote "$host" "$source" "$target" "$expected"
+	else
+		runtime_link_local "$source" "$target" "$expected"
+	fi
+}
+
 # ------------------------------------------------------------------------------------------------------------------------
 # Main
 # ------------------------------------------------------------------------------------------------------------------------
@@ -426,6 +676,7 @@ usage() {
 		  checkout pack --repo REPO --bundle BUNDLE [--branch BRANCH] [--allow-unpushed]
 		  checkout receive --repo TARGET --bundle BUNDLE [--branch BRANCH] [--remote NAME] [--origin URL] [--replace-clean]
 		  checkout remote --host HOST --repo REPO --target TARGET [--branch BRANCH] [--remote NAME] [--origin URL] [--allow-unpushed] [--replace-clean]
+		  checkout runtime-link --source SOURCE [--target TARGET] [--expected COMMIT] [--host HOST]
 	EOF
 }
 
@@ -453,6 +704,14 @@ usage_remote() {
 	EOF
 }
 
+usage_runtime_link() {
+	cat <<-EOF
+		Usage: checkout runtime-link --source SOURCE [--target TARGET] [--expected COMMIT] [--host HOST]
+
+		Replace a clean runtime checkout with a symlink to a current source checkout.
+	EOF
+}
+
 main() {
 	local command
 
@@ -465,7 +724,7 @@ main() {
 	--help)
 		usage
 		;;
-	pack | receive | remote)
+	pack | receive | remote | runtime-link)
 		command=$1
 		shift
 		"command.$command" "$@"

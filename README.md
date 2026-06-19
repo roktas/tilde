@@ -4,6 +4,12 @@ Tilde is an agent skill and control plane for reconciling a host with desired st
 repositories. The canonical contract is [references/specification.md](references/specification.md). That specification
 defines the stateless provisioning model used by the skill and runtime helpers.
 
+- Tilde primarily targets Linux and macOS hosts.
+- After the base system bootstrap, most user tools are installed with Homebrew on both platforms.
+- Linux desktop hosts additionally use Flatpak for desktop applications that are better managed outside Homebrew.
+- The skill has been developed with Codex 5.5, but its workflow, guardrails, and deterministic helper routes are tuned
+  for day-to-day use with Deepseek Flash V4, especially the max variant.
+
 ## Install
 
 Install this repository as the Tilde skill:
@@ -17,6 +23,10 @@ Local development may point the installed skill path directly at this checkout:
 ```text
 ~/.agents/skills/tilde -> ~/Dropbox/tilde
 ```
+
+On Dropbox-backed interactive hosts, that symlink is also the steady-state runtime shape. A Git checkout cloned directly
+under `~/.agents/skills/tilde` is only a provisional bootstrap or freshness runtime until `~/Dropbox/tilde` is present,
+clean, executable, and current.
 
 Managed user installs may use the Tilde package declaration:
 
@@ -148,16 +158,25 @@ Successful Tilde-generated `refresh` plans advance `applied` anchors after every
 seeds, and resets. Use `repair` when the intent is desired-state convergence without package refreshes, package
 upgrades, or `Update` sections.
 
-For mutating remote workflows, verify target runtime freshness before the first target status read. If the target
-`~/.agents/skills/tilde` checkout is stale, refresh it from the controller checkout before running target `tilde status`,
-`tilde plan`, or `tilde apply`. On Git-backed remote hosts, also refresh stale public/private target checkouts from the
-controller repositories before planning. If a stale target runtime or checkout cannot be safely refreshed, stop with
-`deferred`. Status paths outside the `state.yml` model, such as `config.yml` or `hosts/HOST/state.md`, mean stale target
-runtime, not successful state recovery. Use `checkout remote` with `--host`, `--repo`, and `--target`; the route does
-not infer bindings from `--host`. Runtime freshness maps the loaded skill root to target `~/.agents/skills/tilde`;
-desired-state freshness maps the selected data repository to the target binding. Quote target paths that start with `~`
-so the controller shell does not expand them before the remote receives the path. Use `--replace-clean` only for a clean
-runtime checkout with divergent history, not for desired-state checkouts without explicit operator approval.
+For mutating remote workflows, first run:
+
+```sh
+"$TILDE" preflight remote HOST --format json
+```
+
+The JSON result is the source of truth for the initial bootstrap decision (`bootstrap.needed`), repository backend
+(`backend`), runtime state, Dropbox runtime state, sudo cleanup state, and next steps. If the target
+`~/.agents/skills/tilde` checkout is stale, refresh it from the controller checkout before running target
+`tilde status`, `tilde plan`, or `tilde apply`. On Dropbox-backed hosts, prefer converting a clean matching provisional
+runtime checkout into `~/.agents/skills/tilde -> ~/Dropbox/tilde` with `checkout runtime-link` once the Dropbox checkout
+is current. On Git-backed remote hosts, also refresh stale public/private target checkouts from the controller
+repositories before planning. If a stale target runtime or checkout cannot be safely refreshed, stop with `deferred`.
+Status paths outside the `state.yml` model, such as `config.yml` or `hosts/HOST/state.md`, mean stale target runtime,
+not successful state recovery. Use `checkout remote` with `--host`, `--repo`, and `--target`; the route does not infer
+bindings from `--host`. Runtime freshness maps the loaded skill root to target `~/.agents/skills/tilde`; desired-state
+freshness maps the selected data repository to the target binding. Quote target paths that start with `~` so the
+controller shell does not expand them before the remote receives the path. Use `--replace-clean` only for a clean runtime
+checkout with divergent history, not for desired-state checkouts without explicit operator approval.
 For Git-backed targets, controller-side Dropbox paths are source paths, not target paths; do not create target-side
 `~/Dropbox` for repository binding, cleanup, shared app state, or convenience paths unless active target policy says the
 host has Dropbox-backed storage.

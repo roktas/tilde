@@ -32,8 +32,8 @@ When the user invokes a Tilde prompt such as `/tilde <command> [target] [qualifi
    `ALL`, `HOME`, or `WORK`.
 4. Classify the command from the Command Reference below.
 5. Map agent-orchestrated commands to the Workflow Matrix before running helpers.
-6. For remote targets, run the Remote Freshness Preflight before reading target state, generating plans, or applying
-   results.
+6. For remote targets, run `"$TILDE" preflight remote HOST --format json` before reading target state, generating
+   plans, or applying results.
 7. Use the resolved runtime entrypoint for script delivery. Generate plans, run live checks, and apply results on the
    target host, not on the controller.
 8. Keep proposal-first behavior for destructive, preference-sensitive, privilege-requiring, or remote mutations.
@@ -204,8 +204,34 @@ apply returns `deferred`, `conflict`, or `notok`, anchors stay unchanged and the
 ### Remote Freshness Preflight
 
 Remote Freshness Preflight is the first remote workflow step. Before any remote `status`, `plan`, `apply`, or
-state-recovery decision, confirm that the target runtime is current. The controller-side loaded skill is the source for
-the expected Tilde runtime commit.
+state-recovery decision, run the deterministic controller-side preflight route:
+
+```bash
+TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
+"$TILDE" preflight remote spinoza --format json
+```
+
+The route does not require a working target Tilde runtime. It uses Tilde SSH transport without target runtime injection
+and returns one JSON document that classifies reachability, bootstrap baseline, repository backend, target runtime,
+Dropbox runtime, target state, repository bindings, sudo state, controller runtime commit, and `next` steps.
+
+Use `bootstrap.needed` and `next` from this JSON for the initial bootstrap decision. Do not infer bootstrap need from
+free-form logs, guessed package state, or controller-side state. The bootstrap baseline is intentionally small:
+Homebrew, `curl`, `git`, and `ruby` must be usable on the target.
+
+For Dropbox-backed interactive hosts, the durable runtime shape is:
+
+```text
+~/.agents/skills/tilde -> ~/Dropbox/tilde
+```
+
+A clean clone at `~/.agents/skills/tilde` is only a provisional bootstrap or freshness runtime. Convert it with
+`"$TILDE" checkout runtime-link --host HOST --source '~/Dropbox/tilde' --target '~/.agents/skills/tilde' --expected COMMIT`
+only when the preflight JSON shows the Dropbox runtime exists, is a Git checkout, has executable `bin/tilde`, is clean,
+and matches the controller runtime commit. If the Dropbox checkout is absent, dirty, missing `bin/tilde`, or stale,
+defer the symlink conversion instead of replacing it with a controller bundle.
+
+The controller-side loaded skill is the source for the expected Tilde runtime commit.
 
 For mutating remote prompt workflows such as `deploy`, `update`, `repair`, `upgrade`, and remote `align`:
 
@@ -227,6 +253,8 @@ For mutating remote prompt workflows such as `deploy`, `update`, `repair`, `upgr
   stop with `deferred`.
 - On Dropbox-backed remote hosts, do not replace synced repositories with controller bundles; report stale or unsynced
   target checkouts as `deferred` unless the user asks for a Git-backed checkout refresh.
+- If preflight reports `cleanup-sudoers`, run `"$TILDE" sudo cleanup --host HOST` after the privilege-dependent workflow
+  no longer needs the temporary handoff rule, then verify the next preflight no longer reports it.
 
 When using `checkout remote`, always pass the complete source and target binding. For target runtime freshness, the
 controller repository is the loaded skill root and the target is `~/.agents/skills/tilde`:

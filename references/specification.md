@@ -1041,14 +1041,45 @@ Tilde SSH transport loads non-secret `~/.config/environment.d/*.conf` values bef
 load shell credentials.
 
 The remote freshness preflight is the first remote workflow step. Before reading target state, generating plans, applying
-plans, or deciding state-recovery mode, agents MUST perform it.
+plans, or deciding state-recovery mode, agents MUST perform it with the deterministic controller-side route:
+
+```text
+"$TILDE" preflight remote HOST --format json
+```
+
+The route MUST NOT require the target `~/.agents/skills/tilde` runtime to exist or be current. It uses Tilde SSH
+transport without injecting a target runtime and returns one JSON document that classifies reachability, bootstrap
+baseline, repository backend, target runtime, Dropbox runtime, target state, repository bindings, sudo state, controller
+runtime commit, and next steps.
+
+Agents MUST use `bootstrap.needed` and `next` from this JSON for the initial bootstrap decision. They MUST NOT infer
+bootstrap need from free-form logs, guessed package state, or controller-side state. The bootstrap baseline is
+intentionally small: Homebrew, `curl`, `git`, and `ruby` must be usable on the target.
 
 Remote freshness preflight checks:
 
 - the target `~/.agents/skills/tilde` runtime commit matches the controller-side loaded Tilde runtime commit,
+- on Dropbox-backed interactive hosts, whether the durable runtime symlink can be used,
 - Git-backed target desired-state checkouts match the controller-side public/private repositories selected for the run,
 - target checkouts are clean before any controller bundle is applied,
 - Dropbox-backed target repositories are not replaced with controller bundles unless explicitly requested.
+
+For Dropbox-backed interactive hosts, the durable runtime shape is:
+
+```text
+~/.agents/skills/tilde -> ~/Dropbox/tilde
+```
+
+A clean clone at `~/.agents/skills/tilde` is only a provisional bootstrap or freshness runtime. Agents MAY convert it
+with:
+
+```text
+"$TILDE" checkout runtime-link --host HOST --source '~/Dropbox/tilde' --target '~/.agents/skills/tilde' --expected COMMIT
+```
+
+only when preflight shows the Dropbox runtime exists, is a Git checkout, has executable `bin/tilde`, is clean, and
+matches the controller runtime commit. If the Dropbox checkout is absent, dirty, missing `bin/tilde`, or stale, agents
+MUST defer symlink conversion instead of replacing it with a controller bundle.
 
 For mutating remote prompt workflows such as `deploy`, `update`, `repair`, `upgrade`, and remote `align`, a stale
 Git-backed target runtime or desired-state checkout SHOULD be refreshed from the controller checkout with the
@@ -1094,6 +1125,15 @@ target is the target host's bound checkout:
 Agents MUST NOT call `checkout remote` with only `--host`. The route cannot infer repository bindings from a host name.
 Agents MUST quote target paths that start with `~` so the controller shell does not expand them before delivery to the
 remote host.
+
+If the preflight JSON reports a temporary `/etc/sudoers.d/tilde` rule, agents SHOULD remove it after the
+privilege-dependent workflow no longer needs it:
+
+```text
+"$TILDE" sudo cleanup --host HOST
+```
+
+The cleanup is complete only when the following preflight no longer reports the rule.
 
 For read-only remote workflows such as `status` and `doctor`, a stale target runtime is reported as a stale-runtime
 condition. It is not permission to mutate the remote host.

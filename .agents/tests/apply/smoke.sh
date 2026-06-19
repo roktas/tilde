@@ -109,6 +109,17 @@ case "$*" in
 	;;
 esac
 EOF
+	cat >"$bindir/sudo" <<'EOF'
+#!/usr/bin/env sh
+case "$*" in
+"-n env DEBIAN_FRONTEND=noninteractive apt-get update" | "-n env DEBIAN_FRONTEND=noninteractive apt-get upgrade -y")
+	;;
+*)
+	printf 'unexpected sudo command: %s\n' "$*" >&2
+	exit 9
+	;;
+esac
+EOF
 	cat >"$bindir/systemctl" <<'EOF'
 #!/usr/bin/env sh
 case "$*" in
@@ -418,7 +429,7 @@ main() {
 	printf 'local environment\n' >"$repo/.envrc"
 
 	HOME=$home XDG_STATE_HOME=$refresh_state "$tilde" plan --repo "$repo" --mode refresh --platform linux --host "$host" >"$refresh_plan_json"
-	HOME=$home XDG_STATE_HOME=$refresh_state "$tilde" apply --plan "$refresh_plan_json" >"$refresh_apply_json"
+	HOME=$home XDG_STATE_HOME=$refresh_state PATH=$fake_bin:$PATH "$tilde" apply --plan "$refresh_plan_json" >"$refresh_apply_json"
 	[[ -f $refresh_state/tilde/state.yml ]]
 	[[ -L $home/.config/app/source.txt ]]
 	grep -Fxq 'post' "$home/post-install"
@@ -534,7 +545,7 @@ EOF
 		abort "stale link removal should keep old link value" unless unlink.fetch("link_value").end_with?("/app/source.txt")
 	'
 
-	HOME=$home XDG_STATE_HOME=$state "$tilde" apply --plan "$stale_plan_json" >"$stale_apply_json"
+	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH "$tilde" apply --plan "$stale_plan_json" >"$stale_apply_json"
 	[[ ! -L $home/.config/app/source.txt ]]
 	[[ -L $home/.config/app/shared ]]
 

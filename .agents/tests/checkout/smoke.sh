@@ -75,10 +75,12 @@ main() {
 	local bad_trap
 	local bundle
 	local err
+	local link_target
 	local script_dir
 	local skill_root
 	local source
 	local replacement
+	local runtime_source
 	local target
 	local tilde
 	local tmpdir
@@ -96,18 +98,22 @@ main() {
 	err=$tmpdir/checkout.err
 	source=$tmpdir/source/home-
 	replacement=$tmpdir/source/replacement
+	runtime_source=$tmpdir/runtime/source
 	target=$tmpdir/target/home-
+	link_target=$tmpdir/runtime/tilde
 
 	write_private_repo "$source"
 	"$tilde" checkout pack --help | grep -q "checkout pack"
 	"$tilde" checkout receive --help | grep -q "checkout receive"
 	"$tilde" checkout remote --help | grep -q "checkout remote"
+	"$tilde" checkout runtime-link --help | grep -q "checkout runtime-link"
 	git init -q --bare "$bare"
 	git -C "$bare" symbolic-ref HEAD refs/heads/main
 	git -C "$source" remote add origin "$bare"
 	git -C "$source" push -q -u origin main
 
 	pack "$tilde" "$source" "$bundle"
+	mkdir -p "$target"
 	"$tilde" checkout receive --repo "$target" --bundle "$bundle" --origin "$bare"
 	grep -qx one "$target/value.txt"
 	git -C "$target" rev-parse --abbrev-ref --symbolic-full-name '@{u}' | grep -qx origin/main
@@ -154,6 +160,19 @@ main() {
 	grep -q "target cannot fast-forward" "$err"
 	"$tilde" checkout receive --repo "$target" --bundle "$bundle" --origin "$bare" --replace-clean
 	grep -qx replacement "$target/value.txt"
+
+	git clone -q "$skill_root" "$runtime_source"
+	git -C "$runtime_source" checkout -q "$(git -C "$skill_root" rev-parse HEAD)"
+	git clone -q "$runtime_source" "$link_target"
+	git -C "$link_target" checkout -q "$(git -C "$runtime_source" rev-parse HEAD)"
+	git -C "$runtime_source" config user.email smoke@example.invalid
+	git -C "$runtime_source" config user.name Smoke
+	printf 'runtime source\n' >"$runtime_source/.runtime-source"
+	git -C "$runtime_source" add .runtime-source
+	git -C "$runtime_source" commit -q -m runtime-source
+	"$tilde" checkout runtime-link --source "$runtime_source" --target "$link_target" --expected "$(git -C "$runtime_source" rev-parse HEAD)"
+	[[ -L $link_target ]]
+	[[ $(readlink "$link_target") == "$runtime_source" ]]
 }
 
 main "$@"

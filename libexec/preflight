@@ -110,6 +110,463 @@ check_repo() {
 	printf 'OK: %s\n' "$repo"
 }
 
+remote_preflight() {
+	local format=json
+	local host=
+	local root
+
+	local err
+	local out
+	local status
+
+	while (($# > 0)); do
+		case $1 in
+		--format)
+			(($# > 1)) || {
+				warn "E: --format needs a value"
+				return 2
+			}
+			format=$2
+			shift 2
+			;;
+		--format=*)
+			format=${1#*=}
+			shift
+			;;
+		--host)
+			(($# > 1)) || {
+				warn "E: --host needs a value"
+				return 2
+			}
+			host=$2
+			shift 2
+			;;
+		--host=*)
+			host=${1#*=}
+			shift
+			;;
+		--)
+			shift
+			[[ -z $host && $# -gt 0 ]] || break
+			host=$1
+			shift
+			break
+			;;
+		-*)
+			warn "E: unknown remote preflight option: $1"
+			return 2
+			;;
+		*)
+			[[ -z $host ]] || {
+				warn "E: too many remote preflight hosts"
+				return 2
+			}
+			host=$1
+			shift
+			;;
+		esac
+	done
+
+	[[ -n $host ]] || {
+		warn "E: remote preflight needs HOST"
+		return 2
+	}
+	[[ $format == json ]] || {
+		warn "E: only json remote preflight format is supported"
+		return 2
+	}
+
+	root=$(cd -- "${BASH_SOURCE[0]%/*}/.." >/dev/null && pwd)
+	out=$(mktemp) || exit
+	err=$(mktemp) || exit
+	trap 'rm -f "'"$out"'" "'"$err"'"' RETURN
+
+	set +e
+	"$root/bin/tilde" ssh --no-root "$host" >"$out" 2>"$err" <<'SH'
+emit() {
+	printf '%s\t%s\n' "$1" "${2:-}"
+}
+
+display_path() {
+	case ${1:-} in
+	"$HOME")
+		printf '~'
+		;;
+	"$HOME"/*)
+		printf '~/%s' "${1#"$HOME"/}"
+		;;
+	*)
+		printf '%s' "${1:-}"
+		;;
+	esac
+}
+
+expand_path() {
+	case ${1:-} in
+	\~)
+		printf '%s' "$HOME"
+		;;
+	\~/*)
+		printf '%s/%s' "$HOME" "${1#\~/}"
+		;;
+	*)
+		printf '%s' "${1:-}"
+		;;
+	esac
+}
+
+find_brew() {
+	if command -v brew >/dev/null 2>&1; then
+		command -v brew
+		return
+	fi
+
+	for candidate in /opt/homebrew/bin/brew /usr/local/bin/brew "$HOME/.linuxbrew/bin/brew" /home/linuxbrew/.linuxbrew/bin/brew; do
+		[ -x "$candidate" ] || continue
+		printf '%s\n' "$candidate"
+		return
+	done
+}
+
+read_state_value() {
+	key=$1
+	file=$2
+	sed -n "s/^$key:[[:space:]]*//p" "$file" 2>/dev/null | head -n 1 | sed 's/^"//; s/"$//'
+}
+
+repo_probe() {
+	prefix=$1
+	path=$2
+	expanded=$(expand_path "$path")
+
+	emit "repo_${prefix}_path" "$(display_path "$expanded")"
+	if [ -d "$expanded" ]; then
+		emit "repo_${prefix}_exists" true
+	else
+		emit "repo_${prefix}_exists" false
+		emit "repo_${prefix}_git" false
+		return
+	fi
+
+	if [ -d "$expanded/.git" ]; then
+		emit "repo_${prefix}_git" true
+	else
+		emit "repo_${prefix}_git" false
+		return
+	fi
+
+	if command -v git >/dev/null 2>&1; then
+		emit "repo_${prefix}_commit" "$(git -C "$expanded" rev-parse HEAD 2>/dev/null || true)"
+		if [ -n "$(git -C "$expanded" status --porcelain=v1 --untracked-files=no 2>/dev/null)" ]; then
+			emit "repo_${prefix}_dirty" true
+		else
+			emit "repo_${prefix}_dirty" false
+		fi
+	fi
+}
+
+selected_backend() {
+	path=$(expand_path "$1")
+	case $path in
+	"$HOME"/Dropbox/*)
+		printf 'dropbox'
+		;;
+	"$HOME"/.local/src/*)
+		printf 'git'
+		;;
+	"")
+		printf 'unknown'
+		;;
+	*)
+		printf 'custom'
+		;;
+	esac
+}
+
+emit host "$(hostname -f 2>/dev/null || hostname 2>/dev/null || true)"
+emit platform "$(uname -s 2>/dev/null | tr '[:upper:]' '[:lower:]')"
+
+brew=$(find_brew || true)
+emit brew_path "$brew"
+if [ -n "$brew" ] && "$brew" --prefix >/dev/null 2>&1; then
+	emit brew_ok true
+	emit brew_prefix "$("$brew" --prefix 2>/dev/null || true)"
+else
+	emit brew_ok false
+fi
+
+for tool in curl git ruby; do
+	if command -v "$tool" >/dev/null 2>&1; then
+		emit "${tool}_path" "$(command -v "$tool")"
+		emit "${tool}_present" true
+	else
+		emit "${tool}_present" false
+	fi
+done
+
+if [ "$brew" ] && "$brew" --prefix >/dev/null 2>&1 && command -v curl >/dev/null 2>&1 && command -v git >/dev/null 2>&1 && command -v ruby >/dev/null 2>&1; then
+	emit bootstrap_needed false
+	emit bootstrap_reason ok
+else
+	emit bootstrap_needed true
+	emit bootstrap_reason baseline-missing
+fi
+
+runtime=$HOME/.agents/skills/tilde
+emit runtime_path "$(display_path "$runtime")"
+if [ -e "$runtime" ] || [ -L "$runtime" ]; then
+	emit runtime_exists true
+else
+	emit runtime_exists false
+fi
+if [ -L "$runtime" ]; then
+	emit runtime_symlink true
+	runtime_target=$(readlink "$runtime" 2>/dev/null || true)
+	emit runtime_target "$runtime_target"
+else
+	emit runtime_symlink false
+fi
+if [ -x "$runtime/bin/tilde" ]; then
+	emit runtime_bin true
+else
+	emit runtime_bin false
+fi
+if [ -d "$runtime/.git" ]; then
+	emit runtime_git true
+	if command -v git >/dev/null 2>&1; then
+		emit runtime_commit "$(git -C "$runtime" rev-parse HEAD 2>/dev/null || true)"
+		if [ -n "$(git -C "$runtime" status --porcelain=v1 --untracked-files=no 2>/dev/null)" ]; then
+			emit runtime_dirty true
+		else
+			emit runtime_dirty false
+		fi
+	fi
+else
+	emit runtime_git false
+fi
+
+dropbox_runtime=$HOME/Dropbox/tilde
+emit dropbox_runtime_path "$(display_path "$dropbox_runtime")"
+if [ -e "$dropbox_runtime" ]; then
+	emit dropbox_runtime_exists true
+else
+	emit dropbox_runtime_exists false
+fi
+if [ -x "$dropbox_runtime/bin/tilde" ]; then
+	emit dropbox_runtime_bin true
+else
+	emit dropbox_runtime_bin false
+fi
+if [ -d "$dropbox_runtime/.git" ]; then
+	emit dropbox_runtime_git true
+	if command -v git >/dev/null 2>&1; then
+		emit dropbox_runtime_commit "$(git -C "$dropbox_runtime" rev-parse HEAD 2>/dev/null || true)"
+		if [ -n "$(git -C "$dropbox_runtime" status --porcelain=v1 --untracked-files=no 2>/dev/null)" ]; then
+			emit dropbox_runtime_dirty true
+		else
+			emit dropbox_runtime_dirty false
+		fi
+	fi
+else
+	emit dropbox_runtime_git false
+fi
+if [ -L "$runtime" ] && { [ "$runtime_target" = "$dropbox_runtime" ] || [ "$runtime_target" = "$(display_path "$dropbox_runtime")" ]; }; then
+	emit runtime_dropbox_link true
+else
+	emit runtime_dropbox_link false
+fi
+
+state=$HOME/.local/state/tilde/state.yml
+emit state_path "$(display_path "$state")"
+if [ -r "$state" ]; then
+	emit state_present true
+	state_public=$(read_state_value public "$state")
+	state_private=$(read_state_value private "$state")
+	emit state_public "$state_public"
+	emit state_private "$state_private"
+	if grep -q '^applied:' "$state"; then
+		emit state_applied true
+	else
+		emit state_applied false
+	fi
+else
+	emit state_present false
+	emit state_applied false
+	state_public=
+	state_private=
+fi
+
+public=$state_public
+private=$state_private
+if [ -z "$public" ]; then
+	if [ -d "$HOME/Dropbox/home/.git" ]; then
+		public=~/Dropbox/home
+	elif [ -d "$HOME/.local/src/home/.git" ]; then
+		public=~/.local/src/home
+	fi
+fi
+if [ -z "$private" ]; then
+	if [ -d "$HOME/Dropbox/home-/.git" ]; then
+		private=~/Dropbox/home-
+	elif [ -d "$HOME/.local/src/home-/.git" ]; then
+		private=~/.local/src/home-
+	fi
+fi
+
+emit backend "$(selected_backend "$public")"
+repo_probe public "$public"
+repo_probe private "$private"
+
+if command -v sudo >/dev/null 2>&1; then
+	if sudo -n true >/dev/null 2>&1; then
+		emit sudo_noninteractive true
+	else
+		emit sudo_noninteractive false
+	fi
+else
+	emit sudo_noninteractive false
+fi
+if [ -e /etc/sudoers.d/tilde ] || { command -v sudo >/dev/null 2>&1 && sudo -n test -e /etc/sudoers.d/tilde 2>/dev/null; }; then
+	emit sudoers_tilde true
+else
+	emit sudoers_tilde false
+fi
+SH
+	status=$?
+	set -e
+
+	remote_preflight_json "$host" "$status" "$out" "$err"
+	rm -f "$out" "$err"
+	trap - RETURN
+	return "$status"
+}
+
+remote_preflight_json() {
+	local host=$1
+	local status=$2
+	local out=$3
+	local err=$4
+
+	ruby -rjson - "$host" "$status" "$out" "$err" "$(controller_runtime_commit)" <<'RUBY'
+host, status, out, err, controller_commit = ARGV
+raw = {}
+File.readlines(out, chomp: true).each do |line|
+  key, value = line.split("\t", 2)
+  raw[key] = value.to_s if key && !key.empty?
+end
+
+bool = ->(key) { raw[key] == "true" }
+repo = lambda do |name|
+  {
+    "path" => raw["repo_#{name}_path"],
+    "exists" => bool.call("repo_#{name}_exists"),
+    "git" => bool.call("repo_#{name}_git"),
+    "commit" => raw["repo_#{name}_commit"],
+    "dirty" => bool.call("repo_#{name}_dirty")
+  }.compact
+end
+
+runtime = {
+  "path" => raw["runtime_path"],
+  "exists" => bool.call("runtime_exists"),
+  "bin" => bool.call("runtime_bin"),
+  "symlink" => bool.call("runtime_symlink"),
+  "target" => raw["runtime_target"],
+  "dropbox_link" => bool.call("runtime_dropbox_link"),
+  "git" => bool.call("runtime_git"),
+  "commit" => raw["runtime_commit"],
+  "dirty" => bool.call("runtime_dirty")
+}.compact
+runtime["current"] = runtime["commit"] == controller_commit if runtime["commit"] && !controller_commit.empty?
+
+dropbox_runtime = {
+  "path" => raw["dropbox_runtime_path"],
+  "exists" => bool.call("dropbox_runtime_exists"),
+  "bin" => bool.call("dropbox_runtime_bin"),
+  "git" => bool.call("dropbox_runtime_git"),
+  "commit" => raw["dropbox_runtime_commit"],
+  "dirty" => bool.call("dropbox_runtime_dirty")
+}.compact
+dropbox_runtime["current"] = dropbox_runtime["commit"] == controller_commit if dropbox_runtime["commit"] && !controller_commit.empty?
+dropbox_runtime_ready = dropbox_runtime["exists"] &&
+  dropbox_runtime["git"] &&
+  dropbox_runtime["bin"] &&
+  dropbox_runtime["current"] &&
+  !dropbox_runtime["dirty"]
+
+next_steps = []
+if status.to_i != 0
+  next_steps << "fix-reachability"
+elsif bool.call("bootstrap_needed")
+  next_steps << "run-handoff" unless bool.call("sudo_noninteractive")
+  next_steps << "run-boot"
+else
+  if raw["backend"] == "dropbox" && dropbox_runtime_ready && !runtime["dropbox_link"]
+    next_steps << "link-dropbox-runtime"
+  elsif raw["backend"] == "dropbox" && dropbox_runtime["exists"] && !dropbox_runtime_ready
+    next_steps << "wait-for-dropbox-runtime"
+  end
+
+  if !runtime["git"] && runtime["exists"] && !runtime["dropbox_link"]
+    next_steps << "remove-or-replace-non-git-runtime"
+  elsif !runtime["current"] && !dropbox_runtime_ready
+    next_steps << "checkout-runtime"
+  end
+end
+next_steps << "use-target-dropbox-repositories" if raw["backend"] == "dropbox"
+next_steps << "refresh-git-backed-repositories" if raw["backend"] == "git"
+next_steps << "cleanup-sudoers" if bool.call("sudoers_tilde")
+
+data = {
+  "schema" => "tilde.remote-preflight/v1",
+  "host" => host,
+  "reachable" => status.to_i == 0,
+  "platform" => raw["platform"],
+  "backend" => raw["backend"] || "unknown",
+  "bootstrap" => {
+    "needed" => bool.call("bootstrap_needed"),
+    "reason" => raw["bootstrap_reason"],
+    "brew" => {"ok" => bool.call("brew_ok"), "path" => raw["brew_path"], "prefix" => raw["brew_prefix"]}.compact,
+    "curl" => {"present" => bool.call("curl_present"), "path" => raw["curl_path"]}.compact,
+    "git" => {"present" => bool.call("git_present"), "path" => raw["git_path"]}.compact,
+    "ruby" => {"present" => bool.call("ruby_present"), "path" => raw["ruby_path"]}.compact
+  },
+  "runtime" => runtime,
+  "dropbox_runtime" => dropbox_runtime,
+  "state" => {
+    "path" => raw["state_path"],
+    "present" => bool.call("state_present"),
+    "public" => raw["state_public"],
+    "private" => raw["state_private"],
+    "applied" => bool.call("state_applied")
+  }.compact,
+  "repositories" => {
+    "public" => repo.call("public"),
+    "private" => repo.call("private")
+  },
+  "sudo" => {
+    "noninteractive" => bool.call("sudo_noninteractive"),
+    "tilde_rule" => bool.call("sudoers_tilde")
+  },
+  "controller" => {
+    "runtime_commit" => controller_commit
+  },
+  "next" => next_steps
+}
+
+stderr = File.read(err)
+data["diagnostics"] = {"stderr" => stderr} unless stderr.empty?
+puts JSON.pretty_generate(data)
+RUBY
+}
+
+controller_runtime_commit() {
+	local root
+
+	root=$(cd -- "${BASH_SOURCE[0]%/*}/.." >/dev/null && pwd)
+	git -C "$root" rev-parse HEAD 2>/dev/null || true
+}
+
 warn() {
 	printf '%s\n' "$*" >&2
 }
@@ -121,6 +578,7 @@ warn() {
 usage() {
 	cat <<-EOF
 		Usage: preflight [--bootstrap auto|check|require|skip] [--require PATH] REPO...
+		       preflight remote HOST [--format json]
 	EOF
 }
 
@@ -130,6 +588,12 @@ main() {
 	local repo
 	local -a repos=()
 	local -a required=()
+
+	if [[ ${1:-} == remote ]]; then
+		shift
+		remote_preflight "$@"
+		return
+	fi
 
 	while (($# > 0)); do
 		case $1 in

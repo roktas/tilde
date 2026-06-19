@@ -205,6 +205,7 @@ print_command_help() {
 	case $name in
 	deploy | update | repair | upgrade)
 		printf '\nRemote note: generate and apply plans on the target host through Tilde SSH transport.\n'
+		printf 'Remote preflight note: first run `"$TILDE" preflight remote HOST --format json` to classify bootstrap, repository backend, runtime, and sudo cleanup state.\n'
 		printf 'Remote freshness note: before target status reads that gate a mutating workflow, plan, or apply, verify target runtime freshness and refresh stale Git-backed target checkouts; defer if they cannot be safely refreshed.\n'
 		printf 'Remote verification note: after successful mutating apply, run a final target status read before closeout.\n'
 		printf 'Remote state note: do not read controller `~/.local/state/tilde/state.yml`; target bindings and anchors come from the target host.\n'
@@ -248,7 +249,8 @@ print_help() {
 	printf 'Run Tilde reachability probes through `"$TILDE" ssh`; do not use raw `ssh` for Tilde remote workflow probes.\n'
 	printf 'For remote targets, generate plans and run live checks on the target host through Tilde SSH transport.\n'
 	printf 'Write plan JSON files under a per-run `mktemp -d` directory and clean them with `trap`; do not leave fixed `/tmp/opencode/...` plan files.\n'
-	printf 'Refresh/update mode does not advance `applied` anchors; report target HEAD separately from applied anchors.\n'
+	printf 'Successful Tilde-generated refresh/update plans may advance `applied` anchors; report target HEAD separately from applied anchors.\n'
+	printf 'Remote start route: run `"$TILDE" preflight remote HOST --format json` before target status, plan, or apply to classify bootstrap, repository backend, runtime, and sudo cleanup state.\n'
 	printf 'After remote runtime freshness is verified, read target `tilde status --format json` and use `state.public` / `state.private` as plan repository bindings.\n'
 	printf 'Bind remote plan repository paths to variables from target status JSON; do not retype host-convention paths in `plan --repo` commands.\n'
 	printf 'Remote align uses target-local `plan --mode align` plus `apply`; do not run `tilde align --format json` on a remote target.\n'
@@ -257,6 +259,7 @@ print_help() {
 	printf 'Remote script shell: default Tilde SSH uses POSIX `sh`; do not use Bash prelude, `pipefail`, `[[ ]]`, arrays, `source`, `local`, or `-- bash` for ordinary status, plan, apply, and verification scripts.\n'
 	printf 'For mutating remote workflows, verify target runtime freshness before target status reads, plan, or apply; refresh stale Git-backed target checkouts first, or defer.\n'
 	printf 'Runtime freshness checkout maps the loaded skill root to target `~/.agents/skills/tilde`; desired-state checkout maps the selected data repo to the target binding. Quote target paths that start with `~`.\n'
+	printf 'Dropbox-backed runtime steady state is `~/.agents/skills/tilde -> ~/Dropbox/tilde`; cloned runtime checkouts are provisional bootstrap/freshness fallback until the Dropbox checkout is present, clean, executable, and current.\n'
 	printf 'For Git-backed targets, controller-side Dropbox paths are source paths, not target paths; do not create target-side `~/Dropbox` unless active target policy says the host has Dropbox-backed storage.\n'
 	printf 'Remote freshness checkout route: use `"$TILDE" checkout remote --host HOST --repo CONTROLLER_REPO --target TARGET_REPO`; never call it with only `--host`. Use `--replace-clean` only for clean runtime checkout history replacement, not desired-state checkout replacement without explicit approval.\n'
 	printf 'For update targets with missing `state.yml` or no `applied` anchors, use `plan --mode repair` for state recovery instead of refresh; missing state is not proof the host was never deployed.\n'

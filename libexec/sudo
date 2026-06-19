@@ -110,18 +110,15 @@ handoff_script() {
 	local root_word
 
 	root_word=$(shell_double_quote "$root")
-	printf 'root=%s; ' "$root_word"
-	printf 'if [ "$root" = "~" ]; then root=$HOME; else case $root in "~/"*) root=$HOME/${root#~/};; esac; fi; '
-	printf 'if [ -x "$root/bin/tilde" ]; then exec "$root/bin/tilde" sudo allow; fi; '
-	printf 'user=$(id -un) || exit 1; '
-	printf 'tmp=$(mktemp) || exit 1; '
-	printf 'trap "rm -f \\"$tmp\\"" EXIT HUP INT QUIT TERM; '
-	printf 'printf "%%s ALL=(ALL) NOPASSWD:ALL\\n" "$user" >"$tmp" || exit 1; '
-	printf 'sudo visudo -cf "$tmp" >/dev/null || exit 1; '
-	printf 'sudo install -m 0440 "$tmp" /etc/sudoers.d/tilde || exit 1; '
-	printf 'if ! sudo visudo -cf /etc/sudoers.d/tilde >/dev/null; then sudo rm -f /etc/sudoers.d/tilde; exit 1; fi; '
-	printf 'printf "OK: installed /etc/sudoers.d/tilde for %%s\\n" "$user"; '
-	printf 'printf "Cleanup: sudo rm -f /etc/sudoers.d/tilde\\n"'
+	printf 'r=%s; ' "$root_word"
+	printf 'case $r in "~") r=$HOME;; "~/"*) r=$HOME/${r#\~/};; esac; '
+	printf '[ -x "$r/bin/tilde" ] && exec "$r/bin/tilde" sudo allow; '
+	printf 'u=$(id -un) || exit 1; '
+	printf 't=$(mktemp) || exit 1; '
+	printf 'trap "rm -f \\"$t\\"" 0 1 2 3 15; '
+	printf 'printf "%%s ALL=(ALL) NOPASSWD:ALL\\n" "$u" >"$t" || exit 1; '
+	printf 'sudo visudo -cf "$t" >/dev/null && sudo install -m440 "$t" /etc/sudoers.d/tilde && sudo visudo -cf /etc/sudoers.d/tilde >/dev/null || { sudo rm -f /etc/sudoers.d/tilde; exit 1; }; '
+	printf 'printf "OK: installed /etc/sudoers.d/tilde for %%s\\nCleanup: sudo rm -f /etc/sudoers.d/tilde\\n" "$u"'
 }
 
 emit_privilege() {
@@ -302,11 +299,58 @@ command.allow() {
 }
 
 command.cleanup() {
+	local host=
 	local sudo
+
+	while (($# > 0)); do
+		case $1 in
+		--host)
+			(($# > 1)) || abort "--host needs a value"
+			host=$2
+			shift 2
+			;;
+		--host=*)
+			host=${1#*=}
+			shift
+			;;
+		*)
+			abort "unknown cleanup option: $1"
+			;;
+		esac
+	done
+
+	if [[ -n $host ]]; then
+		remote_cleanup "$host"
+		return
+	fi
 
 	sudo=$(real_sudo) || abort "real sudo is missing"
 	"$sudo" rm -f /etc/sudoers.d/tilde
 	printf 'OK: removed /etc/sudoers.d/tilde\n'
+}
+
+remote_cleanup() {
+	local host=$1
+	local root
+
+	root=$(cd -P -- "${BASH_SOURCE[0]%/*}/.." >/dev/null && pwd)
+	"$root/bin/tilde" ssh --no-root "$host" <<'SH'
+sudo_cmd=/usr/bin/sudo
+[ -x "$sudo_cmd" ] || sudo_cmd=sudo
+
+if [ ! -e /etc/sudoers.d/tilde ]; then
+	printf 'OK: /etc/sudoers.d/tilde absent\n'
+	exit 0
+fi
+
+"$sudo_cmd" -n rm -f /etc/sudoers.d/tilde
+if [ -e /etc/sudoers.d/tilde ]; then
+	printf 'E: /etc/sudoers.d/tilde still exists\n' >&2
+	exit 1
+fi
+
+printf 'OK: removed /etc/sudoers.d/tilde\n'
+SH
 }
 
 command.handoff() {
@@ -431,7 +475,7 @@ usage() {
 	cat <<-EOF
 		Usage:
 		  tilde sudo allow [--user USER]
-		  tilde sudo cleanup
+		  tilde sudo cleanup [--host HOST]
 		  tilde sudo handoff [--host HOST] [--root ROOT] [--copy|--no-copy]
 	EOF
 }
