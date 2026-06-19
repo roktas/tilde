@@ -1026,11 +1026,15 @@ Git-backed target runtime or desired-state checkout SHOULD be refreshed from the
 runtime or checkout cannot be refreshed safely because it is dirty, missing, not a Git checkout, or ambiguous, the run
 MUST return `deferred`.
 
-Agents MUST NOT patch, edit, or `sed` target runtime or desired-state checkouts during deploy, update, repair, upgrade,
-or align to work around a bug. The correct response is to capture the exact target diff, report it for source-repository
-review, and leave the workflow `deferred` unless the source repository is fixed and refreshed through normal checkout
-freshness routes. Stashing, discarding, or otherwise cleaning target checkout changes is a separate recovery step that
-requires explicit operator approval.
+Agents MUST NOT patch, edit, or `sed` target runtime or desired-state checkouts as part of deploy, update, repair,
+upgrade, or align and then continue as if that target-side patch completed the workflow. The correct response is to
+capture the exact target diff, report it for source-repository review, and leave the workflow `deferred` unless the
+source repository is fixed and refreshed through normal checkout freshness routes.
+
+Temporary target edits are allowed only as a separate explicitly approved recovery or debugging operation. Accepted
+changes MUST be ported to the controller source repository, committed there, and delivered back to the target through
+normal checkout freshness routes before retrying the original workflow. Stashing, discarding, or otherwise cleaning
+target checkout changes is also a separate recovery step that requires explicit operator approval.
 
 The `checkout remote` route MUST be called with the full controller-to-target mapping:
 
