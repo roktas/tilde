@@ -395,13 +395,20 @@ Supported desired-state keys are:
 - `resets`: repository-authoritative file copies,
 - `packages`: package declarations.
 
+Package declarations are strings in either prefixed or unprefixed form. Prefixed values use `type:name`, such as
+`deb:curl`, `cask:google-chrome`, `flatpak:org.gimp.GIMP`, or `skill:github.com/owner/repo`. Unprefixed values resolve
+to the platform default package manager: `brew` on Linux and macOS, and `scoop` on Windows. Debian packages MUST use the
+explicit `deb:` prefix; agents MUST NOT treat an unprefixed Linux package as a Debian package merely because the target
+uses apt.
+
 `level` is a module-level property. Prefer declaring it at the top level of the module frontmatter:
 
 ```yaml
 level: extra
 all:
   packages:
-    - brew:foo
+    - foo
+    - deb:curl
 ```
 
 When top-level `level` is absent, `all.level` has the same meaning.
@@ -556,6 +563,11 @@ If an effect cannot be safely detected from live target facts, the operation MUS
 Package declarations do not require persistent state.
 
 The package manager is the source of truth for package presence.
+
+Package declaration prefixes select the package manager. If no prefix is present, Tilde uses the platform default
+package type: `brew` on Linux and macOS, and `scoop` on Windows. Agents MUST preserve this meaning when reviewing or
+editing modules. On Linux, do not check `dpkg` or apt state for an unprefixed package declaration; check Homebrew
+formula state. Use `deb:name` only for packages that must be installed through apt/dpkg.
 
 Package operations MUST be idempotent or safely repeatable.
 

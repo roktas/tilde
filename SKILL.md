@@ -524,6 +524,10 @@ For weaker or low-context agents:
 - Inspect `ignored` and empty-output `ok` actions against the requested host. A guarded desktop install that returns
   `ok` with no output may have skipped the real package work; verify expected package state and condition diagnostics
   for modules such as terminals, browsers, Flatpak apps, and desktop tooling.
+- Package declarations without a `type:` prefix use the platform default package manager: `brew` on Linux and macOS,
+  and `scoop` on Windows. Do not rewrite unprefixed Linux packages as `brew:` just for clarity, and do not inspect
+  `dpkg` or apt state to decide whether an unprefixed package is installed. Debian packages must be declared with an
+  explicit `deb:` prefix.
 - A final status read is verification only; it does not make an earlier failed remote `checkout`, `plan`, `apply`, or
   align step successful.
 - Call `checkout remote` only with the complete mapping: `--host HOST --repo CONTROLLER_REPO --target TARGET_REPO`.
