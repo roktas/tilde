@@ -103,6 +103,27 @@ clipboard_tools() {
 	printf '%s\n' "$joined"
 }
 
+# shellcheck disable=SC2016
+handoff_script() {
+	local root=$1
+
+	local root_word
+
+	root_word=$(shell_double_quote "$root")
+	printf 'root=%s; ' "$root_word"
+	printf 'if [ "$root" = "~" ]; then root=$HOME; else case $root in "~/"*) root=$HOME/${root#~/};; esac; fi; '
+	printf 'if [ -x "$root/bin/tilde" ]; then exec "$root/bin/tilde" sudo allow; fi; '
+	printf 'user=$(id -un) || exit 1; '
+	printf 'tmp=$(mktemp) || exit 1; '
+	printf 'trap "rm -f \\"$tmp\\"" EXIT HUP INT QUIT TERM; '
+	printf 'printf "%%s ALL=(ALL) NOPASSWD:ALL\\n" "$user" >"$tmp" || exit 1; '
+	printf 'sudo visudo -cf "$tmp" >/dev/null || exit 1; '
+	printf 'sudo install -m 0440 "$tmp" /etc/sudoers.d/tilde || exit 1; '
+	printf 'if ! sudo visudo -cf /etc/sudoers.d/tilde >/dev/null; then sudo rm -f /etc/sudoers.d/tilde; exit 1; fi; '
+	printf 'printf "OK: installed /etc/sudoers.d/tilde for %%s\\n" "$user"; '
+	printf 'printf "Cleanup: sudo rm -f /etc/sudoers.d/tilde\\n"'
+}
+
 emit_privilege() {
 	local reason=$1
 	local status=${2:-$PRIVILEGE_EXIT}
@@ -152,6 +173,14 @@ shell_quote() {
 	printf "'"
 	printf '%s' "$value" | sed "s/'/'\\\\''/g"
 	printf "'"
+}
+
+shell_double_quote() {
+	local value=$1
+
+	printf '"'
+	printf '%s' "$value" | sed 's/["\`$\\]/\\&/g'
+	printf '"'
 }
 
 shell_word() {
@@ -286,9 +315,10 @@ command.handoff() {
 	local root=\~/.agents/skills/tilde
 
 	local command
+	local remote
+	local script
 	local tool
 	local tools
-	local remote
 
 	while (($# > 0)); do
 		case $1 in
@@ -324,7 +354,8 @@ command.handoff() {
 		esac
 	done
 
-	remote="$root/bin/tilde sudo allow"
+	script=$(handoff_script "$root")
+	remote="sh -c $(shell_quote "$script")"
 	if [[ -n $host ]]; then
 		command="ssh -t $(shell_word "$host") $(shell_quote "$remote")"
 	else

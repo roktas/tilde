@@ -475,8 +475,9 @@ If sudo is required and noninteractive sudo fails, report `deferred` and present
 Run the helper on the controller, not inside `"$TILDE" ssh`. The helper prints one shell-neutral command line and
 reports whether it copied the command to the controller clipboard. The command must work when pasted into bash, zsh, or
 fish. Copy or present the `Handoff command:` line exactly; do not rewrite it, split it into a `TILDE=...` assignment
-plus an `ssh` command, replace the remote path with a local variable, or add extra quoting. Wait for the user to run it,
-then rerun the affected action and verify cleanup. Do not collect passwords in chat.
+plus an `ssh` command, replace the remote path with a local variable, or add extra quoting. The printed command is also
+valid during first-time bootstrap before the target runtime exists; do not replace it with an ad hoc sudoers one-liner.
+Wait for the user to run it, then rerun the affected action and verify cleanup. Do not collect passwords in chat.
 
 ## Weak-Model Guardrails
 
@@ -507,6 +508,9 @@ For weaker or low-context agents:
   conflicted, even when the tool output pane says `(no output)`.
 - After `tilde apply`, inspect action results. Do not report success only because JSON was printed or `completed` is
   true; any `deferred`, `conflict`, or `notok` action means the run is incomplete.
+- Inspect `ignored` and empty-output `ok` actions against the requested host. A guarded desktop install that returns
+  `ok` with no output may have skipped the real package work; verify expected package state and condition diagnostics
+  for modules such as terminals, browsers, Flatpak apps, and desktop tooling.
 - A final status read is verification only; it does not make an earlier failed remote `checkout`, `plan`, `apply`, or
   align step successful.
 - Call `checkout remote` only with the complete mapping: `--host HOST --repo CONTROLLER_REPO --target TARGET_REPO`.
@@ -550,7 +554,8 @@ For weaker or low-context agents:
 - After the user chooses repository replacement for a conflict, back up and remove only the exact conflicted target, then
   rerun apply. Broad directory cleanup needs a separate explicit approval.
 - Run `"$TILDE" handoff --host HOST --copy` on the controller after sudo deferral. Do not run handoff through
-  `"$TILDE" ssh`, do not invent a two-line `TILDE=...` command, and do not rewrite the printed `Handoff command:`.
+  `"$TILDE" ssh`, do not invent a two-line `TILDE=...` command, do not rewrite the printed `Handoff command:`, and do
+  not replace first-time bootstrap handoff with a handcrafted sudoers command.
 - Remove packages, file materializations, files, or spans only with explicit managedness proof and proposal-first
   confirmation.
 - Prefer a safe `deferred` or `conflict` result over guessing.

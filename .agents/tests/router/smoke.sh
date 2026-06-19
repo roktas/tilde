@@ -24,6 +24,29 @@ cleanup() {
 	[[ -z $cleanup_tmpdir ]] || rm -rf "$cleanup_tmpdir"
 }
 
+assert_handoff_command() {
+	local file=$1
+
+	local command
+
+	command=$(grep -m 1 '^ssh -t spinoza ' "$file" || true)
+	[[ -n $command ]] || abort "missing remote handoff command in $file"
+	[[ $command == *"sh -c"* ]] || abort "handoff command should use a POSIX shell payload"
+	[[ $command == *'root="~/.agents/skills/tilde"'* ]] || abort "handoff command should target the default remote runtime root"
+	[[ $command == *'sudo allow'* ]] || abort "handoff command should use the runtime when it exists"
+	[[ $command == *'/etc/sudoers.d/tilde'* ]] || abort "handoff command should include a bootstrap sudoers fallback"
+	[[ $command == *'visudo -cf'* ]] || abort "handoff command should validate the sudoers fallback"
+	[[ $command != *"TILDE="* ]] || abort "handoff command should not require a TILDE assignment"
+
+	bash -n -c "$command"
+	if command -v zsh >/dev/null; then
+		zsh -n -c "$command"
+	fi
+	if command -v fish >/dev/null; then
+		fish -n -c "$command"
+	fi
+}
+
 # ------------------------------------------------------------------------------------------------------------------------
 # Main
 # ------------------------------------------------------------------------------------------------------------------------
@@ -198,14 +221,11 @@ EOF
 	[[ -f $align_state/tilde/lock ]]
 
 	"$tilde" sudo handoff --host spinoza --no-copy >"$handoff"
-	grep -Fq "ssh -t spinoza '~/.agents/skills/tilde/bin/tilde sudo allow'" "$handoff"
-	if grep -Fq "TILDE=" "$handoff"; then
-		abort "handoff command should not require a TILDE assignment"
-	fi
+	assert_handoff_command "$handoff"
 	env -u WAYLAND_DISPLAY -u DISPLAY TILDE_FAKE_CLIPBOARD="$handoff_clipboard" PATH="$fake_bin:$PATH" \
 		"$tilde" handoff --host spinoza >"$handoff"
 	grep -Fq "Clipboard: copied with wl-copy." "$handoff"
-	grep -Fq "ssh -t spinoza '~/.agents/skills/tilde/bin/tilde sudo allow'" "$handoff_clipboard"
+	assert_handoff_command "$handoff_clipboard"
 
 	if env -u TILDE_SUDO "$skill_root/bin/sudo" true >/dev/null 2>"$sudo_err"; then
 		abort "expected sudo shim to fail outside Tilde execution"

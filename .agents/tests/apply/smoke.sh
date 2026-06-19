@@ -111,7 +111,7 @@ EOF
 #!/usr/bin/env sh
 case "$*" in
 "get-default")
-	printf 'graphical.target\n'
+	printf 'multi-user.target\n'
 	;;
 "is-enabled gdm3 sddm lightdm display-manager")
 	printf 'enabled\n'
@@ -255,7 +255,7 @@ file, repo, state, home, host, type = ARGV
 stdout, stderr, status = Open3.capture3("git", "-C", repo, "rev-parse", "HEAD")
 raise stderr unless status.success?
 
-dirty, stderr, status = Open3.capture3("git", "-C", repo, "status", "--porcelain")
+dirty, stderr, status = Open3.capture3("git", "-C", repo, "status", "--porcelain", "--untracked-files=no")
 raise stderr unless status.success?
 
 plan = {
@@ -393,13 +393,14 @@ main() {
 	git -C "$repo" add .
 	git -C "$repo" commit -q -m init
 	head=$(git -C "$repo" rev-parse HEAD)
+	printf 'local environment\n' >"$repo/.envrc"
 
 	HOME=$home XDG_STATE_HOME=$refresh_state "$tilde" plan --repo "$repo" --mode refresh --platform linux --host "$host" >"$refresh_plan_json"
 	HOME=$home XDG_STATE_HOME=$refresh_state "$tilde" apply --plan "$refresh_plan_json" >"$refresh_apply_json"
 	[[ ! -f $refresh_state/tilde/state.yml ]]
 
 	REFRESH_APPLY_JSON=$refresh_apply_json ruby -rjson -e '
-		apply = JSON.parse(File.read(ENV.fetch("REFRESH_APPLY_JSON")))
+		apply = JSON.parse(File.read(ENV.fetch("REFRESH_APPLY_JSON"), encoding: "UTF-8"))
 		abort "refresh apply should complete" unless apply.fetch("completed")
 		abort "refresh should run configure" unless apply.fetch("results").any? { |result| result.fetch("action_id") == "public/section:section:Configure" }
 	'
@@ -413,7 +414,7 @@ main() {
 	[[ ! -f $state/tilde/state.yml ]]
 
 	CONFLICT_APPLY_JSON=$conflict_apply_json ruby -rjson -e '
-		apply = JSON.parse(File.read(ENV.fetch("CONFLICT_APPLY_JSON")))
+		apply = JSON.parse(File.read(ENV.fetch("CONFLICT_APPLY_JSON"), encoding: "UTF-8"))
 		conflict = apply.fetch("results").find { |result| result.fetch("kind") == "link" }
 		abort "missing conflict result" unless conflict
 		abort "link conflict should be reported" unless conflict.fetch("status") == "conflict"
@@ -442,13 +443,13 @@ main() {
 	[[ -f $state/tilde/state.yml ]]
 
 	APPLY_JSON=$apply_json STATE_FILE=$state/tilde/state.yml HEAD=$head ruby -rjson -ryaml -e '
-		apply = JSON.parse(File.read(ENV.fetch("APPLY_JSON")))
+		apply = JSON.parse(File.read(ENV.fetch("APPLY_JSON"), encoding: "UTF-8"))
 		abort "apply should complete" unless apply.fetch("completed")
 		install = apply.fetch("results").find { |result| result.fetch("module_id") == "public/section" && result.dig("diagnostics", "name") == "Install" }
 		abort "install section should be changed by helper JSONL" unless install&.fetch("status") == "changed"
 		post = apply.fetch("results").find { |result| result.fetch("module_id") == "public/section" && result.dig("diagnostics", "name") == "Post Install" }
 		abort "post install should run after changed install" unless post&.fetch("status") == "ok"
-		state = YAML.safe_load(File.read(ENV.fetch("STATE_FILE")))
+		state = YAML.safe_load(File.read(ENV.fetch("STATE_FILE"), encoding: "UTF-8"))
 		abort "wrong protocol" unless state.fetch("protocol") == "tilde/v1"
 		abort "wrong public anchor" unless state.fetch("applied").fetch("public") == ENV.fetch("HEAD")
 		abort "state must not contain done map" if state.key?("done")
@@ -463,7 +464,7 @@ main() {
 	grep -Fqx 'local seed' "$home/.config/app/seed.txt"
 	grep -Fqx 'reset' "$home/.config/app/reset.txt"
 	SECOND_APPLY_JSON=$second_apply_json ruby -rjson -e '
-		apply = JSON.parse(File.read(ENV.fetch("SECOND_APPLY_JSON")))
+		apply = JSON.parse(File.read(ENV.fetch("SECOND_APPLY_JSON"), encoding: "UTF-8"))
 		post = apply.fetch("results").find { |result| result.fetch("action_id") == "public/section:section:Post Install" }
 		abort "post install should be skipped when install did not change" unless post&.fetch("status") == "skipped"
 		seed = apply.fetch("results").find { |result| result.fetch("action_id") == "public/app:seed:seed.txt->~/.config/app/seed.txt" }
@@ -495,7 +496,7 @@ EOF
 	HOME=$home XDG_STATE_HOME=$state "$tilde" plan --repo "$repo" --mode refresh --platform linux --host "$host" >"$stale_plan_json"
 
 	STALE_PLAN_JSON=$stale_plan_json ruby -rjson -e '
-		plan = JSON.parse(File.read(ENV.fetch("STALE_PLAN_JSON")))
+		plan = JSON.parse(File.read(ENV.fetch("STALE_PLAN_JSON"), encoding: "UTF-8"))
 		unlink = plan.fetch("actions").find { |action| action.fetch("kind") == "unlink" && action.fetch("target") == "~/.config/app/source.txt" }
 		abort "missing stale link removal action" unless unlink
 		abort "stale link removal should keep old link value" unless unlink.fetch("link_value").end_with?("/app/source.txt")
@@ -506,7 +507,7 @@ EOF
 	[[ -L $home/.config/app/shared ]]
 
 	STALE_APPLY_JSON=$stale_apply_json ruby -rjson -e '
-		apply = JSON.parse(File.read(ENV.fetch("STALE_APPLY_JSON")))
+		apply = JSON.parse(File.read(ENV.fetch("STALE_APPLY_JSON"), encoding: "UTF-8"))
 		unlink = apply.fetch("results").find { |result| result.fetch("kind") == "unlink" && result.fetch("action_id").include?("source.txt->~/.config/app/source.txt") }
 		abort "missing stale link removal result" unless unlink
 		abort "stale link should be removed" unless unlink.fetch("status") == "removed"
@@ -523,7 +524,7 @@ EOF
 	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH "$tilde" apply --plan "$package_plan_json" >"$package_apply_json"
 
 	PACKAGE_APPLY_JSON=$package_apply_json ruby -rjson -e '
-		apply = JSON.parse(File.read(ENV.fetch("PACKAGE_APPLY_JSON")))
+		apply = JSON.parse(File.read(ENV.fetch("PACKAGE_APPLY_JSON"), encoding: "UTF-8"))
 		packages = apply.fetch("results").select { |result| result.fetch("kind") == "package" }
 		abort "expected all package types" unless packages.length == 10
 		bad = packages.reject { |result| result.fetch("status") == "unchanged" }
@@ -536,7 +537,7 @@ EOF
 	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH "$tilde" apply --plan "$brew_plan_json" >"$brew_apply_json"
 
 	BREW_APPLY_JSON=$brew_apply_json ruby -rjson -e '
-		apply = JSON.parse(File.read(ENV.fetch("BREW_APPLY_JSON")))
+		apply = JSON.parse(File.read(ENV.fetch("BREW_APPLY_JSON"), encoding: "UTF-8"))
 		result = apply.fetch("results").fetch(0)
 		abort "brew refresh should pass" unless result.fetch("status") == "ok"
 		commands = result.dig("diagnostics", "commands")
@@ -564,7 +565,7 @@ EOF
 	fi
 
 	APT_APPLY_JSON=$apt_apply_json ruby -rjson -e '
-		apply = JSON.parse(File.read(ENV.fetch("APT_APPLY_JSON")))
+		apply = JSON.parse(File.read(ENV.fetch("APT_APPLY_JSON"), encoding: "UTF-8"))
 		result = apply.fetch("results").fetch(0)
 		abort "apt warning should defer" unless result.fetch("status") == "deferred"
 		abort "wrong apt warning reason" unless result.dig("diagnostics", "reason") == "apt update incomplete"

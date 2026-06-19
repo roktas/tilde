@@ -378,6 +378,10 @@ direct paste into bash, zsh, or fish. Agents MUST run `handoff` on the controlle
 MUST present the printed `Handoff command:` line exactly. Agents MUST NOT split it into environment assignments and a
 separate command.
 
+For remote first-time bootstrap, the printed command MUST NOT assume that the target Tilde runtime already exists. It
+SHOULD use the target runtime when present and otherwise perform the minimal validated sudoers bootstrap needed for
+subsequent Tilde sudo operations.
+
 ## 8. Module Sections
 
 Module README frontmatter may declare module-level properties and platform-scoped desired state.

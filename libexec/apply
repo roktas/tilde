@@ -297,7 +297,7 @@ class Apply
   end
 
   def dirty?(repo)
-    !git(repo, "status", "--porcelain").empty?
+    !git(repo, "status", "--porcelain", "--untracked-files=no").empty?
   end
 
   def execute(action)
@@ -858,13 +858,22 @@ class Apply
     when "macos"
       true
     when "linux"
-      stdout, _stderr, status = systemctl("get-default")
-      return false unless status&.success? && stdout.strip == "graphical.target"
-
-      display_manager_enabled?
+      desktop_session? || graphical_target? || display_manager_enabled? || display_manager_configured?
     else
       false
     end
+  end
+
+  def desktop_session?
+    [
+      ENV["XDG_CURRENT_DESKTOP"],
+      ENV["DESKTOP_SESSION"]
+    ].compact.any? { |value| !value.empty? && !value.match?(/(?:tty|headless)/i) }
+  end
+
+  def graphical_target?
+    stdout, _stderr, status = systemctl("get-default")
+    status&.success? && stdout.strip == "graphical.target"
   end
 
   def display_manager_enabled?
@@ -875,7 +884,13 @@ class Apply
       "lightdm",
       "display-manager"
     )
-    stdout.lines.any? { |line| line.strip == "enabled" }
+    stdout.lines.any? { |line| %w[enabled static generated alias indirect].include?(line.strip) }
+  end
+
+  def display_manager_configured?
+    File.exist?("/etc/X11/default-display-manager") ||
+      !Dir.glob("/usr/share/xsessions/*.desktop").empty? ||
+      !Dir.glob("/usr/share/wayland-sessions/*.desktop").empty?
   end
 
   def systemctl(*args)
