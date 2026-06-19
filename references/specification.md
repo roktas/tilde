@@ -336,6 +336,7 @@ apply / install:
   Prerequisites
   Install
   Post Install, only if Install changed in the current run
+  directories, links, copies, seeds, and resets
   Configure
 
 refresh / update:
@@ -347,6 +348,7 @@ repair:
   Prerequisites
   Install
   Post Install, only if Install changed in the current run
+  directories, links, copies, seeds, and resets
   Configure
 
 upgrade:

@@ -500,7 +500,8 @@ EOF
 		abort "missing virtualbox extra module" unless virtualbox
 		abort "virtualbox should be virtual" unless virtualbox.fetch("virtual") == true
 		abort "missing virtualbox install section" unless virtualbox.fetch("special_sections").key?("Install")
-		abort "missing virtualbox postinstall section" unless virtualbox.fetch("special_sections").key?("Post Install")
+		abort "missing virtualbox configure section" unless virtualbox.fetch("special_sections").key?("Configure")
+		abort "virtualbox should not rely on postinstall" if virtualbox.fetch("special_sections").key?("Post Install")
 		ghostty = extra_plan.fetch("modules").find { |mod| mod.fetch("name") == "ghostty" }
 		abort "missing ghostty module" unless ghostty
 		abort "ghostty linux plan should not install cask" if ghostty.fetch("packages_to_install").any? { |pkg| pkg.fetch("type") == "cask" }

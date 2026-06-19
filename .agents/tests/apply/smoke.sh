@@ -89,6 +89,8 @@ case "$*" in
 "list --no-versions")
 	printf 'rubocop\n'
 	;;
+"install --user-install --bindir $HOME/.local/bin --no-document standard")
+	;;
 *)
 	printf 'unexpected gem command: %s\n' "$*" >&2
 	exit 9
@@ -165,6 +167,7 @@ all:
     - egg:ruff
     - flatpak:org.example.App
     - gem:rubocop
+    - gem:standard
     - github:example/tool
     - npm:@scope/pkg
     - scoop:less
@@ -213,6 +216,25 @@ EOF
 	printf 'copy\n' >"$repo/app/copy.txt"
 	printf 'seed\n' >"$repo/app/seed.txt"
 	printf 'reset\n' >"$repo/app/reset.txt"
+
+	mkdir -p "$repo/ordered"
+	cat >"$repo/ordered/README.md" <<'EOF'
+---
+all:
+  links:
+    source.txt: ~/.config/ordered/source.txt
+---
+
+# Ordered
+
+## Configure
+
+```bash
+[[ -L $HOME/.config/ordered/source.txt ]]
+printf 'ordered\n' > "$HOME/ordered-configure"
+```
+EOF
+	printf 'ordered source\n' >"$repo/ordered/source.txt"
 
 	cat >"$repo/section/README.md" <<'EOF'
 # Section
@@ -432,12 +454,14 @@ main() {
 	[[ -d $home/shared ]]
 	[[ -d $home/.config/app/cache ]]
 	[[ $(readlink "$home/.config/app/shared") == "$home/shared" ]]
+	[[ -L $home/.config/ordered/source.txt ]]
 	grep -Fqx 'copy' "$home/.config/app/copy.txt"
 	[[ ! -L $home/.config/app/seed.txt ]]
 	[[ ! -L $home/.config/app/reset.txt ]]
 	grep -Fqx 'seed' "$home/.config/app/seed.txt"
 	grep -Fqx 'reset' "$home/.config/app/reset.txt"
 	grep -Fqx 'configure' "$home/configure"
+	grep -Fqx 'ordered' "$home/ordered-configure"
 	grep -Fxq 'post' "$home/post-install"
 	grep -Fxq 'export EDITOR=vim' "$home/.profile"
 	[[ -f $state/tilde/state.yml ]]
@@ -523,13 +547,19 @@ EOF
 	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH "$tilde" plan --repo "$package_repo" --platform linux --host "$host" >"$package_plan_json"
 	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH "$tilde" apply --plan "$package_plan_json" >"$package_apply_json"
 
-	PACKAGE_APPLY_JSON=$package_apply_json ruby -rjson -e '
+	PACKAGE_APPLY_JSON=$package_apply_json HOME_UNDER_TEST=$home ruby -rjson -e '
 		apply = JSON.parse(File.read(ENV.fetch("PACKAGE_APPLY_JSON"), encoding: "UTF-8"))
 		packages = apply.fetch("results").select { |result| result.fetch("kind") == "package" }
-		abort "expected all package types" unless packages.length == 10
-		bad = packages.reject { |result| result.fetch("status") == "unchanged" }
+		abort "expected all package types" unless packages.length == 11
+		standard = packages.find { |result| result.fetch("action_id") == "public/packages:package:install:gem:standard" }
+		abort "missing standard gem result" unless standard
+		abort "standard gem should install" unless standard.fetch("status") == "ok"
+		expected = ["gem", "install", "--user-install", "--bindir", File.join(ENV.fetch("HOME_UNDER_TEST"), ".local", "bin"), "--no-document", "standard"]
+		command = standard.dig("diagnostics", "commands", 0, "command")
+		abort "standard gem bindir mismatch: #{command.inspect}" unless command == expected
+		bad = packages.reject { |result| result.equal?(standard) || result.fetch("status") == "unchanged" }
 		abort "installed packages should be unchanged: #{bad.inspect}" unless bad.empty?
-		ran = packages.select { |result| result.fetch("diagnostics").key?("commands") }
+		ran = packages.reject { |result| result.equal?(standard) }.select { |result| result.fetch("diagnostics").key?("commands") }
 		abort "package install commands should not run when inventory says present: #{ran.inspect}" unless ran.empty?
 	'
 

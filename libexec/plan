@@ -904,12 +904,12 @@ class Plan
     actions.concat(package_plan_actions(mod, "install", mod.fetch(:packages_to_install)))
     actions.concat(section_plan_actions(mod, %w[Install]))
     actions.concat(section_plan_actions(mod, ["Post Install"], run_if: { section_changed: "Install" }))
-    actions.concat(section_plan_actions(mod, %w[Configure]))
     actions.concat(mod.fetch(:directories_to_create).map { |dir| directory_action(mod, dir) })
     actions.concat(mod.fetch(:links_to_create).map { |link| link_plan_action(mod, link) })
     actions.concat(mod.fetch(:copies_to_create).map { |copy| copy_action(mod, copy) })
     actions.concat(mod.fetch(:seeds_to_create).map { |seed| seed_action(mod, seed) })
     actions.concat(mod.fetch(:resets_to_create).map { |reset| reset_action(mod, reset) })
+    actions.concat(section_plan_actions(mod, %w[Configure]))
     actions
   end
 

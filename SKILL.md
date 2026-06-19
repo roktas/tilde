@@ -163,9 +163,9 @@ Agent commands map to planning modes and module sections as follows.
 
 | Prompt command | Plan mode | Module behavior |
 | --- | --- | --- |
-| `deploy` | `apply` | `Prerequisites`, `Install`, `Post Install` when `Install` changed, then `Configure` |
+| `deploy` | `apply` | `Prerequisites`, `Install`, `Post Install` when `Install` changed, declared files and links, then `Configure` |
 | `update` | `refresh`; `repair` for state recovery | `Prerequisites`, `Update`, then `Configure`; state recovery uses repair behavior |
-| `repair` | `repair` | `Prerequisites`, `Install`, `Post Install` when `Install` changed, then `Configure` |
+| `repair` | `repair` | `Prerequisites`, `Install`, `Post Install` when `Install` changed, declared files and links, then `Configure` |
 | `upgrade` | `upgrade` | broad refresh behavior, then package upgrades |
 | `align` | `align` | directories, links, copies, seeds, and resets only; no bootstrap, packages, or module code |
 
@@ -433,7 +433,8 @@ Module README code sections use this stateless contract:
 - `Prerequisites`: external requirements and read-only checks only. Failed checks return `deferred`.
 - `Install`: idempotently ensure packages, tools, directories, applications, repositories, or local resources are present.
 - `Post Install`: runs only when `Install` changed something in the current run; correctness must not depend on it.
-- `Configure`: idempotent desired configuration and drift repair.
+- `Configure`: idempotent desired configuration. In apply and repair modes, it runs after declared directories, links,
+  copies, seeds, and resets are materialized.
 - `Update`: explicit refresh or upgrade work.
 - `Notes`: informational only; never executed.
 
