@@ -30,7 +30,8 @@ class Span
     1
   end
 
-  class Conflict < StandardError; end
+  class Conflict < StandardError
+  end
 
   private
 

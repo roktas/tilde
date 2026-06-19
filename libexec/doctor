@@ -75,8 +75,8 @@ class Doctor
     }.merge(extra)
   end
 
-  def git(repo, *args)
-    stdout, stderr, status = Open3.capture3("git", "-C", repo.to_s, *args)
+  def git(repo, *)
+    stdout, stderr, status = Open3.capture3("git", "-C", repo.to_s, *)
     {
       ok: status.success?,
       stdout:,
@@ -136,9 +136,9 @@ class Doctor
     return {} unless state_path.file?
 
     data = YAML.safe_load(state_path.read, aliases: true, permitted_classes: [Date, Time])
-    data.is_a?(Hash) ? data : { "_error" => "state.yml is not a map" }
+    data.is_a?(Hash) ? data : {"_error" => "state.yml is not a map"}
   rescue Psych::SyntaxError => e
-    { "_error" => e.message }
+    {"_error" => e.message}
   end
 
   def repository_finding(label, path, applied)
@@ -195,7 +195,7 @@ class Doctor
       }
     end
 
-    { commit: head.fetch(:stdout).strip, finding: nil }
+    {commit: head.fetch(:stdout).strip, finding: nil}
   end
 
   def repository_status_finding(label, path)
@@ -221,7 +221,7 @@ class Doctor
   def state_findings(state)
     findings = []
     findings << issue("state", state_path, ["missing state.yml"]) unless state_path.file?
-    findings << issue("state", state_path, ["invalid state.yml: #{state.fetch('_error')}"]) if state.key?("_error")
+    findings << issue("state", state_path, ["invalid state.yml: #{state.fetch("_error")}"]) if state.key?("_error")
     findings.concat(valid_state_findings(state)) if state_path.file? && !state.key?("_error")
     findings
   end
@@ -233,8 +233,9 @@ class Doctor
   def valid_state_findings(state)
     findings = []
     unless state["protocol"] == "tilde/v1"
-      findings << issue("state", state_path, ["unexpected protocol: #{state['protocol'] || 'missing'}"])
+      findings << issue("state", state_path, ["unexpected protocol: #{state["protocol"] || "missing"}"])
     end
+
     findings << issue("state", state_path, ["missing applied anchors"]) unless state["applied"].is_a?(Hash)
     findings
   end
@@ -246,7 +247,7 @@ class Doctor
       puts("- No broken or host-absolute home-entrypoint links found.")
     else
       findings.each do |item|
-        puts("- `#{item.fetch(:target)}`: #{item.fetch(:problems).join(', ')} (`#{item.fetch(:area)}`)")
+        puts("- `#{item.fetch(:target)}`: #{item.fetch(:problems).join(", ")} (`#{item.fetch(:area)}`)")
       end
     end
   end
@@ -258,7 +259,7 @@ class Doctor
       puts("- No state or repository health problems found.")
     else
       health.each do |item|
-        puts("- `#{item.fetch(:target)}`: #{item.fetch(:problems).join(', ')}")
+        puts("- `#{item.fetch(:target)}`: #{item.fetch(:problems).join(", ")}")
       end
     end
   end

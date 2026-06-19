@@ -1,6 +1,13 @@
+inherit_gem:
+  rubocop-rubyfmt:
+    - config/full.yml
+
+plugins:
+  - "rubocop-rubyfmt"
+
 AllCops:
   NewCops: enable
-  TargetRubyVersion: 3.3
+  TargetRubyVersion: 3.4
   UseCache: false
 
 Layout/IndentationConsistency:
@@ -27,5 +34,5 @@ Style/Documentation:
 Style/ArgumentsForwarding:
   Enabled: false
 
-Style/StringLiterals:
-  EnforcedStyle: double_quotes
+Style/IfUnlessModifier:
+  Enabled: false

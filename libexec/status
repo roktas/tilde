@@ -66,8 +66,8 @@ class Status
     Pathname.new(text).expand_path
   end
 
-  def git(repo, *args)
-    stdout, stderr, status = Open3.capture3("git", "-C", repo.to_s, *args)
+  def git(repo, *)
+    stdout, stderr, status = Open3.capture3("git", "-C", repo.to_s, *)
     raise stderr.strip unless status.success?
 
     stdout.strip
@@ -121,7 +121,7 @@ class Status
   def link_summary(path)
     path = expand_home(path)
     exists = path.exist? || path.symlink?
-    summary = { path: display_path(path), exists: }
+    summary = {path: display_path(path), exists:}
     return summary unless exists
 
     stat = path.lstat
@@ -135,9 +135,9 @@ class Status
 
     summary
   rescue Errno::ENOENT
-    { path: display_path(path), exists: false }
+    {path: display_path(path), exists: false}
   rescue SystemCallError => e
-    { path: display_path(path), exists:, error: e.message }
+    {path: display_path(path), exists:, error: e.message}
   end
 
   def link_type(stat)
@@ -152,10 +152,10 @@ class Status
   end
 
   def puts_applied(applied)
-    puts("- Applied level: `#{applied['level']}`") if applied["level"]
-    puts("- Applied platform: `#{applied['platform']}`") if applied["platform"]
-    puts("- Applied public commit: `#{applied['public']}`") if applied["public"]
-    puts("- Applied private commit: `#{applied['private']}`") if applied["private"]
+    puts("- Applied level: `#{applied["level"]}`") if applied["level"]
+    puts("- Applied platform: `#{applied["platform"]}`") if applied["platform"]
+    puts("- Applied public commit: `#{applied["public"]}`") if applied["public"]
+    puts("- Applied private commit: `#{applied["private"]}`") if applied["private"]
   end
 
   def puts_deployment(status)
@@ -217,16 +217,16 @@ class Status
     _, yaml_text, body = text.split(/^---\s*$\n?/, 3)
     [YAML.safe_load(yaml_text, aliases: true, permitted_classes: [Date, Time]) || {}, body]
   rescue Psych::SyntaxError => e
-    [{ "_error" => e.message }, nil]
+    [{"_error" => e.message}, nil]
   end
 
   def read_state
     return nil unless state_path.file?
 
     data = YAML.safe_load(state_path.read, aliases: true, permitted_classes: [Date, Time])
-    data.is_a?(Hash) ? data : { "_error" => "state.yml is not a map" }
+    data.is_a?(Hash) ? data : {"_error" => "state.yml is not a map"}
   rescue Psych::SyntaxError => e
-    { "_error" => e.message }
+    {"_error" => e.message}
   end
 
   def realpath_or_nil(path)
@@ -241,7 +241,7 @@ class Status
 
     branch = repo[:branch] || "unknown branch"
     dirty = repo[:dirty] ? "dirty" : "clean"
-    "`#{repo[:path]}` `#{branch}` `#{repo[:head] || 'unknown'}`, #{dirty}"
+    "`#{repo[:path]}` `#{branch}` `#{repo[:head] || "unknown"}`, #{dirty}"
   end
 
   def repo_problem(repo)
@@ -254,7 +254,7 @@ class Status
   end
 
   def repo_summary(label, path)
-    return { label:, path: nil, exists: false, git: false } unless path
+    return {label:, path: nil, exists: false, git: false} unless path
 
     summary = {
       label:,
@@ -285,8 +285,8 @@ class Status
   end
 
   def state_summary(state)
-    return { present: false, path: display_path(state_path) } unless state_path.file?
-    return { present: true, path: display_path(state_path), error: state.fetch("_error") } if state_error?(state)
+    return {present: false, path: display_path(state_path)} unless state_path.file?
+    return {present: true, path: display_path(state_path), error: state.fetch("_error")} if state_error?(state)
 
     {
       present: true,
@@ -313,7 +313,7 @@ class Status
   end
 
   def puts_state_identity(state)
-    puts("- Protocol: `#{state[:protocol] || 'unknown'}`")
+    puts("- Protocol: `#{state[:protocol] || "unknown"}`")
     puts("- Skill: `#{state[:skill]}`") if state[:skill]
     puts("- Public binding: `#{state[:public]}`") if state[:public]
     puts("- Private binding: `#{state[:private]}`") if state[:private]
@@ -339,7 +339,7 @@ class Status
 
     [
       "`~/AGENTS.md` points at the fallback skill template; " \
-      "apply should replace it with a data-repository home entrypoint link."
+        "apply should replace it with a data-repository home entrypoint link."
     ]
   end
 
@@ -357,6 +357,7 @@ class Status
     if state[:present] && !state[:error] && state.fetch(:applied, {}).empty?
       warnings << "No applied anchors were found."
     end
+
     warnings
   end
 end

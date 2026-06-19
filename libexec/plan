@@ -530,7 +530,7 @@ class Plan
     normalize_sequence(config["directories"], "directories").map do |target|
       raise "directories item must be a string" unless target.is_a?(String)
 
-      { target: }
+      {target:}
     end
   end
 
@@ -903,7 +903,7 @@ class Plan
     actions.concat(section_plan_actions(mod, %w[Prerequisites]))
     actions.concat(package_plan_actions(mod, "install", mod.fetch(:packages_to_install)))
     actions.concat(section_plan_actions(mod, %w[Install]))
-    actions.concat(section_plan_actions(mod, ["Post Install"], run_if: { section_changed: "Install" }))
+    actions.concat(section_plan_actions(mod, ["Post Install"], run_if: {section_changed: "Install"}))
     actions.concat(mod.fetch(:directories_to_create).map { |dir| directory_action(mod, dir) })
     actions.concat(mod.fetch(:links_to_create).map { |link| link_plan_action(mod, link) })
     actions.concat(mod.fetch(:copies_to_create).map { |copy| copy_action(mod, copy) })
@@ -993,7 +993,7 @@ class Plan
     puts("- schema: `#{plan[:schema]}`")
     puts("- plan: `#{plan[:plan_id]}`")
     puts("- repo: `#{plan[:repo]}`")
-    puts("- role: `#{plan[:repository][:role] || 'unknown'}`")
+    puts("- role: `#{plan[:repository][:role] || "unknown"}`")
     puts("- head: `#{plan[:head]}`")
     puts("- branch: `#{plan[:branch]}`")
     puts("- host: `#{plan[:host]}`")
@@ -1028,7 +1028,7 @@ class Plan
       end
 
       puts("Level: #{mod[:level]}")
-      puts("Virtual: #{mod[:virtual] ? 'yes' : 'no'}")
+      puts("Virtual: #{mod[:virtual] ? "yes" : "no"}")
       puts
       puts_action_list("Directories", mod[:directories_to_create]) { |dir| "`#{dir[:target]}`" }
       puts_action_list("Links", mod[:links_to_create]) { |link| "`#{link[:source]}` -> `#{link[:target]}`" }
@@ -1234,7 +1234,7 @@ class Plan
   def collected_special_sections(body)
     markdown_sections(body, 2).flat_map do |section|
       name = special_heading(section.fetch(:title))
-      next [{ name:, content: section.fetch(:content) }] if name
+      next [{name:, content: section.fetch(:content)}] if name
 
       platform = platform_heading(section.fetch(:title))
       next [] unless ["all", @platform].include?(platform)
@@ -1243,7 +1243,7 @@ class Plan
         subsection_name = special_heading(subsection.fetch(:title))
         next unless subsection_name
 
-        { name: subsection_name, content: subsection.fetch(:content) }
+        {name: subsection_name, content: subsection.fetch(:content)}
       end
     end
   end
@@ -1251,7 +1251,7 @@ class Plan
   def markdown_sections(body, level)
     heading = "#" * level
     body.scan(/^#{heading}\s+(.+?)\s*$\n(.*?)(?=^#{heading}\s+|\z)/m).map do |title, content|
-      { title: title.strip, content: content.strip }
+      {title: title.strip, content: content.strip}
     end
   end
 
@@ -1275,7 +1275,7 @@ class Plan
       platform = platform_heading(section.fetch(:title))
       next unless platform
 
-      { platform:, content: section.fetch(:content) }
+      {platform:, content: section.fetch(:content)}
     end
   end
 
@@ -1352,7 +1352,7 @@ class Plan
       return if @scope.nil?
     end
 
-    raise "Unsupported scope for #{@mode}: #{@scope || '(none)'}"
+    raise "Unsupported scope for #{@mode}: #{@scope || "(none)"}"
   end
 
   def validate_repo!

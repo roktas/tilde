@@ -53,6 +53,7 @@ class Line
       file.write("\n") if path.file? && !path.zero? && !path.read.end_with?("\n")
       file.write("#{@line}\n")
     end
+
     "changed"
   end
 
