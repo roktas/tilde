@@ -313,6 +313,11 @@ state with `repair` mode for that run because refresh-only work does not establi
 state is not proof that the host was never deployed; agents SHOULD describe this as state recovery unless bounded
 evidence proves otherwise.
 
+Refresh mode MUST NOT run Install, package-install declarations, or ordinary declared directory, link, copy, seed, and
+reset reconciliation. A repository change that adds a package or another install-time declaration is reconciled by an
+apply/deploy or repair workflow, not by an ordinary update. Repair re-evaluates every current Install and package
+declaration against live target state; it is not a diff-only mode for newly added declarations.
+
 Agents that materialize plan JSON files MUST write them under a per-run temporary directory and remove that directory at
 workflow exit. Fixed plan paths under shared temp locations, such as `/tmp/opencode/HOST-public.json`, are invalid for
 agent workflows because they leak state across runs and hosts.
@@ -1284,6 +1289,10 @@ If the persistent state file is missing or malformed, Tilde recovers repository 
 arguments, repository frontmatter, and bounded target discovery. A successful desired-state recovery run writes
 `state.yml` with the recovered bindings and fully converged anchors. Refresh-only package and update-section runs do not
 establish fully converged anchors. Missing state alone does not prove that the host was never deployed.
+
+Home-policy cleanup hooks, such as Dropbox conflicted-copy cleanup after update, MUST remain bounded to the literal
+paths named by active policy. A Dropbox path resolved through a symlink or platform-specific cloud-storage location is
+not an additional cleanup root unless the active policy explicitly names it.
 
 ## 22. Summary
 

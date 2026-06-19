@@ -144,6 +144,10 @@ status on the target before closeout. Materialize plan JSON under a per-run `mkt
 trap; do not leave fixed files such as `/tmp/opencode/HOST-public.json`. Successful `refresh` does not advance
 `applied` anchors, so final reports must distinguish target HEAD from applied anchors.
 
+`update` / `refresh` does not install newly declared packages or reconcile newly declared links, copies, seeds, or
+resets. Use `repair` when changed module frontmatter should be applied to an already deployed host. Repair checks every
+current declaration against live state; it is not limited to the repository diff.
+
 For mutating remote workflows, verify target runtime freshness before the first target status read. If the target
 `~/.agents/skills/tilde` checkout is stale, refresh it from the controller checkout before running target `tilde status`,
 `tilde plan`, or `tilde apply`. On Git-backed remote hosts, also refresh stale public/private target checkouts from the
@@ -157,6 +161,10 @@ runtime checkout with divergent history, not for desired-state checkouts without
 For Git-backed targets, controller-side Dropbox paths are source paths, not target paths; do not create target-side
 `~/Dropbox` for repository binding, cleanup, shared app state, or convenience paths unless active target policy says the
 host has Dropbox-backed storage.
+
+When active home policy requires Dropbox conflicted-copy cleanup, use only the literal cleanup root named by that policy,
+normally `$HOME/Dropbox`. Do not additionally scan symlink-resolved or platform-specific Dropbox paths unless policy
+names them.
 
 For host-aware prompt commands, omitted target means current host. A bare host means `ssh:host`, except when it names
 the current host; use explicit `ssh:host` to force SSH transport. Bare all-caps targets such as `ALL`, `HOME`, and

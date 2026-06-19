@@ -178,6 +178,12 @@ use refresh merely to recreate state, and do not tell the user to run deploy sol
 `state.yml` is not proof that the host was never deployed; describe it as missing state and state recovery unless
 bounded evidence proves otherwise.
 
+`update` / `refresh` does not run Install, declared package installs, or ordinary declared link/copy/seed/reset
+reconciliation. If a repository change adds a package, link, copy, seed, reset, or other install-time desired state, use
+`repair` (or `deploy` for a fresh host) to reconcile it. `repair` rechecks every current Install and package
+declaration against live target state; it is not limited to declarations added since the last anchor. Present packages
+return `unchanged`, missing packages are installed, and a fully successful repair may advance `applied` anchors.
+
 When an agent workflow materializes plan JSON files, create them under a per-run temporary directory and remove that
 directory at exit. Do not write fixed plan paths such as `/tmp/opencode/HOST-public.json`, and do not leave plan files
 behind after `tilde apply`:
@@ -540,6 +546,9 @@ For weaker or low-context agents:
 - Use the `plan --mode refresh` implementation route for the `update` prompt command only when target status has
   existing `applied` anchors. If target status shows missing `state.yml` or no `applied` anchors, use
   `plan --mode repair` for state recovery.
+- Do not expect `/tilde update HOST` to install a package that was newly added to module frontmatter or to create newly
+  declared links, copies, seeds, or resets. For that desired-state reconciliation, run `/tilde repair HOST`; repair
+  checks all current declarations against live state, not only the repository diff.
 - For host-aware prompt commands, omitted target means current host. Treat bare `host` as `ssh:host`, except when it
   names the current host; then run the local workflow. Use explicit `ssh:host` to force SSH transport.
 - Missing `state.yml` or missing `applied` anchors means state recovery, not proof that the host was never deployed.
@@ -557,6 +566,9 @@ For weaker or low-context agents:
 - Do not create `~/Dropbox` on a target just because controller source repositories live under Dropbox, an example uses
   `~/Dropbox/home`, or post-update cleanup mentions Dropbox. If target status binds Git-backed repositories under
   `~/.local/src`, use those paths and skip Dropbox-only maintenance when `~/Dropbox` is absent.
+- If active home policy asks for Dropbox conflicted-copy cleanup after update, apply that cleanup only to the bounded
+  literal path named by the policy, normally `$HOME/Dropbox`. Do not substitute or additionally scan resolved Dropbox
+  paths such as `$HOME/Library/CloudStorage/Dropbox` unless the active policy explicitly names them for cleanup.
 - Use `mktemp -d` and `trap` for all local and remote plan JSON files. Do not write fixed `/tmp/opencode/...` plan
   paths or leave generated plan files behind after apply.
 - Do not say `applied` anchors advanced after a successful `refresh`/`update` run. Refresh mode does not write anchors;
