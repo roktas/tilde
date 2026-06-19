@@ -489,6 +489,8 @@ For weaker or low-context agents:
 - Keep `applied` anchors unchanged after `deferred`, `conflict`, or `notok`.
 - On timeout or `state lock busy`, do not remove `~/.local/state/tilde/lock` blindly. Check whether an apply process is
   still active and treat uncertainty as `deferred`.
+- Do not remove remote Tilde lock files as routine closeout cleanup after a failed or partial apply. Lock cleanup is a
+  separate recovery step after bounded holder checks and, when any uncertainty remains, explicit user approval.
 - Never plan a remote host from the controller.
 - For mutating remote workflows, verify target Tilde runtime freshness and Git-backed desired-state checkout freshness
   before the first target `status`, `plan`, or `apply`.
@@ -508,6 +510,9 @@ For weaker or low-context agents:
   conflicted, even when the tool output pane says `(no output)`.
 - After `tilde apply`, inspect action results. Do not report success only because JSON was printed or `completed` is
   true; any `deferred`, `conflict`, or `notok` action means the run is incomplete.
+- After a `notok` section or package result, do not run module snippets manually on the target for debugging or repair.
+  Diagnose from structured output and source, fix desired state, then retry through `deploy` or `repair`. Any
+  target-side manual mutation is a separate operator workflow and needs explicit approval.
 - Inspect `ignored` and empty-output `ok` actions against the requested host. A guarded desktop install that returns
   `ok` with no output may have skipped the real package work; verify expected package state and condition diagnostics
   for modules such as terminals, browsers, Flatpak apps, and desktop tooling.
