@@ -78,6 +78,7 @@ main() {
 	local script_dir
 	local skill_root
 	local source
+	local replacement
 	local target
 	local tilde
 	local tmpdir
@@ -94,6 +95,7 @@ main() {
 	bundle=$tmpdir/home-.bundle
 	err=$tmpdir/checkout.err
 	source=$tmpdir/source/home-
+	replacement=$tmpdir/source/replacement
 	target=$tmpdir/target/home-
 
 	write_private_repo "$source"
@@ -141,6 +143,17 @@ main() {
 	pack "$tilde" "$source" "$bundle" --allow-unpushed
 	"$tilde" checkout receive --repo "$target" --bundle "$bundle" --origin "$bare"
 	grep -qx three "$target/value.txt"
+
+	write_private_repo "$replacement"
+	printf 'replacement\n' >"$replacement/value.txt"
+	commit_all "$replacement" replacement
+	pack "$tilde" "$replacement" "$bundle" --allow-unpushed
+	if "$tilde" checkout receive --repo "$target" --bundle "$bundle" --origin "$bare" >/dev/null 2>"$err"; then
+		abort "expected divergent target to fail without replace-clean"
+	fi
+	grep -q "target cannot fast-forward" "$err"
+	"$tilde" checkout receive --repo "$target" --bundle "$bundle" --origin "$bare" --replace-clean
+	grep -qx replacement "$target/value.txt"
 }
 
 main "$@"

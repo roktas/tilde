@@ -1038,6 +1038,10 @@ Git-backed target runtime or desired-state checkout SHOULD be refreshed from the
 runtime or checkout cannot be refreshed safely because it is dirty, missing, not a Git checkout, or ambiguous, the run
 MUST return `deferred`.
 
+If a clean target runtime cannot fast-forward because its history differs from the controller runtime, agents MAY use
+`checkout remote --replace-clean` to replace that clean runtime checkout. Agents MUST NOT use `--replace-clean` for
+public/private desired-state checkouts unless the operator has explicitly approved replacing that clean checkout.
+
 Agents MUST NOT patch, edit, or `sed` target runtime or desired-state checkouts as part of deploy, update, repair,
 upgrade, or align and then continue as if that target-side patch completed the workflow. The correct response is to
 capture the exact target diff, report it for source-repository review, and leave the workflow `deferred` unless the
@@ -1059,17 +1063,19 @@ For target runtime freshness, the controller repository is the loaded skill root
 
 ```text
 controller_runtime=${TILDE%/bin/tilde}
-"$TILDE" checkout remote --host spinoza --repo "$controller_runtime" --target ~/.agents/skills/tilde
+"$TILDE" checkout remote --host spinoza --repo "$controller_runtime" --target '~/.agents/skills/tilde'
 ```
 
 For Git-backed desired-state checkout freshness, the controller repository is the selected data repository and the
 target is the target host's bound checkout:
 
 ```text
-"$TILDE" checkout remote --host vps --repo ~/Dropbox/home --target ~/.local/src/home
+"$TILDE" checkout remote --host vps --repo ~/Dropbox/home --target '~/.local/src/home'
 ```
 
 Agents MUST NOT call `checkout remote` with only `--host`. The route cannot infer repository bindings from a host name.
+Agents MUST quote target paths that start with `~` so the controller shell does not expand them before delivery to the
+remote host.
 
 For read-only remote workflows such as `status` and `doctor`, a stale target runtime is reported as a stale-runtime
 condition. It is not permission to mutate the remote host.

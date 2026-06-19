@@ -106,10 +106,13 @@ receive_bundle() {
 	local branch=$3
 	local remote=$4
 	local origin=$5
+	local replace_clean=$6
 
+	local checkout_ref
 	local current
 
 	[[ -r $bundle ]] || abort "bundle is missing or unreadable: $bundle"
+	checkout_ref="refs/tilde/checkout/$branch"
 
 	if [[ -e $repo && ! -d $repo/.git ]]; then
 		abort "target exists but is not a Git checkout: $repo"
@@ -121,8 +124,17 @@ receive_bundle() {
 		current=$(git -C "$repo" branch --show-current)
 		[[ $current = "$branch" ]] || abort "target branch is $current, expected $branch"
 		ensure_remote "$repo" "$remote" "$origin"
-		git -C "$repo" fetch "$bundle" "refs/heads/$branch:refs/remotes/$remote/$branch"
-		git -C "$repo" merge --ff-only "$remote/$branch"
+		git -C "$repo" fetch "$bundle" "+refs/heads/$branch:$checkout_ref"
+		if git -C "$repo" merge-base --is-ancestor HEAD "$checkout_ref"; then
+			git -C "$repo" merge --ff-only "$checkout_ref"
+		elif ((replace_clean)); then
+			git -C "$repo" reset --hard "$checkout_ref"
+		else
+			git -C "$repo" update-ref -d "$checkout_ref" >/dev/null 2>&1 || true
+			abort "target cannot fast-forward: $repo"
+		fi
+		git -C "$repo" update-ref "refs/remotes/$remote/$branch" "$checkout_ref"
+		git -C "$repo" update-ref -d "$checkout_ref" >/dev/null 2>&1 || true
 	else
 		ensure_parent "$repo"
 		mkdir -p "$repo"
@@ -204,6 +216,7 @@ command.receive() {
 	local bundle=
 	local origin=
 	local remote=origin
+	local replace_clean=0
 	local repo=
 
 	while (($# > 0)); do
@@ -232,6 +245,10 @@ command.receive() {
 			remote=$2
 			shift 2
 			;;
+		--replace-clean)
+			replace_clean=1
+			shift
+			;;
 		--repo)
 			(($# > 1)) || abort "--repo needs a path"
 			repo=$2
@@ -245,7 +262,7 @@ command.receive() {
 
 	[[ -n $repo ]] || abort "--repo is required"
 	[[ -n $bundle ]] || abort "--bundle is required"
-	receive_bundle "$repo" "$bundle" "$branch" "$remote" "$origin"
+	receive_bundle "$repo" "$bundle" "$branch" "$remote" "$origin" "$replace_clean"
 }
 
 command.remote() {
@@ -256,6 +273,7 @@ command.remote() {
 	local origin=
 	local remote=origin
 	local remote_bundle
+	local replace_clean=0
 	local repo=
 	local target=
 
@@ -289,6 +307,10 @@ command.remote() {
 			remote=$2
 			shift 2
 			;;
+		--replace-clean)
+			replace_clean=1
+			shift
+			;;
 		--repo)
 			(($# > 1)) || abort "--repo needs a path"
 			repo=$2
@@ -319,7 +341,7 @@ command.remote() {
 
 	pack_bundle "$repo" "$bundle" "$branch" "$allow_unpushed"
 	scp "$bundle" "$host:$remote_bundle"
-	"$(tilde_root)/bin/tilde" ssh --no-root "$host" -- "$target" "$remote_bundle" "$branch" "$remote" "$origin" <<'SH'
+	"$(tilde_root)/bin/tilde" ssh --no-root "$host" -- "$target" "$remote_bundle" "$branch" "$remote" "$origin" "$replace_clean" <<'SH'
 abort() {
 	printf 'E: %s\n' "$*" >&2
 	exit 1
@@ -330,6 +352,8 @@ bundle=$2
 branch=$3
 remote=$4
 origin=$5
+replace_clean=$6
+checkout_ref="refs/tilde/checkout/$branch"
 trap 'rm -f "$bundle"' EXIT HUP INT QUIT TERM
 
 if [ ! -r "$bundle" ]; then
@@ -359,8 +383,17 @@ if [ -d "$repo/.git" ]; then
 			git -C "$repo" remote add "$remote" "$origin"
 		fi
 	fi
-	git -C "$repo" fetch "$bundle" "refs/heads/$branch:refs/remotes/$remote/$branch"
-	git -C "$repo" merge --ff-only "$remote/$branch"
+	git -C "$repo" fetch "$bundle" "+refs/heads/$branch:$checkout_ref"
+	if git -C "$repo" merge-base --is-ancestor HEAD "$checkout_ref"; then
+		git -C "$repo" merge --ff-only "$checkout_ref"
+	elif [ "$replace_clean" = 1 ]; then
+		git -C "$repo" reset --hard "$checkout_ref"
+	else
+		git -C "$repo" update-ref -d "$checkout_ref" >/dev/null 2>&1 || true
+		abort "target cannot fast-forward: $repo"
+	fi
+	git -C "$repo" update-ref "refs/remotes/$remote/$branch" "$checkout_ref"
+	git -C "$repo" update-ref -d "$checkout_ref" >/dev/null 2>&1 || true
 else
 	parent=$(dirname -- "$repo")
 	mkdir -p "$parent" "$repo"
@@ -391,8 +424,8 @@ usage() {
 	cat <<-EOF
 		Usage:
 		  checkout pack --repo REPO --bundle BUNDLE [--branch BRANCH] [--allow-unpushed]
-		  checkout receive --repo TARGET --bundle BUNDLE [--branch BRANCH] [--remote NAME] [--origin URL]
-		  checkout remote --host HOST --repo REPO --target TARGET [--branch BRANCH] [--remote NAME] [--origin URL] [--allow-unpushed]
+		  checkout receive --repo TARGET --bundle BUNDLE [--branch BRANCH] [--remote NAME] [--origin URL] [--replace-clean]
+		  checkout remote --host HOST --repo REPO --target TARGET [--branch BRANCH] [--remote NAME] [--origin URL] [--allow-unpushed] [--replace-clean]
 	EOF
 }
 
@@ -406,7 +439,7 @@ usage_pack() {
 
 usage_receive() {
 	cat <<-EOF
-		Usage: checkout receive --repo TARGET --bundle BUNDLE [--branch BRANCH] [--remote NAME] [--origin URL]
+		Usage: checkout receive --repo TARGET --bundle BUNDLE [--branch BRANCH] [--remote NAME] [--origin URL] [--replace-clean]
 
 		Receive a bundle into a local target checkout.
 	EOF
@@ -414,9 +447,9 @@ usage_receive() {
 
 usage_remote() {
 	cat <<-EOF
-		Usage: checkout remote --host HOST --repo REPO --target TARGET [--branch BRANCH] [--remote NAME] [--origin URL] [--allow-unpushed]
+		Usage: checkout remote --host HOST --repo REPO --target TARGET [--branch BRANCH] [--remote NAME] [--origin URL] [--allow-unpushed] [--replace-clean]
 
-		Bundle a clean controller repository, copy it to HOST, and fast-forward TARGET through Tilde SSH transport.
+		Bundle a clean controller repository, copy it to HOST, and update TARGET through Tilde SSH transport.
 	EOF
 }
 

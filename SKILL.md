@@ -210,6 +210,9 @@ For mutating remote prompt workflows such as `deploy`, `update`, `repair`, `upgr
   before running target `tilde status`, `tilde plan`, or `tilde apply`.
 - If the target runtime is stale but cannot be refreshed safely because it is dirty, missing, not a Git checkout, or
   otherwise ambiguous, stop with `deferred`. Do not continue into state recovery with the stale runtime.
+- If a clean target runtime cannot fast-forward because its history differs from the controller runtime, refresh it with
+  `--replace-clean`. Do not use `--replace-clean` for public/private desired-state checkouts unless the operator has
+  explicitly approved replacing that clean checkout.
 - Do not patch, edit, or `sed` the target runtime checkout as part of the deploy/update/repair workflow or continue as
   if a target-side patch completed the workflow. If live debugging requires a temporary target edit, treat it as a
   separate explicitly approved recovery/debug operation, capture the diff, port accepted changes to the controller
@@ -226,17 +229,18 @@ controller repository is the loaded skill root and the target is `~/.agents/skil
 ```bash
 TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
 controller_runtime=${TILDE%/bin/tilde}
-"$TILDE" checkout remote --host spinoza --repo "$controller_runtime" --target ~/.agents/skills/tilde
+"$TILDE" checkout remote --host spinoza --repo "$controller_runtime" --target '~/.agents/skills/tilde'
 ```
 
 For Git-backed desired-state checkout freshness, pass the selected controller data repository and the target checkout:
 
 ```bash
-"$TILDE" checkout remote --host vps --repo ~/Dropbox/home --target ~/.local/src/home
+"$TILDE" checkout remote --host vps --repo ~/Dropbox/home --target '~/.local/src/home'
 ```
 
 Do not call `checkout remote` with only `--host`; the route cannot infer which controller repository maps to which
-target checkout.
+target checkout. Quote target paths that start with `~` so the controller shell does not expand them to the controller
+home before the remote receives the path.
 
 For read-only remote workflows such as `status` and `doctor`, detecting a stale target runtime is a reportable stale
 runtime condition, not permission to mutate the remote host. Report it and stop unless the user requested repair or
@@ -531,7 +535,7 @@ For weaker or low-context agents:
 - A final status read is verification only; it does not make an earlier failed remote `checkout`, `plan`, `apply`, or
   align step successful.
 - Call `checkout remote` only with the complete mapping: `--host HOST --repo CONTROLLER_REPO --target TARGET_REPO`.
-  Do not expect it to infer target paths from `--host`.
+  Do not expect it to infer target paths from `--host`. Quote target paths that start with `~`.
 - Use the `plan --mode refresh` implementation route for the `update` prompt command only when target status has
   existing `applied` anchors. If target status shows missing `state.yml` or no `applied` anchors, use
   `plan --mode repair` for state recovery.

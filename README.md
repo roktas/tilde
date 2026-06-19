@@ -151,7 +151,9 @@ controller repositories before planning. If a stale target runtime or checkout c
 `deferred`. Status paths outside the `state.yml` model, such as `config.yml` or `hosts/HOST/state.md`, mean stale target
 runtime, not successful state recovery. Use `checkout remote` with `--host`, `--repo`, and `--target`; the route does
 not infer bindings from `--host`. Runtime freshness maps the loaded skill root to target `~/.agents/skills/tilde`;
-desired-state freshness maps the selected data repository to the target binding.
+desired-state freshness maps the selected data repository to the target binding. Quote target paths that start with `~`
+so the controller shell does not expand them before the remote receives the path. Use `--replace-clean` only for a clean
+runtime checkout with divergent history, not for desired-state checkouts without explicit operator approval.
 For Git-backed targets, controller-side Dropbox paths are source paths, not target paths; do not create target-side
 `~/Dropbox` for repository binding, cleanup, shared app state, or convenience paths unless active target policy says the
 host has Dropbox-backed storage.
