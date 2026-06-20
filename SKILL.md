@@ -515,12 +515,13 @@ If sudo is required and noninteractive sudo fails, report `deferred` and present
 "$TILDE" handoff --host spinoza --copy
 ```
 
-Run the helper on the controller, not inside `"$TILDE" ssh`. The helper prints one shell-neutral command line and
-reports whether it copied the command to the controller clipboard. The command must work when pasted into bash, zsh, or
-fish. Copy or present the `Handoff command:` line exactly; do not rewrite it, split it into a `TILDE=...` assignment
-plus an `ssh` command, replace the remote path with a local variable, or add extra quoting. The printed command is also
-valid during first-time bootstrap before the target runtime exists; do not replace it with an ad hoc sudoers one-liner.
-Wait for the user to run it, then rerun the affected action and verify cleanup. Do not collect passwords in chat.
+Run the helper on the controller, not inside `"$TILDE" ssh`. The helper prefers the short runtime handoff command when
+the local or target runtime supports it; otherwise it prints the self-contained bootstrap fallback. It reports whether
+it copied the command to the controller clipboard. The command must work when pasted into bash, zsh, or fish. Copy or
+present the `Handoff command:` line exactly; do not rewrite it, split it into a `TILDE=...` assignment plus an `ssh`
+command, replace the remote path with a local variable, or add extra quoting. The printed command is also valid during
+first-time bootstrap before the target runtime exists; do not replace it with an ad hoc sudoers one-liner. Wait for the
+user to run it, then rerun the affected action and verify cleanup. Do not collect passwords in chat.
 
 ## Weak-Model Guardrails
 

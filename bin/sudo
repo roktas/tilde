@@ -4,10 +4,16 @@ set -Eeuo pipefail
 [[ -z ${TRACE:-} ]] || set -x
 unset CDPATH
 
+root=$(cd -- "${BASH_SOURCE[0]%/*}/.." >/dev/null && pwd)
+
+if [[ ${1:-} == --handoff ]]; then
+	shift
+	exec "$root/libexec/sudo" allow "$@"
+fi
+
 if [[ ${TILDE_SUDO:-} != intercept ]]; then
 	printf '%s\n' "E: Tilde sudo shim is only available inside the Tilde execution environment" >&2
 	exit 125
 fi
 
-root=$(cd -- "${BASH_SOURCE[0]%/*}/.." >/dev/null && pwd)
 exec "$root/bin/tilde" sudo -- "$@"

@@ -24,7 +24,19 @@ cleanup() {
 	[[ -z $cleanup_tmpdir ]] || rm -rf "$cleanup_tmpdir"
 }
 
-assert_handoff_command() {
+assert_command_syntax() {
+	local command=$1
+
+	bash -n -c "$command"
+	if command -v zsh >/dev/null; then
+		zsh -n -c "$command"
+	fi
+	if command -v fish >/dev/null; then
+		fish -n -c "$command"
+	fi
+}
+
+assert_fallback_handoff_command() {
 	local file=$1
 
 	local command
@@ -38,13 +50,22 @@ assert_handoff_command() {
 	[[ $command == *'visudo -cf'* ]] || abort "handoff command should validate the sudoers fallback"
 	[[ $command != *"TILDE="* ]] || abort "handoff command should not require a TILDE assignment"
 
-	bash -n -c "$command"
-	if command -v zsh >/dev/null; then
-		zsh -n -c "$command"
-	fi
-	if command -v fish >/dev/null; then
-		fish -n -c "$command"
-	fi
+	assert_command_syntax "$command"
+}
+
+assert_short_handoff_command() {
+	local file=$1
+
+	local command
+
+	command=$(grep -m 1 '^ssh -t spinoza ' "$file" || true)
+	[[ -n $command ]] || abort "missing remote handoff command in $file"
+	[[ $command == "ssh -t spinoza '~/.agents/skills/tilde/bin/sudo --handoff'" ]] ||
+		abort "handoff command should use the short runtime helper"
+	[[ $command != *"sh -c"* ]] || abort "short handoff command should not include the bootstrap payload"
+	[[ $command != *"TILDE="* ]] || abort "handoff command should not require a TILDE assignment"
+
+	assert_command_syntax "$command"
 }
 
 # ------------------------------------------------------------------------------------------------------------------------
@@ -223,17 +244,23 @@ EOF
 	[[ ! -f $align_state/tilde/state.yml ]]
 	[[ -f $align_state/tilde/lock ]]
 
-	"$tilde" sudo handoff --host spinoza --no-copy >"$handoff"
-	assert_handoff_command "$handoff"
+	PATH=$fake_bin:$PATH "$tilde" sudo handoff --host spinoza --no-copy >"$handoff"
+	assert_short_handoff_command "$handoff"
+	TILDE_FAKE_SSH_EXIT=1 PATH=$fake_bin:$PATH "$tilde" sudo handoff --host spinoza --no-copy >"$handoff"
+	assert_fallback_handoff_command "$handoff"
 	env -u WAYLAND_DISPLAY -u DISPLAY TILDE_FAKE_CLIPBOARD="$handoff_clipboard" PATH="$fake_bin:$PATH" \
 		"$tilde" handoff --host spinoza >"$handoff"
 	grep -Fq "Clipboard: copied with wl-copy." "$handoff"
-	assert_handoff_command "$handoff_clipboard"
+	assert_short_handoff_command "$handoff_clipboard"
 
 	if env -u TILDE_SUDO "$skill_root/bin/sudo" true >/dev/null 2>"$sudo_err"; then
 		abort "expected sudo shim to fail outside Tilde execution"
 	fi
 	grep -Fq "Tilde sudo shim is only available" "$sudo_err"
+	if env -u USER "$skill_root/bin/sudo" --handoff --user= >/dev/null 2>"$sudo_err"; then
+		abort "expected handoff helper to reject empty user"
+	fi
+	grep -Fq "could not determine target user" "$sudo_err"
 	PATH=$sudo_alias_root/bin:$skill_root/bin:$real_bin:/usr/bin:/bin "$tilde" sudo -- true >"$sudo_out"
 	grep -Fxq "real sudo -n true" "$sudo_out"
 	PATH=$sudo_alias_root/bin:$skill_root/bin:$real_bin:/usr/bin:/bin "$tilde" sudo -- line ensure /tmp/tilde-line value >"$sudo_out"

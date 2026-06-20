@@ -385,9 +385,11 @@ handoff
 
 `handoff` prints one shell-neutral privilege-preparation command line for the local or selected remote host and attempts
 to copy it to the controller clipboard using a platform-appropriate clipboard command. The command must be suitable for
-direct paste into bash, zsh, or fish. Agents MUST run `handoff` on the controller, not through Tilde SSH transport, and
-MUST present the printed `Handoff command:` line exactly. Agents MUST NOT split it into environment assignments and a
-separate command.
+direct paste into bash, zsh, or fish. When the local or target runtime supports it, `handoff` SHOULD print the short
+runtime helper form, such as `~/.agents/skills/tilde/bin/sudo --handoff` or
+`ssh -t HOST '~/.agents/skills/tilde/bin/sudo --handoff'`. Agents MUST run `handoff` on the controller, not through
+Tilde SSH transport, and MUST present the printed `Handoff command:` line exactly. Agents MUST NOT split it into
+environment assignments and a separate command.
 
 For remote first-time bootstrap, the printed command MUST NOT assume that the target Tilde runtime already exists. It
 SHOULD use the target runtime when present and otherwise perform the minimal validated sudoers bootstrap needed for
