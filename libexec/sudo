@@ -338,7 +338,7 @@ write_rule() {
 # ------------------------------------------------------------------------------------------------------------------------
 
 command.allow() {
-	local user=${USER:-}
+	local user=${SUDO_USER:-${USER:-}}
 	local user_given=0
 
 	local sudo
