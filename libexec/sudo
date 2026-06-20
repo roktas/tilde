@@ -30,7 +30,9 @@ canonical_path() {
 	dir=${path%/*}
 	base=${path##*/}
 	[[ $dir != "$path" ]] || dir=.
-	cd -P -- "$dir" >/dev/null 2>&1 && printf '%s/%s\n' "$(pwd -P)" "$base"
+	(
+		cd -P -- "$dir" >/dev/null 2>&1 && printf '%s/%s\n' "$(pwd -P)" "$base"
+	)
 }
 
 copy_clipboard() {
@@ -309,11 +311,14 @@ tilde_sudo_shim() {
 	local candidate
 	local root
 	local shim
+	local -a shims
 
 	candidate=$(canonical_path "$sudo" 2>/dev/null || true)
 	root=$(cd -P -- "${BASH_SOURCE[0]%/*}/.." >/dev/null && pwd)
+	shims=("$root/bin/sudo")
+	[[ -z ${TILDE_ROOT:-} ]] || shims+=("$TILDE_ROOT/bin/sudo")
 
-	for shim in "$root/bin/sudo" "${TILDE_ROOT:-}/bin/sudo"; do
+	for shim in "${shims[@]}"; do
 		[[ -n $shim && -e $shim ]] || continue
 		[[ $candidate == "$(canonical_path "$shim" 2>/dev/null || true)" ]] && return 0
 	done
