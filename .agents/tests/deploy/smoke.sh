@@ -161,6 +161,32 @@ applied:
   public: $(git -C "$remote_home/Dropbox/home" rev-parse HEAD)
   private: $(git -C "$remote_home/Dropbox/home-" rev-parse HEAD)
 EOF
+	mkdir -p "$remote_home/bin"
+	cat >"$remote_home/bin/apt-get" <<'EOF'
+#!/usr/bin/env bash
+[[ ${1:-} == --version ]] || exit 2
+printf 'apt fake\n'
+EOF
+	cat >"$remote_home/bin/sudo" <<'EOF'
+#!/usr/bin/env bash
+[[ ${1:-} == -n ]] && shift
+case "$*" in
+"true")
+	exit 1
+	;;
+"env DEBIAN_FRONTEND=noninteractive apt-get --version")
+	exit 0
+	;;
+"test -e /etc/sudoers.d/tilde")
+	exit 1
+	;;
+*)
+	printf 'unexpected sudo command: %s\n' "$*" >&2
+	exit 2
+	;;
+esac
+EOF
+	chmod +x "$remote_home/bin/apt-get" "$remote_home/bin/sudo"
 
 cat >"$ssh_script" <<'EOF'
 #!/usr/bin/env bash
@@ -170,7 +196,7 @@ shift
 interpreter=$1
 shift
 export HOME=$TILDE_FAKE_REMOTE_HOME
-export PATH=/usr/bin:/bin
+export PATH=$HOME/bin:/usr/bin:/bin
 exec "$interpreter" "$@"
 EOF
 	chmod +x "$ssh_script"
@@ -184,6 +210,8 @@ EOF
 	  abort "private repo" unless data.dig("repositories", "private", "exists") == true
 	  abort "runtime" unless data.dig("runtime", "current") == true
 	  abort "dropbox runtime" unless data.dig("dropbox_runtime", "current") == true
+	  abort "broad sudo should be unavailable" unless data.dig("sudo", "noninteractive") == false
+	  abort "apt sudo should be available" unless data.dig("sudo", "apt") == true
 	  abort "link step" unless data["next"].include?("link-dropbox-runtime")
 	  abort "dropbox repo step" unless data["next"].include?("use-target-dropbox-repositories")
 	' "$out"

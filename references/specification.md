@@ -1063,6 +1063,12 @@ Agents MUST use `bootstrap.needed` and `next` from this JSON for the initial boo
 bootstrap need from free-form logs, guessed package state, or controller-side state. The bootstrap baseline is
 intentionally small: Homebrew, `curl`, `git`, and `ruby` must be usable on the target.
 
+The `sudo.noninteractive` field reports the broad `sudo -n true` probe. It is not a general handoff trigger for
+already deployed Linux hosts, because a host may intentionally allow only package-management commands without a
+password. The `sudo.apt` field reports whether the exact noninteractive apt form used by Tilde package actions can run.
+For ordinary `update` and `repair` package work, agents MUST proceed when `sudo.apt=true` and MUST request handoff only
+when preflight `next` asks for it or a real apply step returns a sudo deferral.
+
 Remote freshness preflight checks:
 
 - the target `~/.agents/skills/tilde` runtime commit matches the controller-side loaded Tilde runtime commit,

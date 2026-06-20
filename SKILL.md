@@ -219,6 +219,12 @@ Use `bootstrap.needed` and `next` from this JSON for the initial bootstrap decis
 free-form logs, guessed package state, or controller-side state. The bootstrap baseline is intentionally small:
 Homebrew, `curl`, `git`, and `ruby` must be usable on the target.
 
+`sudo.noninteractive` is the broad `sudo -n true` probe. It may be false on Linux hosts that intentionally allow only
+package-management commands without a password. For ordinary `update`/`repair` package work, use `sudo.apt` to
+recognize that `apt-get` commands can run noninteractively. Do not run handoff merely because
+`sudo.noninteractive=false`; run handoff only when preflight `next` asks for it, or when the actual apply returns a sudo
+deferral.
+
 For Dropbox-backed interactive hosts, the durable runtime shape is:
 
 ```text
@@ -624,6 +630,8 @@ For weaker or low-context agents:
 - Run `"$TILDE" handoff --host HOST --copy` on the controller after sudo deferral. Do not run handoff through
   `"$TILDE" ssh`, do not invent a two-line `TILDE=...` command, do not rewrite the printed `Handoff command:`, and do
   not replace first-time bootstrap handoff with a handcrafted sudoers command.
+- Do not treat `sudo.noninteractive=false` as a handoff trigger by itself. On Linux update flows,
+  `sudo.apt=true` means apt package work should be attempted normally; ask for handoff only after a real sudo deferral.
 - Remove packages, file materializations, files, or spans only with explicit managedness proof and proposal-first
   confirmation.
 - Prefer a safe `deferred` or `conflict` result over guessing.

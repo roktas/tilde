@@ -426,6 +426,15 @@ if command -v sudo >/dev/null 2>&1; then
 else
 	emit sudo_noninteractive false
 fi
+if command -v sudo >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
+	if sudo -n env DEBIAN_FRONTEND=noninteractive apt-get --version >/dev/null 2>&1; then
+		emit sudo_apt true
+	else
+		emit sudo_apt false
+	fi
+else
+	emit sudo_apt false
+fi
 if [ -e /etc/sudoers.d/tilde ] || { command -v sudo >/dev/null 2>&1 && sudo -n test -e /etc/sudoers.d/tilde 2>/dev/null; }; then
 	emit sudoers_tilde true
 else
@@ -558,6 +567,7 @@ data = {
   },
   "sudo" => {
     "noninteractive" => bool.call("sudo_noninteractive"),
+    "apt" => bool.call("sudo_apt"),
     "tilde_rule" => bool.call("sudoers_tilde")
   },
   "controller" => {
