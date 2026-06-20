@@ -47,6 +47,7 @@ main() {
 	local head
 	local invalid_plan_err
 	local invalid_plan_json
+	local invalid_upgrade_err
 	local macos_plan_json
 	local normal_plan_json
 	local platform_module
@@ -105,6 +106,7 @@ main() {
 	full_refresh_plan_json=$tmpdir/full-refresh-plan.json
 	invalid_plan_err=$tmpdir/invalid-package-plan.err
 	invalid_plan_json=$tmpdir/invalid-package-plan.json
+	invalid_upgrade_err=$tmpdir/invalid-upgrade.err
 	macos_plan_json=$tmpdir/macos-plan.json
 	normal_plan_json=$tmpdir/normal-plan.json
 	plan_json=$tmpdir/plan.json
@@ -624,7 +626,15 @@ EOF
 	"$tilde" plan --repo "$repo" --allow-dirty --mode align --platform linux --host smoke >"$align_plan_json"
 	"$tilde" plan --repo "$repo" --mode refresh --platform linux --host smoke >"$refresh_plan_json"
 	"$tilde" plan --repo "$repo" --mode refresh --scope full --platform linux --host smoke >"$full_refresh_plan_json"
-	"$tilde" plan --repo "$repo" --mode upgrade --platform linux --host smoke >"$upgrade_plan_json"
+	"$tilde" plan --repo "$repo" --mode refresh --upgrade --platform linux --host smoke >"$upgrade_plan_json"
+	if "$tilde" plan --repo "$repo" --mode upgrade --platform linux --host smoke >"$invalid_plan_json" 2>"$invalid_upgrade_err"; then
+		abort "expected removed upgrade mode to fail"
+	fi
+	grep -q "Unsupported mode: upgrade" "$invalid_upgrade_err"
+	if "$tilde" plan --repo "$repo" --mode refresh --scope fast --upgrade --platform linux --host smoke >"$invalid_plan_json" 2>"$invalid_upgrade_err"; then
+		abort "expected fast upgrade scope to fail"
+	fi
+	grep -q -- "--upgrade requires full scope" "$invalid_upgrade_err"
 
 	ALIGN_PLAN_JSON=$align_plan_json ruby -rjson -e '
 		plan = JSON.parse(File.read(ENV.fetch("ALIGN_PLAN_JSON")))
@@ -643,6 +653,8 @@ EOF
 		plan = JSON.parse(File.read(ENV.fetch("REFRESH_PLAN_JSON")))
 		abort "wrong refresh mode" unless plan.fetch("mode") == "refresh"
 		abort "wrong refresh scope" unless plan.fetch("scope") == "fast"
+		abort "refresh should not be marked as upgrade" if plan.fetch("upgrade")
+		abort "refresh target should not be marked as upgrade" if plan.fetch("target").fetch("upgrade")
 		abort "refresh should advance anchors after success" unless plan.fetch("target").fetch("converges")
 		abort "refresh should not create core links" unless plan.fetch("core").fetch("links_to_create").empty?
 		abort "refresh should not write fallback home entrypoints" unless plan.fetch("core").fetch("home_entrypoints_to_write").empty?
@@ -677,6 +689,8 @@ EOF
 		plan = JSON.parse(File.read(ENV.fetch("FULL_REFRESH_PLAN_JSON")))
 		abort "wrong full refresh mode" unless plan.fetch("mode") == "refresh"
 		abort "wrong full refresh scope" unless plan.fetch("scope") == "full"
+		abort "full refresh should not be marked as upgrade" if plan.fetch("upgrade")
+		abort "full refresh target should not be marked as upgrade" if plan.fetch("target").fetch("upgrade")
 		javascript = plan.fetch("modules").find { |mod| mod.fetch("name") == "javascript" }
 		abort "missing javascript module" unless javascript
 		abort "missing managed npm refresh" unless javascript.fetch("packages_to_refresh").any? { |pkg| pkg.fetch("value") == "npm:@biomejs/biome" }
@@ -698,9 +712,11 @@ EOF
 
 	UPGRADE_PLAN_JSON=$upgrade_plan_json ruby -rjson -e '
 		plan = JSON.parse(File.read(ENV.fetch("UPGRADE_PLAN_JSON")))
-		abort "wrong upgrade mode" unless plan.fetch("mode") == "upgrade"
-		abort "wrong upgrade scope" unless plan.fetch("scope") == "full"
-		abort "upgrade should advance anchors after success" unless plan.fetch("target").fetch("converges")
+		abort "upgrade option should use refresh mode" unless plan.fetch("mode") == "refresh"
+		abort "wrong upgrade option scope" unless plan.fetch("scope") == "full"
+		abort "plan should be marked as upgrade" unless plan.fetch("upgrade")
+		abort "target should be marked as upgrade" unless plan.fetch("target").fetch("upgrade")
+		abort "upgrade option should advance anchors after success" unless plan.fetch("target").fetch("converges")
 		linux = plan.fetch("modules").find { |mod| mod.fetch("name") == "linux" }
 		abort "missing linux module" unless linux
 		abort "upgrade should include fast brew refresh" unless linux.fetch("packages_to_refresh").any? { |pkg| pkg.fetch("value") == "brew:*" }

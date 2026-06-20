@@ -230,8 +230,8 @@ runtime entrypoint.
 Bare `tilde` is valid only where Tilde has already made its runtime `bin/` directory PATH-visible, including inside a
 remote script body delivered by Tilde SSH transport.
 
-Prompt commands such as `deploy`, `update`, `repair`, `upgrade`, `adopt`, `create`, `init`, `clean`, and `organize` are
-interpreted by the loaded Tilde skill. They are not guaranteed to have a direct runtime route.
+Prompt commands such as `deploy`, `update`, and `repair` are interpreted by the loaded Tilde skill. They do not have a
+direct runtime route.
 
 Host-aware prompt commands accept these target forms:
 
@@ -251,14 +251,13 @@ The host-aware prompt commands are:
 deploy
 update
 repair
-upgrade
 align
 status
 doctor
 ```
 
-Commands with their own subject syntax, such as `adopt APP_OR_PATH`, `clean SUBJECT`, `organize SUBJECT`, `create`, and
-`init`, MUST NOT treat a bare argument as a host unless the command's own policy explicitly says so.
+Tilde intentionally has no public `create`, `init`, `adopt`, `clean`, `organize`, or `upgrade` prompt commands.
+Unmatured one-off home-management work stays as ordinary proposal-first agent work outside the core command surface.
 
 Bare all-caps targets such as `ALL`, `HOME`, and `WORK` are home-policy host groups, not hostnames. Agents MUST expand a
 host group from the active `~/AGENTS.md` policy before running remote work. Group expansion applies only to unprefixed
@@ -301,9 +300,9 @@ Tilde planning modes execute module sections according to this matrix.
 prompt command -> plan mode
   deploy  -> apply
   update  -> refresh
+  update --upgrade -> refresh --scope full --upgrade
   update with missing state.yml or no applied anchors -> repair
   repair  -> repair
-  upgrade -> upgrade
   align   -> align
 ```
 
@@ -314,8 +313,11 @@ without running `Update` sections. Missing state is not proof that the host was 
 this as state recovery unless bounded evidence proves otherwise.
 
 Refresh mode reconciles current desired-state declarations. A repository change that adds a package, link, copy, seed,
-reset, or other install-time declaration is reconciled by ordinary update. Repair remains available when the intent is
-desired-state convergence without package refresh actions, broad package upgrade actions, or `Update` sections.
+reset, or other install-time declaration is reconciled by ordinary update. `--scope fast` is the default and refreshes
+system package managers such as Homebrew and apt. `--scope full` also refreshes managed non-system package
+declarations. `--upgrade` is valid only with refresh mode, implies full scope, and appends broad package-manager upgrade
+actions after normal update actions. Repair remains available when the intent is desired-state convergence without
+package refresh actions, broad package upgrade actions, or `Update` sections.
 
 Agents that materialize plan JSON files MUST write them under a per-run temporary directory and remove that directory at
 workflow exit. Fixed plan paths under shared temp locations, such as `/tmp/opencode/HOST-public.json`, are invalid for
@@ -354,6 +356,10 @@ refresh / update:
   Update
   Configure
 
+refresh / update with --upgrade:
+  refresh/update actions
+  broad package-manager upgrade actions after refresh/update actions
+
 repair:
   Prerequisites
   package install actions
@@ -361,10 +367,6 @@ repair:
   Post Install, only if the install phase changed in the current run
   directories, links, copies, seeds, and resets
   Configure
-
-upgrade:
-  refresh/update actions
-  package upgrade actions after refresh/update actions
 
 align:
   directories, links, copies, seeds, and resets only
@@ -1094,7 +1096,7 @@ only when preflight shows the Dropbox runtime exists, is a Git checkout, has exe
 matches the controller runtime commit. If the Dropbox checkout is absent, dirty, missing `bin/tilde`, or stale, agents
 MUST defer symlink conversion instead of replacing it with a controller bundle.
 
-For mutating remote prompt workflows such as `deploy`, `update`, `repair`, `upgrade`, and remote `align`, a stale
+For mutating remote prompt workflows such as `deploy`, `update`, `repair`, and remote `align`, a stale
 Git-backed target runtime or desired-state checkout SHOULD be refreshed from the controller checkout with the
 `checkout remote` implementation route before target `tilde status`, `tilde plan`, or `tilde apply` is run. If a stale
 runtime or checkout cannot be refreshed safely because it is dirty, missing, not a Git checkout, or ambiguous, the run
@@ -1104,8 +1106,8 @@ If a clean target runtime cannot fast-forward because its history differs from t
 `checkout remote --replace-clean` to replace that clean runtime checkout. Agents MUST NOT use `--replace-clean` for
 public/private desired-state checkouts unless the operator has explicitly approved replacing that clean checkout.
 
-Agents MUST NOT patch, edit, or `sed` target runtime or desired-state checkouts as part of deploy, update, repair,
-upgrade, or align and then continue as if that target-side patch completed the workflow. The correct response is to
+Agents MUST NOT patch, edit, or `sed` target runtime or desired-state checkouts as part of deploy, update, repair, or
+align and then continue as if that target-side patch completed the workflow. The correct response is to
 capture the exact target diff, report it for source-repository review, and leave the workflow `deferred` unless the
 source repository is fixed and refreshed through normal checkout freshness routes.
 

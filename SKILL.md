@@ -1,6 +1,6 @@
 ---
 name: tilde
-description: Use for Tilde deployment, provisioning, and home-management work. Trigger for Tilde prompt markers such as `/tilde ...` or `$tilde ...`, `~ ...`, messages whose first word is `tilde`, or requests to create, initialize, deploy, update, diagnose managed state, adopt app/config files, customize data-layer policy, or work with Tilde home behavior.
+description: Use for Tilde deployment, provisioning, and home-management work. Trigger for Tilde prompt markers such as `/tilde ...` or `$tilde ...`, `~ ...`, messages whose first word is `tilde`, or requests to deploy, update, align, repair, diagnose managed state, or work with Tilde home behavior.
 ---
 
 # Tilde
@@ -72,9 +72,10 @@ Host-aware prompt commands accept these target forms:
 If a bare host token equals the current host name, such as `hostname -s`, treat it as the current host and run the local
 workflow. Use explicit `ssh:host` only when the user really wants SSH transport to that host, including self-SSH.
 
-The host-aware prompt commands are `deploy`, `update`, `repair`, `upgrade`, `align`, `status`, and `doctor`.
-Commands with their own subject syntax, such as `adopt APP_OR_PATH`, `clean SUBJECT`, `organize SUBJECT`, `create`, and
-`init`, do not treat a bare argument as a host unless the command's own policy says so.
+The public prompt commands are `deploy`, `update`, `repair`, `align`, `status`, and `doctor`. `help` and `handoff` are
+runtime helper routes. Tilde intentionally has no public `create`, `init`, `adopt`, `clean`, `organize`, or `upgrade`
+prompt commands; keep one-off home-management work as ordinary proposal-first agent work until it is mature enough for
+the core command surface.
 
 Bare all-caps targets are not hostnames. Expand them from the active `~/AGENTS.md` home policy before running any remote
 work. Group expansion applies only to unprefixed target tokens; `ssh:host` is always an explicit host target. If the
@@ -119,14 +120,11 @@ Commands are grouped by execution model.
 The agent interprets these high-level commands and orchestrates the workflow. They have no direct runtime route.
 
 - `deploy`: prepare a local or remote host and apply desired state.
-- `update`: run explicit update behavior from the current desired state.
+- `update`: refresh package managers, reconcile current desired state, and run `Update` sections.
 - `repair`: apply the current desired state again; it does not read a repair queue or module-level state.
-- `upgrade`: run the widest explicitly requested upgrade path.
-- `adopt`: inspect a requested app, config, package, or path and propose public/private repository placement.
-- `create`, `init`, `clean`, and `organize`: follow the specification and user policy; keep destructive or
-  preference-sensitive work proposal-first.
 
-Treat `dry-run` and `plan-only` as qualifiers. Do not invent a separate stateful planning model for them.
+Treat `dry-run`, `plan-only`, `--scope fast|full`, and `--upgrade` as qualifiers. `update --upgrade` uses refresh mode
+with broad package-manager upgrade actions; do not use or reintroduce a separate `upgrade` prompt command.
 
 ### Direct Runtime Commands
 
@@ -165,12 +163,9 @@ Agent commands map to planning modes and module sections as follows.
 | --- | --- | --- |
 | `deploy` | `apply` | `Prerequisites`, declared package installs, `Install`, `Post Install` when the install phase changed, declared files and links, then `Configure` |
 | `update` | `refresh`; `repair` for state recovery | package refresh, `Prerequisites`, declared package installs, `Install`, `Post Install` when the install phase changed, declared files and links, `Update`, then `Configure` |
+| `update --upgrade` | `refresh --scope full --upgrade` | update behavior, then broad package-manager upgrade actions |
 | `repair` | `repair` | `Prerequisites`, declared package installs, `Install`, `Post Install` when the install phase changed, declared files and links, then `Configure` |
-| `upgrade` | `upgrade` | update behavior, then broad package upgrades |
 | `align` | `align` | directories, links, copies, seeds, and resets only; no bootstrap, packages, or module code |
-
-`create`, `init`, `clean`, `organize`, and `adopt` are proposal-first operator workflows unless a direct helper is
-explicitly documented for the requested step.
 
 The prompt command is `update`; the ordinary plan mode is `refresh`. Do not call or invent `--mode update`. If target
 status shows missing `state.yml` or no `applied` anchors, recover state with `plan --mode repair` for that run; do not
@@ -181,8 +176,10 @@ fully converged bindings and anchors.
 
 `update` / `refresh` reconciles current desired-state declarations, including newly declared packages, links, copies,
 seeds, and resets. Present packages return `unchanged`, missing packages are installed, and a fully successful
-Tilde-generated refresh plan may advance `applied` anchors. Use `repair` when the intent is desired-state convergence
-without package refreshes, package upgrades, or `Update` sections.
+Tilde-generated refresh plan may advance `applied` anchors. `--scope fast` is the default and refreshes system package
+managers such as Homebrew and apt. `--scope full` also refreshes managed non-system package declarations. `--upgrade`
+implies full scope and appends broad package-manager upgrade actions. Use `repair` when the intent is desired-state
+convergence without package refreshes, broad package upgrades, or `Update` sections.
 
 When an agent workflow materializes plan JSON files, create them under a per-run temporary directory and remove that
 directory at exit. Do not write fixed plan paths such as `/tmp/opencode/HOST-public.json`, and do not leave plan files
@@ -239,7 +236,7 @@ defer the symlink conversion instead of replacing it with a controller bundle.
 
 The controller-side loaded skill is the source for the expected Tilde runtime commit.
 
-For mutating remote prompt workflows such as `deploy`, `update`, `repair`, `upgrade`, and remote `align`:
+For mutating remote prompt workflows such as `deploy`, `update`, `repair`, and remote `align`:
 
 - Compare the controller runtime commit with the target `~/.agents/skills/tilde` commit before the first target-state
   read.
@@ -558,9 +555,8 @@ For weaker or low-context agents:
 - Before any controller-side runtime call, resolve `TILDE` to the loaded skill directory's `bin/tilde`, falling back to
   `~/.agents/skills/tilde/bin/tilde`.
 - If bare `tilde` is not found on the controller, do not search for it; rerun through `"$TILDE"`.
-- Do not run agent-orchestrated prompt routes through `"$TILDE"`: `deploy`, `update`, `repair`, `upgrade`, `adopt`,
-  `create`, `init`, `clean`, and `organize`. `align` is a direct route only for current-host reconciliation; remote
-  align is still a prompt workflow.
+- Do not run agent-orchestrated prompt routes through `"$TILDE"`: `deploy`, `update`, and `repair`. `align` is a
+  direct route only for current-host reconciliation; remote align is still a prompt workflow.
 - For remote `/tilde align HOST`, do not run `tilde align --format json` on the target. Read target bindings on the
   target, then run `tilde plan --mode align --format json` for each target repository and `tilde apply` the plan files.
 - Never redirect remote Tilde stderr to `/dev/null`. Non-zero remote exit status means the step failed, deferred, or
@@ -585,8 +581,10 @@ For weaker or low-context agents:
   existing `applied` anchors. If target status shows missing `state.yml` or no `applied` anchors, use
   `plan --mode repair` for state recovery.
 - Expect `/tilde update HOST` to install packages newly added to module frontmatter and to create newly declared links,
-  copies, seeds, or resets. Use `/tilde repair HOST` only when the intent is convergence without package refreshes,
-  package upgrades, or `Update` sections, or when missing state requires recovery.
+  copies, seeds, or resets. Use `/tilde update HOST --scope full` to refresh managed non-system package declarations,
+  and `/tilde update HOST --upgrade` for broad package-manager upgrades. Use `/tilde repair HOST` only when the intent
+  is convergence without package refreshes, broad package upgrades, or `Update` sections, or when missing state requires
+  recovery.
 - Treat `phase: early` as a cross-plan apply phase. Early actions from applicable modules run before normal actions
   across public/private plans; use it only for small idempotent prerequisites.
 - For host-aware prompt commands, omitted target means current host. Treat bare `host` as `ssh:host`, except when it

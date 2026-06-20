@@ -5,16 +5,9 @@ set -Eeuo pipefail
 unset CDPATH
 
 readonly -a AGENT_COMMANDS=(
-	adopt
-	align
-	clean
-	create
 	deploy
-	init
-	organize
 	repair
 	update
-	upgrade
 )
 
 readonly -a ROUTES=(

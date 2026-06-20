@@ -376,6 +376,7 @@ plan = {
     "platform" => "linux",
     "mode" => "refresh",
     "scope" => "fast",
+    "upgrade" => false,
     "level" => "normal",
     "home" => home,
     "state_root" => File.join(state, "tilde")
@@ -449,6 +450,8 @@ main() {
 	local head
 	local home
 	local host
+	local mismatch_apply_err
+	local mismatch_plan_json
 	local package_apply_json
 	local package_plan_json
 	local package_repo
@@ -499,6 +502,8 @@ main() {
 	package_repo=$tmpdir/package-repo
 	brew_apply_json=$tmpdir/brew-refresh-apply.json
 	brew_plan_json=$tmpdir/brew-refresh-plan.json
+	mismatch_apply_err=$tmpdir/mismatch-apply.err
+	mismatch_plan_json=$tmpdir/mismatch-plan.json
 	plan_json=$tmpdir/plan.json
 	refresh_apply_json=$tmpdir/refresh-apply.json
 	refresh_plan_json=$tmpdir/refresh-plan.json
@@ -711,10 +716,39 @@ EOF
 	'
 
 	write_brew_refresh_plan "$brew_plan_json" "$repo" "$state" "$home" "$host"
+	ruby -rjson - "$brew_plan_json" "$mismatch_plan_json" <<'RUBY'
+require "digest"
+require "json"
+
+source, target = ARGV
+plan = JSON.parse(File.read(source, encoding: "UTF-8"))
+plan["repository"]["role"] = "private"
+plan["target"]["upgrade"] = true
+
+def canonicalize(value)
+  case value
+  when Array
+    value.map { |item| canonicalize(item) }
+  when Hash
+    value.keys.map(&:to_s).sort.to_h { |key| [key, canonicalize(value[key])] }
+  else
+    value
+  end
+end
+
+content = canonicalize(plan.reject { |key, _value| %w[generated_at plan_id].include?(key) })
+plan["plan_id"] = "sha256:#{Digest::SHA256.hexdigest(JSON.generate(content))}"
+File.write(target, JSON.pretty_generate(plan))
+RUBY
+	if HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH "$tilde" apply --plan "$brew_plan_json" --plan "$mismatch_plan_json" >/dev/null 2>"$mismatch_apply_err"; then
+		abort "expected mixed upgrade plans to fail"
+	fi
+	grep -Fq "plan target upgrade mismatch" "$mismatch_apply_err"
 	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH "$tilde" apply --plan "$brew_plan_json" >"$brew_apply_json"
 
 	BREW_APPLY_JSON=$brew_apply_json ruby -rjson -e '
 		apply = JSON.parse(File.read(ENV.fetch("BREW_APPLY_JSON"), encoding: "UTF-8"))
+		abort "apply should expose upgrade target flag" if apply.fetch("upgrade")
 		result = apply.fetch("results").fetch(0)
 		abort "brew refresh should pass" unless result.fetch("status") == "ok"
 		commands = result.dig("diagnostics", "commands")

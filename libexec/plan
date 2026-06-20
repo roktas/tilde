@@ -26,7 +26,7 @@ class Plan
     "normal" => 5,
     "extra" => 10
   }.freeze
-  MODES = %w[align apply refresh repair upgrade].freeze
+  MODES = %w[align apply refresh repair].freeze
 
   FULL_REFRESH_PACKAGE_TYPES = %w[egg flatpak gem github npm skill].freeze
   PACKAGE_TYPES = %w[brew cask deb npm gem egg flatpak scoop github skill].freeze
@@ -45,6 +45,7 @@ class Plan
     @mode = options.fetch(:mode)
     @platform = options[:platform] || detect_platform
     @repo = Pathname.new(options.fetch(:repo)).expand_path
+    @upgrade = options.fetch(:upgrade)
     @scope = options[:scope] || default_scope
   end
 
@@ -59,6 +60,7 @@ class Plan
     @level = resolved_level
     validate_level!
     validate_scope!
+    validate_upgrade!
 
     modules = planned_modules
     core = core_plan(modules)
@@ -74,6 +76,7 @@ class Plan
       level: @level,
       mode: @mode,
       scope: @scope,
+      upgrade: @upgrade,
       platform: @platform,
       state_path: state_path.to_s,
       repository: repository_identity,
@@ -122,13 +125,13 @@ class Plan
 
   def apply_like? = align? || apply? || repair?
 
-  def install_like? = apply? || refresh? || repair? || upgrade?
+  def install_like? = apply? || refresh? || repair?
 
-  def materialize_like? = apply_like? || refresh? || upgrade?
+  def materialize_like? = apply_like? || refresh?
 
   def actions_skipped? = !materialize_like?
 
-  def converges? = apply? || refresh? || repair? || upgrade?
+  def converges? = apply? || refresh? || repair?
 
   def bash_blocks(body)
     fenced_blocks(body).filter_map do |info, content|
@@ -185,16 +188,13 @@ class Plan
   end
 
   def default_scope
-    case @mode
-    when "refresh"
-      "fast"
-    when "upgrade"
-      "full"
-    end
+    return unless refresh?
+
+    @upgrade ? "full" : "fast"
   end
 
   def configure_update_packages(modules)
-    return modules unless refresh? || upgrade?
+    return modules unless refresh?
 
     modules.each do |mod|
       mod[:packages_to_refresh] = []
@@ -207,7 +207,7 @@ class Plan
       add_fast_refresh_packages(modules)
     end
 
-    add_broad_upgrade_packages(modules) if upgrade?
+    add_broad_upgrade_packages(modules) if @upgrade
     modules
   end
 
@@ -317,7 +317,7 @@ class Plan
 
   def flatpak_active?(modules) = command_available?("flatpak") || package_type_present?(modules, %w[flatpak])
 
-  def full_refresh? = upgrade? || (refresh? && @scope == "full")
+  def full_refresh? = refresh? && @scope == "full"
 
   def full_refresh_packages(packages)
     packages.select { |package| FULL_REFRESH_PACKAGE_TYPES.include?(package.fetch(:type)) }
@@ -966,15 +966,15 @@ class Plan
 
   def ordered_module_actions(modules)
     return modules.flat_map { |mod| align_module_actions(mod) } if align?
-    return ordered_upgrade_actions(modules) if upgrade?
-    return modules.flat_map { |mod| refresh_module_actions(mod) } if refresh?
+    return ordered_refresh_actions(modules) if refresh?
 
     modules.flat_map { |mod| module_actions(mod) }
   end
 
-  def ordered_upgrade_actions(modules)
-    modules.flat_map { |mod| refresh_module_actions(mod) } +
-      modules.flat_map { |mod| upgrade_module_actions(mod) }
+  def ordered_refresh_actions(modules)
+    actions = modules.flat_map { |mod| refresh_module_actions(mod) }
+    actions.concat(modules.flat_map { |mod| upgrade_module_actions(mod) }) if @upgrade
+    actions
   end
 
   def package_plan_actions(mod, operation, packages)
@@ -1190,10 +1190,6 @@ class Plan
     @mode == "repair"
   end
 
-  def upgrade?
-    @mode == "upgrade"
-  end
-
   def short_hostname
     hostname = `hostname -f 2>/dev/null`.strip
     hostname = `hostname`.strip if hostname.empty?
@@ -1245,7 +1241,7 @@ class Plan
 
   def selected_special_sections(body)
     sections = special_sections(body)
-    return sections if refresh? || upgrade?
+    return sections if refresh?
 
     sections.except("Update")
   end
@@ -1346,6 +1342,7 @@ class Plan
       platform: @platform,
       mode: @mode,
       scope: @scope,
+      upgrade: @upgrade,
       level: @level,
       converges: converges?,
       home: Dir.home,
@@ -1376,8 +1373,6 @@ class Plan
     case @mode
     when "refresh"
       return if SCOPES.include?(@scope)
-    when "upgrade"
-      return if @scope == "full"
     else
       return if @scope.nil?
     end
@@ -1385,12 +1380,18 @@ class Plan
     raise "Unsupported scope for #{@mode}: #{@scope || "(none)"}"
   end
 
+  def validate_upgrade!
+    return unless @upgrade
+    raise "--upgrade is only supported with refresh mode" unless refresh?
+    raise "--upgrade requires full scope" unless @scope == "full"
+  end
+
   def validate_repo!
     raise "Not a directory: #{@repo}" unless @repo.directory?
   end
 
   def validate_worktree!
-    return if refresh? || upgrade?
+    return if refresh?
     return if @allow_dirty || !dirty?
 
     raise "Dirty worktree. Commit changes before provisioning, or use --allow-dirty for development only."
@@ -1403,7 +1404,8 @@ def main(argv)
     format: "json",
     level: nil,
     mode: "apply",
-    repo: Dir.pwd
+    repo: Dir.pwd,
+    upgrade: false
   }
 
   OptionParser
@@ -1413,10 +1415,11 @@ def main(argv)
       parser.on("--format FORMAT", "Output format: json or markdown") { |value| options[:format] = value }
       parser.on("--host HOST", "Host short name") { |value| options[:host] = value }
       parser.on("--level LEVEL", "Level: minimal, normal, extra") { |value| options[:level] = value }
-      parser.on("--mode MODE", "Mode: align, apply, refresh, repair, upgrade") { |value| options[:mode] = value }
+      parser.on("--mode MODE", "Mode: align, apply, refresh, repair") { |value| options[:mode] = value }
       parser.on("--platform PLATFORM", "Platform: linux, macos, windows") { |value| options[:platform] = value }
       parser.on("--repo PATH", "Repository root") { |value| options[:repo] = value }
       parser.on("--scope SCOPE", "Refresh scope: fast or full") { |value| options[:scope] = value }
+      parser.on("--upgrade", "Add broad package-manager upgrade actions to refresh mode") { options[:upgrade] = true }
     end
     .parse!(argv)
 

@@ -114,100 +114,54 @@ as a prerequisite, note, or explicit proposal-first operator action.
 
 ## Commands
 
-Tilde prompt markers such as `/tilde` and `$tilde` are prompt contracts, not shell commands. Use `/tilde` in examples to
-avoid confusing prompt notation with shell variable expansion. The installed runtime router also provides implemented
-helper routes through `bin/tilde`. Some commands are interpreted by the agent; some are direct runtime routes.
-
-When a shell runtime helper is needed, resolve the runtime entrypoint from the loaded skill directory's `bin/tilde`.
-Fallback to the installed skill path:
+`/tilde` is an agent prompt marker, not a shell command. Shell helpers go through the loaded runtime:
 
 ```sh
 TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
 ```
 
-Do not rely on bare `tilde` being on the controller `PATH`.
+Do not rely on bare `tilde` on the controller `PATH`.
 
-| Command    | Kind    | Action                                                                     |
-| ---------- | ------- | -------------------------------------------------------------------------- |
-| `help`     | runtime | Show public commands or one command's usage.                               |
-| `deploy`   | agent   | Prepare a local or remote host and apply desired state.                    |
-| `update`   | agent   | Run explicit update behavior from the current desired state.               |
-| `repair`   | agent   | Apply current desired state again.                                         |
-| `doctor`   | runtime | Diagnose without executing module code or mutating targets.                |
-| `handoff`  | runtime | Copy and print the privilege handoff command for the local or remote host. |
-| `align`    | dual    | Reconcile directories, links, copies, seeds, and resets without bootstrap or packages. |
-| `adopt`    | agent   | Propose adopting an app, config, package, or path.                         |
-| `create`   | agent   | Propose public/private home repository creation.                           |
-| `init`     | agent   | Bind existing public/private repositories.                                 |
-| `clean`    | agent   | Propose conservative cleanup.                                              |
-| `organize` | agent   | Propose organization changes.                                              |
-| `upgrade`  | agent   | Run the widest explicitly requested update path.                           |
+The public surface is deliberately small:
 
-Kind meanings:
+| Command | Kind | Use |
+| --- | --- | --- |
+| `deploy` | agent | Prepare a new or reset host and apply desired state. |
+| `update` | agent | Refresh package managers, reconcile current desired state, and run `Update` sections. |
+| `repair` | agent | Reapply desired state without package refreshes or `Update` sections. |
+| `align` | dual | Reconcile links, directories, copies, seeds, and resets only. |
+| `status` | runtime | Show fast repository bindings and applied anchors. |
+| `doctor` | runtime | Diagnose state, repository, and managed-surface health. |
+| `handoff` | runtime | Print and copy the sudo handoff command. |
+| `help` | runtime | Show command help. |
 
-- `agent`: interpreted by the loaded Tilde skill; no direct runtime route.
-- `runtime`: direct `bin/tilde` route. For remote targets, run it on the target through Tilde SSH transport.
-- `dual`: direct local runtime route plus prompt workflow. Remote targets are agent-orchestrated.
+There is no public `create`, `init`, `adopt`, `clean`, `organize`, or `upgrade` command. Keep those workflows as
+ordinary proposal-first agent work until they are mature enough to deserve command semantics.
 
-Remote `align` uses target-local `plan --mode align --format json` files followed by `tilde apply`; do not run
-`tilde align --format json` on a remote target. Do not hide remote Tilde stderr with `/dev/null`; a non-zero remote exit
-means the step failed, deferred, or conflicted even when stdout is empty. A later status read does not make an earlier
-failed remote step successful.
+`update` options:
 
-After `tilde apply`, inspect action results. `completed: true` means all planned actions were processed, but the run is
-incomplete if any action is `deferred`, `conflict`, or `notok`.
+| Prompt | Meaning |
+| --- | --- |
+| `/tilde update` | Default fast update: system package-manager refresh plus desired-state reconciliation. |
+| `/tilde update --scope full` | Also refresh managed non-system package declarations. |
+| `/tilde update --upgrade` | Full update plus broad package-manager upgrade actions. |
+| `/tilde repair` | Desired-state convergence without package refreshes, broad upgrades, or `Update` sections. |
 
-For agent workflows, `update` ordinarily maps to planning mode `refresh`. If target status shows missing `state.yml` or
-no `applied` anchors, use `repair` mode for that run so state recovery writes recovered bindings and anchors without
-running `Update` sections. Plans for remote hosts must be generated and applied on the target host. After a successful
-mutating remote apply, read final status on the target before closeout. Materialize plan JSON under a per-run
-`mktemp -d` directory and clean it with a trap; do not leave fixed files such as `/tmp/opencode/HOST-public.json`.
-Successful Tilde-generated `refresh` plans advance `applied` anchors after every required action succeeds.
+If target status shows missing `state.yml` or no `applied` anchors, an update workflow uses repair mode for that run to
+recover bindings and anchors. Missing state is recovery, not proof that the host was never deployed.
 
-`update` / `refresh` reconciles current desired-state declarations, including newly declared packages, links, copies,
-seeds, and resets. Use `repair` when the intent is desired-state convergence without package refreshes, package
-upgrades, or `Update` sections.
-
-For mutating remote workflows, first run:
+Remote workflows always start with:
 
 ```sh
 "$TILDE" preflight remote HOST --format json
 ```
 
-The JSON result is the source of truth for the initial bootstrap decision (`bootstrap.needed`), repository backend
-(`backend`), runtime state, Dropbox runtime state, sudo cleanup state, and next steps. If the target
-`~/.agents/skills/tilde` checkout is stale, refresh it from the controller checkout before running target
-`tilde status`, `tilde plan`, or `tilde apply`. On Dropbox-backed hosts, prefer converting a clean matching provisional
-runtime checkout into `~/.agents/skills/tilde -> ~/Dropbox/tilde` with `checkout runtime-link` once the Dropbox checkout
-is current. On Git-backed remote hosts, also refresh stale public/private target checkouts from the controller
-repositories before planning. If a stale target runtime or checkout cannot be safely refreshed, stop with `deferred`.
-Status paths outside the `state.yml` model, such as `config.yml` or `hosts/HOST/state.md`, mean stale target runtime,
-not successful state recovery. Use `checkout remote` with `--host`, `--repo`, and `--target`; the route does not infer
-bindings from `--host`. Runtime freshness maps the loaded skill root to target `~/.agents/skills/tilde`; desired-state
-freshness maps the selected data repository to the target binding. Quote target paths that start with `~` so the
-controller shell does not expand them before the remote receives the path. Use `--replace-clean` only for a clean runtime
-checkout with divergent history, not for desired-state checkouts without explicit operator approval.
-For Git-backed targets, controller-side Dropbox paths are source paths, not target paths; do not create target-side
-`~/Dropbox` for repository binding, cleanup, shared app state, or convenience paths unless active target policy says the
-host has Dropbox-backed storage.
+Then run status, plan, apply, and final verification on the target through Tilde SSH transport. Remote plans must use
+the target's `state.public` and `state.private` bindings; do not read the controller state file for a remote host.
+Remote scripts are POSIX `sh` by default.
 
-When active home policy requires Dropbox conflicted-copy cleanup, use only the literal cleanup root named by that policy,
-normally `$HOME/Dropbox`. Do not additionally scan symlink-resolved or platform-specific Dropbox paths unless policy
-names them.
-
-For host-aware prompt commands, omitted target means current host. A bare host means `ssh:host`, except when it names
-the current host; use explicit `ssh:host` to force SSH transport. Bare all-caps targets such as `ALL`, `HOME`, and
-`WORK` are host groups defined by the active home policy. For remote workflows, target state is also read on the target
-host. Do not use the controller's `~/.local/state/tilde/state.yml` to discover remote repository bindings, applied
-anchors, level, platform, or bootstrap state.
-
-For explicitly requested configured host groups, report the expanded host list and continue; do not ask for permission
-to start the requested workflow. Ask only when the group is undefined, ambiguous, unexpectedly expands outside active
-policy, or a later step requires separate explicit confirmation. Host-group reachability probes use Tilde SSH
-transport, not raw `ssh`. Tilde SSH loads non-secret `~/.config/environment.d/*.conf` values before the remote script
-body. After remote runtime freshness is verified, read target `tilde status --format json`, bind `state.public` /
-`state.private` to shell variables, and use those variables for target-local plan paths instead of retyping
-host-convention paths.
+`align` is direct only for the current host. Remote align is a prompt workflow implemented as target-local
+`plan --mode align --format json` plus `tilde apply`.
 
 Example prompts:
 
@@ -215,6 +169,8 @@ Example prompts:
 /tilde deploy
 /tilde deploy spinoza
 /tilde update
+/tilde update --scope full
+/tilde update --upgrade
 /tilde update spinoza
 /tilde update ALL
 /tilde update WORK

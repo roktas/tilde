@@ -163,7 +163,12 @@ EOF
 	grep -Fq 'Do not execute `/tilde ...` or `$tilde ...` in a terminal.' "$help"
 	grep -Fq '| `handoff` | `runtime` | Copy and print the privilege handoff command for the local or remote host. |' "$help"
 	grep -Fq '| `status` | `runtime` | Show compact repository bindings and last fully converged anchors. |' "$help"
-	grep -Fq '| `update` | `agent` | Run explicit update behavior from the current desired state. |' "$help"
+	grep -Fq '| `update` | `agent` | Refresh package managers, reconcile current desired state, and run Update sections. |' "$help"
+	for removed in adopt clean create init organize upgrade; do
+		if grep -Fq "| \`$removed\` |" "$help"; then
+			abort "removed command still appears in help table: $removed"
+		fi
+	done
 	grep -Fq 'Runtime entrypoint: set `TILDE` to the loaded skill root `bin/tilde`; fallback `~/.agents/skills/tilde/bin/tilde`.' "$help"
 	grep -Fq 'Do not search `PATH` after `tilde: command not found`; retry with `"$TILDE"`.' "$help"
 	grep -Fq 'Target shorthand: omitted target means current host; bare `host` means `ssh:host` except when it names the current host; bare all-caps targets such as `ALL`, `HOME`, and `WORK` expand from the active home policy.' "$help"
@@ -194,7 +199,9 @@ EOF
 	grep -Fq 'Remote note: deliver remote diagnostics through Tilde SSH transport; do not run target checks on the controller.' "$status_help"
 	grep -Fq 'Remote state note: do not read controller `~/.local/state/tilde/state.yml`' "$status_help"
 	"$tilde" .help update >"$update_help"
-	grep -Fq 'Prompt: `/tilde update [host|ssh:<host>|GROUP] [full] [dry-run|plan-only]`' "$update_help"
+	grep -Fq 'Prompt: `/tilde update [host|ssh:<host>|GROUP] [--scope fast|full] [--upgrade] [dry-run|plan-only]`' "$update_help"
+	grep -Fq 'Scope note: `--scope fast` refreshes system package managers and is the default; `--scope full` also refreshes managed non-system package declarations.' "$update_help"
+	grep -Fq 'Upgrade note: `--upgrade` implies full scope and adds broad package-manager upgrade actions after update actions.' "$update_help"
 	grep -Fq 'Remote preflight note: first run `"$TILDE" preflight remote HOST --format json` to classify bootstrap, repository backend, runtime, and sudo cleanup state.' "$update_help"
 	grep -Fq 'Remote freshness note: before target status reads that gate a mutating workflow, plan, or apply, verify target runtime freshness and refresh stale Git-backed target checkouts; defer if they cannot be safely refreshed.' "$update_help"
 	grep -Fq 'State recovery note: if target status shows missing `state.yml` or no `applied` anchors, use `plan --mode repair`' "$update_help"
@@ -307,6 +314,10 @@ EOF
 		abort "expected agent-orchestrated prompt command to fail as a runtime route"
 	fi
 	grep -Fq 'no direct runtime route is defined' "$deploy_err"
+	if "$tilde" upgrade >/dev/null 2>"$deploy_err"; then
+		abort "expected removed upgrade command to fail"
+	fi
+	grep -Fq 'unknown Tilde runtime route: upgrade' "$deploy_err"
 }
 
 main "$@"

@@ -6,20 +6,14 @@ set -Eeuo pipefail
 unset CDPATH
 
 readonly -a COMMANDS=(
-	'adopt|agent|Propose adopting an app, config, package, or path into the public or private data repository.'
 	'align|dual|Reconcile directories, links, copies, seeds, and resets without bootstrap, packages, or module scripts.'
-	'clean|agent|Propose conservative cleanup, including duplicate candidates when relevant.'
-	'create|agent|Propose public/private home repository creation.'
 	'deploy|agent|Prepare a host and install desired state.'
 	'doctor|runtime|Diagnose state, repository, target, and managedness problems without executing module code.'
 	'handoff|runtime|Copy and print the privilege handoff command for the local or remote host.'
 	'help|runtime|Show public commands or detailed help for one public command.'
-	'init|agent|Register existing public/private repositories on this host.'
-	'organize|agent|Propose organization changes, including archive moves when relevant.'
 	'repair|agent|Apply the current desired state again.'
 	'status|runtime|Show compact repository bindings and last fully converged anchors.'
-	'update|agent|Run explicit update behavior from the current desired state.'
-	'upgrade|agent|Run the widest explicitly requested update path.'
+	'update|agent|Refresh package managers, reconcile current desired state, and run Update sections.'
 )
 
 readonly -a EXAMPLES=(
@@ -27,9 +21,10 @@ readonly -a EXAMPLES=(
 	'/tilde deploy spinoza|Deploy a remote host using target discovery.'
 	'/tilde deploy vps --public PUBLIC_REPO|Deploy a Git-backed VPS with the public data repository.'
 	'/tilde update spinoza|Update a remote host by planning and applying on that target.'
+	'/tilde update --scope full|Also refresh managed non-system package declarations.'
+	'/tilde update --upgrade|Run full update plus broad package-manager upgrade actions.'
 	'/tilde update WORK|Update every host in the WORK group defined by the active home policy.'
 	'/tilde doctor spinoza|Run diagnostics on the remote target through Tilde SSH transport.'
-	'/tilde adopt APP_OR_PATH|Propose adopting a new app, config, package, or path.'
 	'/tilde repair|Apply current desired state again after a failed or deferred run.'
 )
 
@@ -118,17 +113,8 @@ usage_suffix_for() {
 	local name=$1
 
 	case $name in
-	adopt)
-		printf '%s\n' ' <app|config|package|path>'
-		;;
 	align)
 		printf '%s\n' ' [host|ssh:<host>|GROUP] [--repo PATH] [--public PUBLIC_REPO] [--private PRIVATE_REPO] [dry-run|plan-only]'
-		;;
-	clean | organize)
-		printf '%s\n' ' [subject] [dry-run|plan-only]'
-		;;
-	create)
-		printf '%s\n' ' [public-repo] [private-repo]'
 		;;
 	deploy)
 		printf '%s\n' ' [host|ssh:<host>|GROUP] [--public PUBLIC_REPO] [--private PRIVATE_REPO] [dry-run|plan-only]'
@@ -142,16 +128,10 @@ usage_suffix_for() {
 	help)
 		printf '%s\n' ' [command]'
 		;;
-	init)
-		printf '%s\n' ' [public-repo] [private-repo]'
-		;;
 	update)
-		printf '%s\n' ' [host|ssh:<host>|GROUP] [full] [dry-run|plan-only]'
+		printf '%s\n' ' [host|ssh:<host>|GROUP] [--scope fast|full] [--upgrade] [dry-run|plan-only]'
 		;;
 	repair)
-		printf '%s\n' ' [host|ssh:<host>|GROUP] [dry-run|plan-only]'
-		;;
-	upgrade)
 		printf '%s\n' ' [host|ssh:<host>|GROUP] [dry-run|plan-only]'
 		;;
 	esac
@@ -199,11 +179,13 @@ print_command_help() {
 
 	if [[ $name = update ]]; then
 		printf '\nImplementation note: `%s` uses planning mode `refresh`; do not use `--mode update`.\n' "$name"
+		printf 'Scope note: `--scope fast` refreshes system package managers and is the default; `--scope full` also refreshes managed non-system package declarations.\n'
+		printf 'Upgrade note: `--upgrade` implies full scope and adds broad package-manager upgrade actions after update actions.\n'
 		printf 'State recovery note: if target status shows missing `state.yml` or no `applied` anchors, use `plan --mode repair` for that run so successful apply can write recovered bindings and anchors; missing state is not proof the host was never deployed.\n'
 	fi
 
 	case $name in
-	deploy | update | repair | upgrade)
+	deploy | update | repair)
 		printf '\nRemote note: generate and apply plans on the target host through Tilde SSH transport.\n'
 		printf 'Remote preflight note: first run `"$TILDE" preflight remote HOST --format json` to classify bootstrap, repository backend, runtime, and sudo cleanup state.\n'
 		printf 'Remote freshness note: before target status reads that gate a mutating workflow, plan, or apply, verify target runtime freshness and refresh stale Git-backed target checkouts; defer if they cannot be safely refreshed.\n'
