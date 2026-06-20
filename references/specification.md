@@ -107,6 +107,11 @@ not:
 last attempted desired state
 ```
 
+When a successful apply call contains only one repository role, the state write preserves existing bindings for omitted
+roles. It preserves omitted role anchors only when the existing anchor metadata has the same level and platform as the
+current successful apply. This keeps separately applied public/private plans from erasing each other while avoiding
+claiming convergence for a role that was last applied under a different target identity.
+
 ### 3.2 Locking and Atomic Writes
 
 Tilde MUST acquire a host-local lock before mutating targets or writing `state.yml`.

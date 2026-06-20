@@ -441,8 +441,10 @@ main() {
 	local conflict_plan_json
 	local early_apply_json
 	local early_home
+	local early_private_head
 	local early_private_plan_json
 	local early_private_repo
+	local early_public_head
 	local early_public_plan_json
 	local early_public_repo
 	local early_state
@@ -466,6 +468,11 @@ main() {
 	local skill_apply_json
 	local skill_plan_json
 	local skill_root
+	local split_apply_json
+	local split_home
+	local split_private_plan_json
+	local split_public_plan_json
+	local split_state
 	local stale_apply_json
 	local stale_plan_json
 	local state
@@ -491,8 +498,10 @@ main() {
 	conflict_plan_json=$tmpdir/conflict-plan.json
 	early_apply_json=$tmpdir/early-apply.json
 	early_home=$tmpdir/early-home
+	early_private_head=
 	early_private_plan_json=$tmpdir/early-private-plan.json
 	early_private_repo=$tmpdir/early-private
+	early_public_head=
 	early_public_plan_json=$tmpdir/early-public-plan.json
 	early_public_repo=$tmpdir/early-public
 	early_state=$tmpdir/early-state
@@ -512,6 +521,11 @@ main() {
 	second_plan_json=$tmpdir/second-plan.json
 	skill_apply_json=$tmpdir/skill-refresh-apply.json
 	skill_plan_json=$tmpdir/skill-refresh-plan.json
+	split_apply_json=$tmpdir/split-apply.json
+	split_home=$tmpdir/split-home
+	split_private_plan_json=$tmpdir/split-private-plan.json
+	split_public_plan_json=$tmpdir/split-public-plan.json
+	split_state=$tmpdir/split-state
 	stale_apply_json=$tmpdir/stale-apply.json
 	stale_plan_json=$tmpdir/stale-plan.json
 
@@ -538,6 +552,8 @@ main() {
 	git -C "$early_private_repo" config user.name Smoke
 	git -C "$early_private_repo" add .
 	git -C "$early_private_repo" commit -q -m init
+	early_public_head=$(git -C "$early_public_repo" rev-parse HEAD)
+	early_private_head=$(git -C "$early_private_repo" rev-parse HEAD)
 	mkdir -p "$early_home"
 	HOME=$early_home XDG_STATE_HOME=$early_state "$tilde" plan --repo "$early_public_repo" --platform linux --host "$host" >"$early_public_plan_json"
 	HOME=$early_home XDG_STATE_HOME=$early_state "$tilde" plan --repo "$early_private_repo" --platform linux --host "$host" >"$early_private_plan_json"
@@ -546,6 +562,20 @@ main() {
 	grep -Fxq 'public' "$early_home/early-order"
 	[[ $(sed -n '1p' "$early_home/early-order") == private ]]
 	[[ $(sed -n '2p' "$early_home/early-order") == public ]]
+
+	mkdir -p "$split_home"
+	HOME=$split_home XDG_STATE_HOME=$split_state "$tilde" plan --repo "$early_public_repo" --platform linux --host "$host" >"$split_public_plan_json"
+	HOME=$split_home XDG_STATE_HOME=$split_state "$tilde" apply --plan "$split_public_plan_json" >"$split_apply_json"
+	HOME=$split_home XDG_STATE_HOME=$split_state "$tilde" plan --repo "$early_private_repo" --platform linux --host "$host" >"$split_private_plan_json"
+	HOME=$split_home XDG_STATE_HOME=$split_state "$tilde" apply --plan "$split_private_plan_json" >"$split_apply_json"
+
+	SPLIT_STATE_FILE=$split_state/tilde/state.yml PUBLIC_HEAD=$early_public_head PRIVATE_HEAD=$early_private_head ruby -ryaml -e '
+		state = YAML.safe_load(File.read(ENV.fetch("SPLIT_STATE_FILE"), encoding: "UTF-8"))
+		abort "split apply should preserve public binding" unless state.fetch("public").end_with?("/early-public")
+		abort "split apply should write private binding" unless state.fetch("private").end_with?("/early-private")
+		abort "split apply should preserve public anchor" unless state.fetch("applied").fetch("public") == ENV.fetch("PUBLIC_HEAD")
+		abort "split apply should write private anchor" unless state.fetch("applied").fetch("private") == ENV.fetch("PRIVATE_HEAD")
+	'
 
 	HOME=$home XDG_STATE_HOME=$refresh_state "$tilde" plan --repo "$repo" --mode refresh --platform linux --host "$host" >"$refresh_plan_json"
 	HOME=$home XDG_STATE_HOME=$refresh_state PATH=$fake_bin:$PATH "$tilde" apply --plan "$refresh_plan_json" >"$refresh_apply_json"

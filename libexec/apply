@@ -968,11 +968,6 @@ class Apply
     raise "invalid plan JSON: #{e.message}"
   end
 
-  def binding(role)
-    repository = role_repository(role)
-    repository && display_path(repository.fetch("path"))
-  end
-
   def path_inside?(path, root)
     path = path.expand_path
     root = root.expand_path
@@ -1003,6 +998,7 @@ class Apply
     @state_path = @state_root.join("state.yml")
     @lock_path = @state_root.join("lock")
     FileUtils.mkdir_p(@state_root)
+    @state = read_state
     @apply = init_apply
   end
 
@@ -1386,6 +1382,15 @@ class Apply
     Pathname.new(plan.fetch("repository").fetch("path")).expand_path
   end
 
+  def read_state
+    return {} unless @state_path.file?
+
+    data = YAML.safe_load(@state_path.read, aliases: true, permitted_classes: [Date, Time])
+    data.is_a?(Hash) ? data : {}
+  rescue Psych::Exception
+    {}
+  end
+
   def write_state
     temp = @state_path.dirname.join(".#{@state_path.basename}.tmp-#{$PROCESS_ID}")
     temp.write(YAML.dump(state_hash))
@@ -1398,8 +1403,8 @@ class Apply
     {
       "protocol" => "tilde/v1",
       "skill" => display_path(TILDE_ROOT),
-      "public" => binding("public"),
-      "private" => binding("private"),
+      "public" => role_binding("public"),
+      "private" => role_binding("private"),
       "applied" => applied_hash
     }.compact
   end
@@ -1408,9 +1413,35 @@ class Apply
     {
       "level" => target.fetch("level"),
       "platform" => target.fetch("platform"),
-      "public" => role_repository("public")&.fetch("commit"),
-      "private" => role_repository("private")&.fetch("commit")
+      "public" => role_commit("public"),
+      "private" => role_commit("private")
     }.compact
+  end
+
+  def existing_applied
+    applied = @state["applied"]
+    applied.is_a?(Hash) ? applied : {}
+  end
+
+  def preserve_existing_applied?
+    existing_applied["level"] == target.fetch("level") && existing_applied["platform"] == target.fetch("platform")
+  end
+
+  def role_binding(role)
+    repository = role_repository(role)
+    return display_path(repository.fetch("path")) if repository
+
+    binding = @state[role]
+    binding if binding.is_a?(String) && !binding.empty?
+  end
+
+  def role_commit(role)
+    repository = role_repository(role)
+    return repository.fetch("commit") if repository
+    return unless preserve_existing_applied?
+
+    commit = existing_applied[role]
+    commit if commit.is_a?(String) && !commit.empty?
   end
 
   def role_repository(role)
