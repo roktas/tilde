@@ -189,6 +189,76 @@ all:
 EOF
 }
 
+write_early_private_repo() {
+	local repo=$1
+
+	mkdir -p "$repo/home" "$repo/linux"
+
+	cat >"$repo/AGENTS.md" <<'EOF'
+---
+tilde:
+  protocol: tilde/v1
+  role: private
+  public: ../early-public
+---
+
+# Early Private
+EOF
+
+	cat >"$repo/home/README.md" <<'EOF'
+---
+all:
+  links:
+    AGENTS.md: ~/AGENTS.md
+---
+
+# Home
+EOF
+	touch "$repo/home/AGENTS.md"
+
+	cat >"$repo/linux/README.md" <<'EOF'
+---
+linux:
+  phase: early
+---
+
+# Linux
+
+## Configure
+
+```bash
+printf 'private\n' >> "$HOME/early-order"
+```
+EOF
+}
+
+write_early_public_repo() {
+	local repo=$1
+
+	mkdir -p "$repo/app"
+
+	cat >"$repo/AGENTS.md" <<'EOF'
+---
+tilde:
+  protocol: tilde/v1
+  role: public
+  private: ../early-private
+---
+
+# Early Public
+EOF
+
+	cat >"$repo/app/README.md" <<'EOF'
+# App
+
+## Configure
+
+```bash
+printf 'public\n' >> "$HOME/early-order"
+```
+EOF
+}
+
 write_repo() {
 	local repo=$1
 
@@ -368,6 +438,13 @@ main() {
 	local brew_plan_json
 	local conflict_apply_json
 	local conflict_plan_json
+	local early_apply_json
+	local early_home
+	local early_private_plan_json
+	local early_private_repo
+	local early_public_plan_json
+	local early_public_repo
+	local early_state
 	local fake_bin
 	local head
 	local home
@@ -409,6 +486,13 @@ main() {
 	apt_plan_json=$tmpdir/apt-warning-plan.json
 	conflict_apply_json=$tmpdir/conflict-apply.json
 	conflict_plan_json=$tmpdir/conflict-plan.json
+	early_apply_json=$tmpdir/early-apply.json
+	early_home=$tmpdir/early-home
+	early_private_plan_json=$tmpdir/early-private-plan.json
+	early_private_repo=$tmpdir/early-private
+	early_public_plan_json=$tmpdir/early-public-plan.json
+	early_public_repo=$tmpdir/early-public
+	early_state=$tmpdir/early-state
 	fake_bin=$tmpdir/fake-bin
 	package_apply_json=$tmpdir/package-apply.json
 	package_plan_json=$tmpdir/package-plan.json
@@ -436,6 +520,27 @@ main() {
 	git -C "$repo" commit -q -m init
 	head=$(git -C "$repo" rev-parse HEAD)
 	printf 'local environment\n' >"$repo/.envrc"
+
+	write_early_public_repo "$early_public_repo"
+	write_early_private_repo "$early_private_repo"
+	git -C "$early_public_repo" init -q
+	git -C "$early_public_repo" config user.email smoke@example.invalid
+	git -C "$early_public_repo" config user.name Smoke
+	git -C "$early_public_repo" add .
+	git -C "$early_public_repo" commit -q -m init
+	git -C "$early_private_repo" init -q
+	git -C "$early_private_repo" config user.email smoke@example.invalid
+	git -C "$early_private_repo" config user.name Smoke
+	git -C "$early_private_repo" add .
+	git -C "$early_private_repo" commit -q -m init
+	mkdir -p "$early_home"
+	HOME=$early_home XDG_STATE_HOME=$early_state "$tilde" plan --repo "$early_public_repo" --platform linux --host "$host" >"$early_public_plan_json"
+	HOME=$early_home XDG_STATE_HOME=$early_state "$tilde" plan --repo "$early_private_repo" --platform linux --host "$host" >"$early_private_plan_json"
+	HOME=$early_home XDG_STATE_HOME=$early_state "$tilde" apply --plan "$early_public_plan_json" --plan "$early_private_plan_json" >"$early_apply_json"
+	grep -Fxq 'private' "$early_home/early-order"
+	grep -Fxq 'public' "$early_home/early-order"
+	[[ $(sed -n '1p' "$early_home/early-order") == private ]]
+	[[ $(sed -n '2p' "$early_home/early-order") == public ]]
 
 	HOME=$home XDG_STATE_HOME=$refresh_state "$tilde" plan --repo "$repo" --mode refresh --platform linux --host "$host" >"$refresh_plan_json"
 	HOME=$home XDG_STATE_HOME=$refresh_state PATH=$fake_bin:$PATH "$tilde" apply --plan "$refresh_plan_json" >"$refresh_apply_json"

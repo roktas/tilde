@@ -426,6 +426,11 @@ all:
 
 When top-level `level` is absent, `all.level` has the same meaning.
 
+`phase` is a module-level property with values `normal` and `early`. The default is `normal`. Early actions are applied
+before normal actions across all plans in the same apply run, while preserving role and action order inside each phase.
+Use `phase: early` only for small prerequisite-style modules that unblock later desired-state actions, such as a private
+Linux sudoers baseline. Early modules still follow the normal section order and must remain idempotent.
+
 Link sources are repository-relative by default. A link source that starts with `~/` or `/` is a target-home source and
 MUST stay inside the target home. Use target-home sources for managed links between home-managed live paths, such as
 Dropbox-backed shared state directories and XDG entrypoints. When both source and target are inside `~/Dropbox`, Tilde

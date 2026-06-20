@@ -30,6 +30,10 @@ class Apply
     "public" => 0,
     "private" => 1
   }.freeze
+  PHASE_ORDER = {
+    "early" => 0,
+    "normal" => 1
+  }.freeze
   SUPPORTED_ACTIONS = %w[entrypoint package section link copy directory manual reset seed unlink].freeze
   SUPPORTED_CONDITIONS = %w[graphical].freeze
   SUPPORTED_CONFLICTS = %w[none write-fallback-file].freeze
@@ -170,8 +174,27 @@ class Apply
     }
   end
 
+  def action_phase_order(action)
+    PHASE_ORDER.fetch(action_phase(action), PHASE_ORDER.fetch("normal"))
+  end
+
+  def action_phase(action)
+    action.fetch("phase", "normal")
+  end
+
   def actions
-    @actions ||= @plans.flat_map { |plan| plan.fetch("actions") }
+    @actions ||= begin
+      indexed = @plans.each_with_index.flat_map do |plan, plan_index|
+        plan.fetch("actions").each_with_index.map do |action, action_index|
+          [action_phase_order(action), plan_index, action_index, action]
+        end
+      end
+
+      sorted = indexed.sort_by { |phase_order, plan_index, action_index, _action|
+        [phase_order, plan_index, action_index]
+      }
+      sorted.map(&:last)
+    end
   end
 
   def action_index
@@ -1214,6 +1237,7 @@ class Apply
     validate_action_kind!(action)
     validate_condition!(action)
     validate_conflict!(action)
+    validate_phase!(action)
     validate_target!(action["target"]) if action.key?("target")
     validate_source!(action) if action.key?("source_path")
     validate_package!(action) if action.fetch("kind") == "package"
@@ -1260,6 +1284,11 @@ class Apply
     type = package.fetch("type")
     raise "unsupported package type: #{type}" unless (SUPPORTED_PACKAGE_TYPES + %w[github skill]).include?(type)
     raise "missing package name" if package.fetch("name").to_s.empty?
+  end
+
+  def validate_phase!(action)
+    phase = action_phase(action)
+    raise "unsupported action phase: #{phase}" unless PHASE_ORDER.key?(phase)
   end
 
   def validate_plan!(plan)

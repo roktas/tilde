@@ -486,6 +486,9 @@ sources are repository-relative by default. A source that starts with `~/` or `/
 inside the target home. Use target-home sources for live home paths such as Dropbox-backed shared state directories and
 XDG entrypoints; Dropbox-to-Dropbox symlink values must be relative to the target directory.
 
+`phase: early` is reserved for small prerequisite-style modules whose actions must run before normal actions across all
+plans in the same apply run, such as a private Linux sudoers baseline. Do not use it for ordinary ordering preferences.
+
 ## Safety
 
 Proposal-first behavior is required before replacing unmanaged files, removing stale links or managed spans, backing up
@@ -578,6 +581,8 @@ For weaker or low-context agents:
 - Expect `/tilde update HOST` to install packages newly added to module frontmatter and to create newly declared links,
   copies, seeds, or resets. Use `/tilde repair HOST` only when the intent is convergence without package refreshes,
   package upgrades, or `Update` sections, or when missing state requires recovery.
+- Treat `phase: early` as a cross-plan apply phase. Early actions from applicable modules run before normal actions
+  across public/private plans; use it only for small idempotent prerequisites.
 - For host-aware prompt commands, omitted target means current host. Treat bare `host` as `ssh:host`, except when it
   names the current host; then run the local workflow. Use explicit `ssh:host` to force SSH transport.
 - Missing `state.yml` or missing `applied` anchors means state recovery, not proof that the host was never deployed.

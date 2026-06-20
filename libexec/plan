@@ -33,6 +33,7 @@ class Plan
   PACKAGE_CONDITIONS = {
     "flatpak" => "graphical"
   }.freeze
+  PHASES = %w[early normal].freeze
   SCOPES = %w[fast full].freeze
   SPECIAL_SECTIONS = ["Prerequisites", "Install", "Post Install", "Configure", "Update", "Notes"].freeze
 
@@ -226,6 +227,7 @@ class Plan
       kind: "directory",
       module_id: mod.fetch(:id),
       module_name: mod.fetch(:name),
+      phase: mod.fetch(:phase),
       repo_role: mod.fetch(:repo_role),
       target: directory.fetch(:target),
       conflict: {
@@ -244,6 +246,7 @@ class Plan
       kind:,
       module_id: mod.fetch(:id),
       module_name: mod.fetch(:name),
+      phase: mod.fetch(:phase),
       repo_role: mod.fetch(:repo_role),
       source: file.fetch(:source),
       source_path: file.fetch(:source_path),
@@ -288,6 +291,7 @@ class Plan
       mod = {
         id: module_id(module_name),
         name: module_name,
+        phase: module_phase(frontmatter, config),
         repo_role:
       }
       normalize_links(config, dir).map { |link| [mod, link] }
@@ -506,6 +510,13 @@ class Plan
     level
   end
 
+  def module_phase(frontmatter, config)
+    phase = (frontmatter["phase"] || config["phase"] || "normal").to_s
+    raise "Unsupported phase: #{phase}" unless PHASES.include?(phase)
+
+    phase
+  end
+
   def validate_module_level(module_name, level)
     raise "misc- must use level: extra" if module_name == "misc-" && level != "extra"
   end
@@ -620,6 +631,7 @@ class Plan
       kind: "link",
       module_id: mod.fetch(:id),
       module_name: mod.fetch(:name),
+      phase: mod.fetch(:phase),
       repo_role: mod.fetch(:repo_role),
       source: link.fetch(:source),
       source_path: link.fetch(:source_path),
@@ -654,6 +666,7 @@ class Plan
       mod = {
         id: module_id(dir),
         name: dir,
+        phase: module_phase(frontmatter, config),
         repo_role:
       }
       normalize_links_at(commit, config, dir).map { |link| [mod, link] }
@@ -852,6 +865,7 @@ class Plan
     files = module_files(config, dir)
     home_entrypoint = home_entrypoint_declared?(config)
     packages = normalize_packages(config)
+    phase = module_phase(frontmatter, config)
 
     {
       id: module_id(module_name),
@@ -859,6 +873,7 @@ class Plan
       repo_role:,
       readme: readme.to_s,
       level:,
+      phase:,
       home_entrypoint:,
       packages:,
       packages_to_install: align? ? [] : package_actions(packages, "apply"),
@@ -969,6 +984,7 @@ class Plan
         kind: "package",
         module_id: mod.fetch(:id),
         module_name: mod.fetch(:name),
+        phase: mod.fetch(:phase),
         repo_role: mod.fetch(:repo_role),
         operation:,
         package:,
@@ -1038,6 +1054,7 @@ class Plan
       end
 
       puts("Level: #{mod[:level]}")
+      puts("Phase: #{mod[:phase]}")
       puts("Virtual: #{mod[:virtual] ? "yes" : "no"}")
       puts
       puts_action_list("Directories", mod[:directories_to_create]) { |dir| "`#{dir[:target]}`" }
@@ -1122,6 +1139,7 @@ class Plan
       kind: "unlink",
       module_id: action.fetch(:module_id),
       module_name: action.fetch(:module_name),
+      phase: action.fetch(:phase, "normal"),
       repo_role: action.fetch(:repo_role),
       source: action.fetch(:source),
       target: action.fetch(:target),
@@ -1197,6 +1215,7 @@ class Plan
       kind:,
       module_id: mod.fetch(:id),
       module_name: mod.fetch(:name),
+      phase: mod.fetch(:phase),
       repo_role: mod.fetch(:repo_role),
       name:,
       bash_only:,

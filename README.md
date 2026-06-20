@@ -89,8 +89,11 @@ Repository names are conventions only. Correctness comes from explicit paths, st
 ## Modules
 
 Each root module is a direct child directory containing `README.md`. README frontmatter may declare `directories`,
-`links`, `copies`, `seeds`, `resets`, `packages`, `level`, `hosts`, and platform scopes such as `all`, `linux`, and
-`macos`.
+`links`, `copies`, `seeds`, `resets`, `packages`, `level`, `phase`, `hosts`, and platform scopes such as `all`,
+`linux`, and `macos`.
+
+`phase: early` is reserved for small prerequisite-style modules that must unblock later actions in the same apply run;
+ordinary modules use the default `normal` phase.
 
 Link sources are repository-relative by default. A source beginning with `~/` or `/` is a target-home source for
 managed links between live home paths. Dropbox-to-Dropbox links are written relative to the target directory.

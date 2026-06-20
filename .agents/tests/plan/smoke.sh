@@ -284,6 +284,10 @@ EOF
 
 		PRIVATE_PLAN_JSON=$private_plan_json PRIVATE_EXTRA_PLAN_JSON=$private_extra_plan_json PRIVATE_MACOS_PLAN_JSON=$private_macos_plan_json PRIVATE_MACOS_EXTRA_PLAN_JSON=$private_macos_extra_plan_json ruby -rjson -e '
 			linux = JSON.parse(File.read(ENV.fetch("PRIVATE_PLAN_JSON")))
+			baseline = linux.fetch("modules").find { |mod| mod.fetch("name") == "linux" }
+			abort "missing private linux baseline" unless baseline
+			abort "private linux baseline should be early" unless baseline.fetch("phase") == "early"
+			abort "private linux baseline should emit early actions" unless linux.fetch("actions").any? { |action| action.fetch("module_id") == "private/linux" && action.fetch("phase") == "early" }
 			abort "linux codex should be extra-only" if linux.fetch("modules").any? { |mod| mod.fetch("name") == "codex" }
 			linux_extra = JSON.parse(File.read(ENV.fetch("PRIVATE_EXTRA_PLAN_JSON")))
 			codex = linux_extra.fetch("modules").find { |mod| mod.fetch("name") == "codex" }
