@@ -123,8 +123,9 @@ The agent interprets these high-level commands and orchestrates the workflow. Th
 - `update`: refresh package managers, reconcile current desired state, and run `Update` sections.
 - `repair`: apply the current desired state again; it does not read a repair queue or module-level state.
 
-Treat `dry-run`, `plan-only`, `--scope fast|full`, and `--upgrade` as qualifiers. `update --upgrade` uses refresh mode
-with broad package-manager upgrade actions; do not use or reintroduce a separate `upgrade` prompt command.
+Treat `dry-run`, `plan-only`, `--managed`, and `--greedy` as qualifiers. `update --greedy` uses refresh mode with
+managed non-system package refreshes and broad package-manager upgrade actions; do not use or reintroduce a separate
+`upgrade` prompt command.
 
 ### Direct Runtime Commands
 
@@ -163,7 +164,8 @@ Agent commands map to planning modes and module sections as follows.
 | --- | --- | --- |
 | `deploy` | `apply` | `Prerequisites`, declared package installs, `Install`, `Post Install` when the install phase changed, declared files and links, then `Configure` |
 | `update` | `refresh`; `repair` for state recovery | package refresh, `Prerequisites`, declared package installs, `Install`, `Post Install` when the install phase changed, declared files and links, `Update`, then `Configure` |
-| `update --upgrade` | `refresh --scope full --upgrade` | update behavior, then broad package-manager upgrade actions |
+| `update --managed` | `refresh --managed` | update behavior, plus managed non-system package refreshes |
+| `update --greedy` | `refresh --greedy` | managed update behavior, then broad package-manager upgrade actions |
 | `repair` | `repair` | `Prerequisites`, declared package installs, `Install`, `Post Install` when the install phase changed, declared files and links, then `Configure` |
 | `align` | `align` | directories, links, copies, seeds, and resets only; no bootstrap, packages, or module code |
 
@@ -176,10 +178,10 @@ fully converged bindings and anchors.
 
 `update` / `refresh` reconciles current desired-state declarations, including newly declared packages, links, copies,
 seeds, and resets. Present packages return `unchanged`, missing packages are installed, and a fully successful
-Tilde-generated refresh plan may advance `applied` anchors. `--scope fast` is the default and refreshes system package
-managers such as Homebrew and apt. `--scope full` also refreshes managed non-system package declarations. `--upgrade`
-implies full scope and appends broad package-manager upgrade actions. Use `repair` when the intent is desired-state
-convergence without package refreshes, broad package upgrades, or `Update` sections.
+Tilde-generated refresh plan may advance `applied` anchors. The default refresh updates system package managers such as
+Homebrew and apt. `--managed` also refreshes managed non-system package declarations. `--greedy` implies `--managed`
+and appends broad package-manager upgrade actions. Use `repair` when the intent is desired-state convergence without
+package refreshes, broad package upgrades, or `Update` sections.
 
 When an agent workflow materializes plan JSON files, create them under a per-run temporary directory and remove that
 directory at exit. Do not write fixed plan paths such as `/tmp/opencode/HOST-public.json`, and do not leave plan files
@@ -581,8 +583,8 @@ For weaker or low-context agents:
   existing `applied` anchors. If target status shows missing `state.yml` or no `applied` anchors, use
   `plan --mode repair` for state recovery.
 - Expect `/tilde update HOST` to install packages newly added to module frontmatter and to create newly declared links,
-  copies, seeds, or resets. Use `/tilde update HOST --scope full` to refresh managed non-system package declarations,
-  and `/tilde update HOST --upgrade` for broad package-manager upgrades. Use `/tilde repair HOST` only when the intent
+  copies, seeds, or resets. Use `/tilde update HOST --managed` to refresh managed non-system package declarations, and
+  `/tilde update HOST --greedy` for broad package-manager upgrades. Use `/tilde repair HOST` only when the intent
   is convergence without package refreshes, broad package upgrades, or `Update` sections, or when missing state requires
   recovery.
 - Treat `phase: early` as a cross-plan apply phase. Early actions from applicable modules run before normal actions

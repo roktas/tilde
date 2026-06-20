@@ -300,7 +300,8 @@ Tilde planning modes execute module sections according to this matrix.
 prompt command -> plan mode
   deploy  -> apply
   update  -> refresh
-  update --upgrade -> refresh --scope full --upgrade
+  update --managed -> refresh --managed
+  update --greedy -> refresh --greedy
   update with missing state.yml or no applied anchors -> repair
   repair  -> repair
   align   -> align
@@ -313,11 +314,11 @@ without running `Update` sections. Missing state is not proof that the host was 
 this as state recovery unless bounded evidence proves otherwise.
 
 Refresh mode reconciles current desired-state declarations. A repository change that adds a package, link, copy, seed,
-reset, or other install-time declaration is reconciled by ordinary update. `--scope fast` is the default and refreshes
-system package managers such as Homebrew and apt. `--scope full` also refreshes managed non-system package
-declarations. `--upgrade` is valid only with refresh mode, implies full scope, and appends broad package-manager upgrade
-actions after normal update actions. Repair remains available when the intent is desired-state convergence without
-package refresh actions, broad package upgrade actions, or `Update` sections.
+reset, or other install-time declaration is reconciled by ordinary update. The default refresh updates system package
+managers such as Homebrew and apt. `--managed` also refreshes managed non-system package declarations such as gem, npm,
+egg, skill, and declared flatpak packages. `--greedy` is valid only with refresh mode, implies `--managed`, and appends
+broad package-manager upgrade actions after normal update actions. Repair remains available when the intent is
+desired-state convergence without package refresh actions, broad package upgrade actions, or `Update` sections.
 
 Agents that materialize plan JSON files MUST write them under a per-run temporary directory and remove that directory at
 workflow exit. Fixed plan paths under shared temp locations, such as `/tmp/opencode/HOST-public.json`, are invalid for
@@ -356,7 +357,7 @@ refresh / update:
   Update
   Configure
 
-refresh / update with --upgrade:
+refresh / update with --greedy:
   refresh/update actions
   broad package-manager upgrade actions after refresh/update actions
 

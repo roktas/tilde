@@ -952,8 +952,8 @@ class Apply
       completed: false,
       input_id:,
       mode: target.fetch("mode"),
-      scope: target.fetch("scope"),
-      upgrade: target.fetch("upgrade"),
+      managed: target.fetch("managed"),
+      greedy: target.fetch("greedy"),
       plans: @plans.map { |plan| plan_metadata(plan) },
       results: []
     }
@@ -1369,7 +1369,7 @@ class Apply
 
   def validate_target_match!(plan, first_target)
     plan_target = plan.fetch("target")
-    %w[host platform mode scope upgrade level home state_root].each do |key|
+    %w[host platform mode managed greedy level home state_root].each do |key|
       raise "plan target #{key} mismatch" unless plan_target.fetch(key) == first_target.fetch(key)
     end
 

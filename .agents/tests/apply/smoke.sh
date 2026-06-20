@@ -375,8 +375,8 @@ plan = {
     "host" => host,
     "platform" => "linux",
     "mode" => "refresh",
-    "scope" => "fast",
-    "upgrade" => false,
+    "managed" => false,
+    "greedy" => false,
     "level" => "normal",
     "home" => home,
     "state_root" => File.join(state, "tilde")
@@ -723,7 +723,7 @@ require "json"
 source, target = ARGV
 plan = JSON.parse(File.read(source, encoding: "UTF-8"))
 plan["repository"]["role"] = "private"
-plan["target"]["upgrade"] = true
+plan["target"]["greedy"] = true
 
 def canonicalize(value)
   case value
@@ -741,14 +741,14 @@ plan["plan_id"] = "sha256:#{Digest::SHA256.hexdigest(JSON.generate(content))}"
 File.write(target, JSON.pretty_generate(plan))
 RUBY
 	if HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH "$tilde" apply --plan "$brew_plan_json" --plan "$mismatch_plan_json" >/dev/null 2>"$mismatch_apply_err"; then
-		abort "expected mixed upgrade plans to fail"
+		abort "expected mixed greedy plans to fail"
 	fi
-	grep -Fq "plan target upgrade mismatch" "$mismatch_apply_err"
+	grep -Fq "plan target greedy mismatch" "$mismatch_apply_err"
 	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH "$tilde" apply --plan "$brew_plan_json" >"$brew_apply_json"
 
 	BREW_APPLY_JSON=$brew_apply_json ruby -rjson -e '
 		apply = JSON.parse(File.read(ENV.fetch("BREW_APPLY_JSON"), encoding: "UTF-8"))
-		abort "apply should expose upgrade target flag" if apply.fetch("upgrade")
+		abort "apply should expose greedy target flag" if apply.fetch("greedy")
 		result = apply.fetch("results").fetch(0)
 		abort "brew refresh should pass" unless result.fetch("status") == "ok"
 		commands = result.dig("diagnostics", "commands")

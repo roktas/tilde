@@ -21,8 +21,8 @@ readonly -a EXAMPLES=(
 	'/tilde deploy spinoza|Deploy a remote host using target discovery.'
 	'/tilde deploy vps --public PUBLIC_REPO|Deploy a Git-backed VPS with the public data repository.'
 	'/tilde update spinoza|Update a remote host by planning and applying on that target.'
-	'/tilde update --scope full|Also refresh managed non-system package declarations.'
-	'/tilde update --upgrade|Run full update plus broad package-manager upgrade actions.'
+	'/tilde update --managed|Also refresh managed non-system package declarations.'
+	'/tilde update --greedy|Run managed update plus broad package-manager upgrade actions.'
 	'/tilde update WORK|Update every host in the WORK group defined by the active home policy.'
 	'/tilde doctor spinoza|Run diagnostics on the remote target through Tilde SSH transport.'
 	'/tilde repair|Apply current desired state again after a failed or deferred run.'
@@ -129,7 +129,7 @@ usage_suffix_for() {
 		printf '%s\n' ' [command]'
 		;;
 	update)
-		printf '%s\n' ' [host|ssh:<host>|GROUP] [--scope fast|full] [--upgrade] [dry-run|plan-only]'
+		printf '%s\n' ' [host|ssh:<host>|GROUP] [--managed] [--greedy] [dry-run|plan-only]'
 		;;
 	repair)
 		printf '%s\n' ' [host|ssh:<host>|GROUP] [dry-run|plan-only]'
@@ -179,8 +179,8 @@ print_command_help() {
 
 	if [[ $name = update ]]; then
 		printf '\nImplementation note: `%s` uses planning mode `refresh`; do not use `--mode update`.\n' "$name"
-		printf 'Scope note: `--scope fast` refreshes system package managers and is the default; `--scope full` also refreshes managed non-system package declarations.\n'
-		printf 'Upgrade note: `--upgrade` implies full scope and adds broad package-manager upgrade actions after update actions.\n'
+		printf 'Managed note: `--managed` also refreshes managed non-system package declarations such as gem, npm, egg, skill, and declared flatpak packages.\n'
+		printf 'Greedy note: `--greedy` implies `--managed` and adds broad package-manager upgrade actions after update actions.\n'
 		printf 'State recovery note: if target status shows missing `state.yml` or no `applied` anchors, use `plan --mode repair` for that run so successful apply can write recovered bindings and anchors; missing state is not proof the host was never deployed.\n'
 	fi
 

@@ -28,13 +28,12 @@ class Plan
   }.freeze
   MODES = %w[align apply refresh repair].freeze
 
-  FULL_REFRESH_PACKAGE_TYPES = %w[egg flatpak gem github npm skill].freeze
+  MANAGED_REFRESH_PACKAGE_TYPES = %w[egg flatpak gem github npm skill].freeze
   PACKAGE_TYPES = %w[brew cask deb npm gem egg flatpak scoop github skill].freeze
   PACKAGE_CONDITIONS = {
     "flatpak" => "graphical"
   }.freeze
   PHASES = %w[early normal].freeze
-  SCOPES = %w[fast full].freeze
   SPECIAL_SECTIONS = ["Prerequisites", "Install", "Post Install", "Configure", "Update", "Notes"].freeze
 
   def initialize(options)
@@ -42,11 +41,11 @@ class Plan
     @format = options.fetch(:format)
     @host = options[:host] || short_hostname
     @level = options[:level]
+    @greedy = options.fetch(:greedy)
+    @managed = options.fetch(:managed) || @greedy
     @mode = options.fetch(:mode)
     @platform = options[:platform] || detect_platform
     @repo = Pathname.new(options.fetch(:repo)).expand_path
-    @upgrade = options.fetch(:upgrade)
-    @scope = options[:scope] || default_scope
   end
 
   def run
@@ -59,8 +58,7 @@ class Plan
     @state = read_state
     @level = resolved_level
     validate_level!
-    validate_scope!
-    validate_upgrade!
+    validate_refresh_options!
 
     modules = planned_modules
     core = core_plan(modules)
@@ -75,8 +73,8 @@ class Plan
       host: @host,
       level: @level,
       mode: @mode,
-      scope: @scope,
-      upgrade: @upgrade,
+      managed: @managed,
+      greedy: @greedy,
       platform: @platform,
       state_path: state_path.to_s,
       repository: repository_identity,
@@ -187,12 +185,6 @@ class Plan
     nil
   end
 
-  def default_scope
-    return unless refresh?
-
-    @upgrade ? "full" : "fast"
-  end
-
   def configure_update_packages(modules)
     return modules unless refresh?
 
@@ -201,13 +193,13 @@ class Plan
       mod[:packages_to_upgrade] = []
     end
 
-    if full_refresh?
-      add_full_refresh_packages(modules)
+    if @managed
+      add_managed_refresh_packages(modules)
     else
       add_fast_refresh_packages(modules)
     end
 
-    add_broad_upgrade_packages(modules) if @upgrade
+    add_broad_upgrade_packages(modules) if @greedy
     modules
   end
 
@@ -317,10 +309,8 @@ class Plan
 
   def flatpak_active?(modules) = command_available?("flatpak") || package_type_present?(modules, %w[flatpak])
 
-  def full_refresh? = refresh? && @scope == "full"
-
-  def full_refresh_packages(packages)
-    packages.select { |package| FULL_REFRESH_PACKAGE_TYPES.include?(package.fetch(:type)) }
+  def managed_refresh_packages(packages)
+    packages.select { |package| MANAGED_REFRESH_PACKAGE_TYPES.include?(package.fetch(:type)) }
   end
 
   def homebrew_active?(modules) = command_available?("brew") || package_type_present?(modules, %w[brew cask])
@@ -339,11 +329,11 @@ class Plan
     target[:packages_to_refresh].concat(active_system_packages(modules))
   end
 
-  def add_full_refresh_packages(modules)
+  def add_managed_refresh_packages(modules)
     add_fast_refresh_packages(modules)
 
     modules.each do |mod|
-      mod[:packages_to_refresh].concat(full_refresh_packages(mod.fetch(:packages)))
+      mod[:packages_to_refresh].concat(managed_refresh_packages(mod.fetch(:packages)))
     end
   end
 
@@ -973,7 +963,7 @@ class Plan
 
   def ordered_refresh_actions(modules)
     actions = modules.flat_map { |mod| refresh_module_actions(mod) }
-    actions.concat(modules.flat_map { |mod| upgrade_module_actions(mod) }) if @upgrade
+    actions.concat(modules.flat_map { |mod| upgrade_module_actions(mod) }) if @greedy
     actions
   end
 
@@ -1025,7 +1015,8 @@ class Plan
     puts("- host: `#{plan[:host]}`")
     puts("- level: `#{plan[:level]}`")
     puts("- mode: `#{plan[:mode]}`")
-    puts("- scope: `#{plan[:scope]}`") if plan[:scope]
+    puts("- managed: `#{plan[:managed]}`")
+    puts("- greedy: `#{plan[:greedy]}`")
     puts("- platform: `#{plan[:platform]}`")
     puts("- state: `#{plan[:state_path]}`")
     puts("- actions: `#{plan[:actions].length}`")
@@ -1341,8 +1332,8 @@ class Plan
       host: @host,
       platform: @platform,
       mode: @mode,
-      scope: @scope,
-      upgrade: @upgrade,
+      managed: @managed,
+      greedy: @greedy,
       level: @level,
       converges: converges?,
       home: Dir.home,
@@ -1369,21 +1360,9 @@ class Plan
     raise "Unsupported mode: #{@mode}"
   end
 
-  def validate_scope!
-    case @mode
-    when "refresh"
-      return if SCOPES.include?(@scope)
-    else
-      return if @scope.nil?
-    end
-
-    raise "Unsupported scope for #{@mode}: #{@scope || "(none)"}"
-  end
-
-  def validate_upgrade!
-    return unless @upgrade
-    raise "--upgrade is only supported with refresh mode" unless refresh?
-    raise "--upgrade requires full scope" unless @scope == "full"
+  def validate_refresh_options!
+    raise "--greedy is only supported with refresh mode" if @greedy && !refresh?
+    raise "--managed is only supported with refresh mode" if @managed && !refresh?
   end
 
   def validate_repo!
@@ -1402,10 +1381,11 @@ def main(argv)
   options = {
     allow_dirty: false,
     format: "json",
+    greedy: false,
     level: nil,
+    managed: false,
     mode: "apply",
-    repo: Dir.pwd,
-    upgrade: false
+    repo: Dir.pwd
   }
 
   OptionParser
@@ -1415,11 +1395,13 @@ def main(argv)
       parser.on("--format FORMAT", "Output format: json or markdown") { |value| options[:format] = value }
       parser.on("--host HOST", "Host short name") { |value| options[:host] = value }
       parser.on("--level LEVEL", "Level: minimal, normal, extra") { |value| options[:level] = value }
+      parser.on("--managed", "Refresh managed non-system package declarations in refresh mode") {
+        options[:managed] = true
+      }
       parser.on("--mode MODE", "Mode: align, apply, refresh, repair") { |value| options[:mode] = value }
       parser.on("--platform PLATFORM", "Platform: linux, macos, windows") { |value| options[:platform] = value }
       parser.on("--repo PATH", "Repository root") { |value| options[:repo] = value }
-      parser.on("--scope SCOPE", "Refresh scope: fast or full") { |value| options[:scope] = value }
-      parser.on("--upgrade", "Add broad package-manager upgrade actions to refresh mode") { options[:upgrade] = true }
+      parser.on("--greedy", "Add broad package-manager upgrade actions to refresh mode") { options[:greedy] = true }
     end
     .parse!(argv)
 

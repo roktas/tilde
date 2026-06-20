@@ -43,12 +43,13 @@ main() {
 	local extra_plan_json
 	local file_provider_plan_json
 	local file_provider_repo
-	local full_refresh_plan_json
 	local head
+	local greedy_plan_json
 	local invalid_plan_err
 	local invalid_plan_json
-	local invalid_upgrade_err
+	local invalid_greedy_err
 	local macos_plan_json
+	local managed_plan_json
 	local normal_plan_json
 	local platform_module
 	local plan_impl
@@ -71,7 +72,6 @@ main() {
 	local target_plan_json
 	local tilde
 	local tmpdir
-	local upgrade_plan_json
 
 	script_dir=$(cd -- "${BASH_SOURCE[0]%/*}" >/dev/null && pwd)
 	skill_root=$(cd -- "$script_dir/../../.." >/dev/null && pwd)
@@ -103,11 +103,12 @@ main() {
 	dirty_plan_err=$tmpdir/dirty-plan.err
 	extra_plan_json=$tmpdir/extra-plan.json
 	file_provider_plan_json=$tmpdir/file-provider-plan.json
-	full_refresh_plan_json=$tmpdir/full-refresh-plan.json
+	greedy_plan_json=$tmpdir/greedy-plan.json
 	invalid_plan_err=$tmpdir/invalid-package-plan.err
 	invalid_plan_json=$tmpdir/invalid-package-plan.json
-	invalid_upgrade_err=$tmpdir/invalid-upgrade.err
+	invalid_greedy_err=$tmpdir/invalid-greedy.err
 	macos_plan_json=$tmpdir/macos-plan.json
+	managed_plan_json=$tmpdir/managed-plan.json
 	normal_plan_json=$tmpdir/normal-plan.json
 	plan_json=$tmpdir/plan.json
 	private_extra_plan_json=$tmpdir/private-extra-plan.json
@@ -119,7 +120,6 @@ main() {
 	state_skip_plan_json=$tmpdir/state-skip-plan.json
 	stored_level_plan_json=$tmpdir/stored-level-plan.json
 	target_plan_json=$tmpdir/target-plan.json
-	upgrade_plan_json=$tmpdir/upgrade-plan.json
 
 	export GIT_CONFIG_GLOBAL=${GIT_CONFIG_GLOBAL:-$tmpdir/gitconfig}
 
@@ -625,21 +625,36 @@ EOF
 
 	"$tilde" plan --repo "$repo" --allow-dirty --mode align --platform linux --host smoke >"$align_plan_json"
 	"$tilde" plan --repo "$repo" --mode refresh --platform linux --host smoke >"$refresh_plan_json"
-	"$tilde" plan --repo "$repo" --mode refresh --scope full --platform linux --host smoke >"$full_refresh_plan_json"
-	"$tilde" plan --repo "$repo" --mode refresh --upgrade --platform linux --host smoke >"$upgrade_plan_json"
-	if "$tilde" plan --repo "$repo" --mode upgrade --platform linux --host smoke >"$invalid_plan_json" 2>"$invalid_upgrade_err"; then
+	"$tilde" plan --repo "$repo" --mode refresh --managed --platform linux --host smoke >"$managed_plan_json"
+	"$tilde" plan --repo "$repo" --mode refresh --greedy --platform linux --host smoke >"$greedy_plan_json"
+	if "$tilde" plan --repo "$repo" --mode upgrade --platform linux --host smoke >"$invalid_plan_json" 2>"$invalid_greedy_err"; then
 		abort "expected removed upgrade mode to fail"
 	fi
-	grep -q "Unsupported mode: upgrade" "$invalid_upgrade_err"
-	if "$tilde" plan --repo "$repo" --mode refresh --scope fast --upgrade --platform linux --host smoke >"$invalid_plan_json" 2>"$invalid_upgrade_err"; then
-		abort "expected fast upgrade scope to fail"
+	grep -q "Unsupported mode: upgrade" "$invalid_greedy_err"
+	if "$tilde" plan --repo "$repo" --mode refresh --scope full --platform linux --host smoke >"$invalid_plan_json" 2>"$invalid_greedy_err"; then
+		abort "expected removed scope option to fail"
 	fi
-	grep -q -- "--upgrade requires full scope" "$invalid_upgrade_err"
+	grep -q -- "invalid option: --scope" "$invalid_greedy_err"
+	if "$tilde" plan --repo "$repo" --mode refresh --upgrade --platform linux --host smoke >"$invalid_plan_json" 2>"$invalid_greedy_err"; then
+		abort "expected removed upgrade option to fail"
+	fi
+	grep -q -- "invalid option: --upgrade" "$invalid_greedy_err"
+	if "$tilde" plan --repo "$repo" --mode align --managed --platform linux --host smoke >"$invalid_plan_json" 2>"$invalid_greedy_err"; then
+		abort "expected managed align to fail"
+	fi
+	grep -q -- "--managed is only supported with refresh mode" "$invalid_greedy_err"
+	if "$tilde" plan --repo "$repo" --mode align --greedy --platform linux --host smoke >"$invalid_plan_json" 2>"$invalid_greedy_err"; then
+		abort "expected greedy align to fail"
+	fi
+	grep -q -- "--greedy is only supported with refresh mode" "$invalid_greedy_err"
 
 	ALIGN_PLAN_JSON=$align_plan_json ruby -rjson -e '
 		plan = JSON.parse(File.read(ENV.fetch("ALIGN_PLAN_JSON")))
 		abort "wrong align mode" unless plan.fetch("mode") == "align"
-		abort "align should not have scope" unless plan["scope"].nil?
+		abort "align should not be managed" if plan.fetch("managed")
+		abort "align target should not be managed" if plan.fetch("target").fetch("managed")
+		abort "align should not be greedy" if plan.fetch("greedy")
+		abort "align target should not be greedy" if plan.fetch("target").fetch("greedy")
 		abort "align should not advance anchors" if plan.fetch("target").fetch("converges")
 		abort "align should not include package actions" if plan.fetch("actions").any? { |action| action.fetch("kind") == "package" }
 		abort "align should not include section actions" if plan.fetch("actions").any? { |action| %w[section manual].include?(action.fetch("kind")) }
@@ -652,9 +667,10 @@ EOF
 	REFRESH_PLAN_JSON=$refresh_plan_json ruby -rjson -e '
 		plan = JSON.parse(File.read(ENV.fetch("REFRESH_PLAN_JSON")))
 		abort "wrong refresh mode" unless plan.fetch("mode") == "refresh"
-		abort "wrong refresh scope" unless plan.fetch("scope") == "fast"
-		abort "refresh should not be marked as upgrade" if plan.fetch("upgrade")
-		abort "refresh target should not be marked as upgrade" if plan.fetch("target").fetch("upgrade")
+		abort "refresh should not be managed" if plan.fetch("managed")
+		abort "refresh target should not be managed" if plan.fetch("target").fetch("managed")
+		abort "refresh should not be greedy" if plan.fetch("greedy")
+		abort "refresh target should not be greedy" if plan.fetch("target").fetch("greedy")
 		abort "refresh should advance anchors after success" unless plan.fetch("target").fetch("converges")
 		abort "refresh should not create core links" unless plan.fetch("core").fetch("links_to_create").empty?
 		abort "refresh should not write fallback home entrypoints" unless plan.fetch("core").fetch("home_entrypoints_to_write").empty?
@@ -685,12 +701,13 @@ EOF
 		abort "refresh should run update before configure" unless smoke_indexes.fetch("Update") < smoke_indexes.fetch("Configure")
 	'
 
-	FULL_REFRESH_PLAN_JSON=$full_refresh_plan_json ruby -rjson -e '
-		plan = JSON.parse(File.read(ENV.fetch("FULL_REFRESH_PLAN_JSON")))
-		abort "wrong full refresh mode" unless plan.fetch("mode") == "refresh"
-		abort "wrong full refresh scope" unless plan.fetch("scope") == "full"
-		abort "full refresh should not be marked as upgrade" if plan.fetch("upgrade")
-		abort "full refresh target should not be marked as upgrade" if plan.fetch("target").fetch("upgrade")
+	MANAGED_PLAN_JSON=$managed_plan_json ruby -rjson -e '
+		plan = JSON.parse(File.read(ENV.fetch("MANAGED_PLAN_JSON")))
+		abort "wrong managed refresh mode" unless plan.fetch("mode") == "refresh"
+		abort "managed refresh should be marked as managed" unless plan.fetch("managed")
+		abort "managed refresh target should be marked as managed" unless plan.fetch("target").fetch("managed")
+		abort "managed refresh should not be greedy" if plan.fetch("greedy")
+		abort "managed refresh target should not be greedy" if plan.fetch("target").fetch("greedy")
 		javascript = plan.fetch("modules").find { |mod| mod.fetch("name") == "javascript" }
 		abort "missing javascript module" unless javascript
 		abort "missing managed npm refresh" unless javascript.fetch("packages_to_refresh").any? { |pkg| pkg.fetch("value") == "npm:@biomejs/biome" }
@@ -698,56 +715,57 @@ EOF
 		abort "missing neovim module" unless neovim
 		git = plan.fetch("modules").find { |mod| mod.fetch("name") == "git" }
 		abort "missing git module" unless git
-		abort "full refresh should include declared packages" unless git.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "brew:git" }
-		abort "full refresh should include declared links" if git.fetch("links_to_create").empty?
+		abort "managed refresh should include declared packages" unless git.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "brew:git" }
+		abort "managed refresh should include declared links" if git.fetch("links_to_create").empty?
 		abort "missing neovim update section" unless neovim.fetch("special_sections").key?("Update")
 		smoke = plan.fetch("modules").find { |mod| mod.fetch("name") == "zz-refresh-smoke" }
-		abort "missing full refresh smoke module" unless smoke
-		abort "full refresh should include prerequisite section" unless smoke.fetch("special_sections").key?("Prerequisites")
-		abort "full refresh should include install section" unless smoke.fetch("special_sections").key?("Install")
-		abort "full refresh should include post-install section" unless smoke.fetch("special_sections").key?("Post Install")
-		abort "full refresh should include update section" unless smoke.fetch("special_sections").key?("Update")
-		abort "full refresh should include configure section" unless smoke.fetch("special_sections").key?("Configure")
+		abort "missing managed refresh smoke module" unless smoke
+		abort "managed refresh should include prerequisite section" unless smoke.fetch("special_sections").key?("Prerequisites")
+		abort "managed refresh should include install section" unless smoke.fetch("special_sections").key?("Install")
+		abort "managed refresh should include post-install section" unless smoke.fetch("special_sections").key?("Post Install")
+		abort "managed refresh should include update section" unless smoke.fetch("special_sections").key?("Update")
+		abort "managed refresh should include configure section" unless smoke.fetch("special_sections").key?("Configure")
 	'
 
-	UPGRADE_PLAN_JSON=$upgrade_plan_json ruby -rjson -e '
-		plan = JSON.parse(File.read(ENV.fetch("UPGRADE_PLAN_JSON")))
-		abort "upgrade option should use refresh mode" unless plan.fetch("mode") == "refresh"
-		abort "wrong upgrade option scope" unless plan.fetch("scope") == "full"
-		abort "plan should be marked as upgrade" unless plan.fetch("upgrade")
-		abort "target should be marked as upgrade" unless plan.fetch("target").fetch("upgrade")
-		abort "upgrade option should advance anchors after success" unless plan.fetch("target").fetch("converges")
+	GREEDY_PLAN_JSON=$greedy_plan_json ruby -rjson -e '
+		plan = JSON.parse(File.read(ENV.fetch("GREEDY_PLAN_JSON")))
+		abort "greedy option should use refresh mode" unless plan.fetch("mode") == "refresh"
+		abort "greedy option should imply managed refresh" unless plan.fetch("managed")
+		abort "greedy target should imply managed refresh" unless plan.fetch("target").fetch("managed")
+		abort "plan should be marked as greedy" unless plan.fetch("greedy")
+		abort "target should be marked as greedy" unless plan.fetch("target").fetch("greedy")
+		abort "greedy option should advance anchors after success" unless plan.fetch("target").fetch("converges")
 		linux = plan.fetch("modules").find { |mod| mod.fetch("name") == "linux" }
 		abort "missing linux module" unless linux
-		abort "upgrade should include fast brew refresh" unless linux.fetch("packages_to_refresh").any? { |pkg| pkg.fetch("value") == "brew:*" }
-		abort "upgrade should include broad cask upgrade" unless linux.fetch("packages_to_upgrade").any? { |pkg| pkg.fetch("value") == "cask:*" }
-		abort "upgrade should include broad flatpak upgrade" unless linux.fetch("packages_to_upgrade").any? { |pkg| pkg.fetch("value") == "flatpak:*" }
+		abort "greedy refresh should include fast brew refresh" unless linux.fetch("packages_to_refresh").any? { |pkg| pkg.fetch("value") == "brew:*" }
+		abort "greedy refresh should include broad cask upgrade" unless linux.fetch("packages_to_upgrade").any? { |pkg| pkg.fetch("value") == "cask:*" }
+		abort "greedy refresh should include broad flatpak upgrade" unless linux.fetch("packages_to_upgrade").any? { |pkg| pkg.fetch("value") == "flatpak:*" }
 		javascript = plan.fetch("modules").find { |mod| mod.fetch("name") == "javascript" }
 		abort "missing javascript module" unless javascript
-		abort "upgrade should include managed npm refresh" unless javascript.fetch("packages_to_refresh").any? { |pkg| pkg.fetch("value") == "npm:@biomejs/biome" }
+		abort "greedy refresh should include managed npm refresh" unless javascript.fetch("packages_to_refresh").any? { |pkg| pkg.fetch("value") == "npm:@biomejs/biome" }
 		neovim = plan.fetch("modules").find { |mod| mod.fetch("name") == "neovim" }
 		abort "missing neovim module" unless neovim
 		git = plan.fetch("modules").find { |mod| mod.fetch("name") == "git" }
 		abort "missing git module" unless git
-		abort "upgrade should include declared packages" unless git.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "brew:git" }
-		abort "upgrade should include declared links" if git.fetch("links_to_create").empty?
-		abort "upgrade should include update section" unless neovim.fetch("special_sections").key?("Update")
+		abort "greedy refresh should include declared packages" unless git.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "brew:git" }
+		abort "greedy refresh should include declared links" if git.fetch("links_to_create").empty?
+		abort "greedy refresh should include update section" unless neovim.fetch("special_sections").key?("Update")
 		smoke = plan.fetch("modules").find { |mod| mod.fetch("name") == "zz-refresh-smoke" }
-		abort "missing upgrade smoke module" unless smoke
-		abort "upgrade should include prerequisite section" unless smoke.fetch("special_sections").key?("Prerequisites")
-		abort "upgrade should include install section" unless smoke.fetch("special_sections").key?("Install")
-		abort "upgrade should include post-install section" unless smoke.fetch("special_sections").key?("Post Install")
-		abort "upgrade should include update section" unless smoke.fetch("special_sections").key?("Update")
-		abort "upgrade should include configure section" unless smoke.fetch("special_sections").key?("Configure")
+		abort "missing greedy smoke module" unless smoke
+		abort "greedy refresh should include prerequisite section" unless smoke.fetch("special_sections").key?("Prerequisites")
+		abort "greedy refresh should include install section" unless smoke.fetch("special_sections").key?("Install")
+		abort "greedy refresh should include post-install section" unless smoke.fetch("special_sections").key?("Post Install")
+		abort "greedy refresh should include update section" unless smoke.fetch("special_sections").key?("Update")
+		abort "greedy refresh should include configure section" unless smoke.fetch("special_sections").key?("Configure")
 		actions = plan.fetch("actions")
 		update_indexes = actions.each_index.select { |index| actions.fetch(index).fetch("name", nil) == "Update" }
 		upgrade_indexes = actions.each_index.select { |index| actions.fetch(index).fetch("operation", nil) == "upgrade" }
-		abort "upgrade should include update actions" if update_indexes.empty?
-		abort "upgrade should include package upgrade actions" if upgrade_indexes.empty?
-		abort "upgrade actions should run after full refresh" unless upgrade_indexes.min > update_indexes.max
+		abort "greedy refresh should include update actions" if update_indexes.empty?
+		abort "greedy refresh should include package upgrade actions" if upgrade_indexes.empty?
+		abort "greedy upgrade actions should run after managed refresh" unless upgrade_indexes.min > update_indexes.max
 	'
 
-	NORMAL_PLAN_JSON=$normal_plan_json EXTRA_PLAN_JSON=$extra_plan_json MACOS_PLAN_JSON=$macos_plan_json PRIVATE_PLAN_JSON=$private_plan_json PRIVATE_EXTRA_PLAN_JSON=$private_extra_plan_json PRIVATE_MACOS_PLAN_JSON=$private_macos_plan_json PRIVATE_MACOS_EXTRA_PLAN_JSON=$private_macos_extra_plan_json ALIGN_PLAN_JSON=$align_plan_json REFRESH_PLAN_JSON=$refresh_plan_json FULL_REFRESH_PLAN_JSON=$full_refresh_plan_json UPGRADE_PLAN_JSON=$upgrade_plan_json ruby -rjson -ropen3 -e '
+	NORMAL_PLAN_JSON=$normal_plan_json EXTRA_PLAN_JSON=$extra_plan_json MACOS_PLAN_JSON=$macos_plan_json PRIVATE_PLAN_JSON=$private_plan_json PRIVATE_EXTRA_PLAN_JSON=$private_extra_plan_json PRIVATE_MACOS_PLAN_JSON=$private_macos_plan_json PRIVATE_MACOS_EXTRA_PLAN_JSON=$private_macos_extra_plan_json ALIGN_PLAN_JSON=$align_plan_json REFRESH_PLAN_JSON=$refresh_plan_json MANAGED_PLAN_JSON=$managed_plan_json GREEDY_PLAN_JSON=$greedy_plan_json ruby -rjson -ropen3 -e '
 		%w[
 			NORMAL_PLAN_JSON
 			EXTRA_PLAN_JSON
@@ -758,8 +776,8 @@ EOF
 			PRIVATE_MACOS_EXTRA_PLAN_JSON
 			ALIGN_PLAN_JSON
 			REFRESH_PLAN_JSON
-			FULL_REFRESH_PLAN_JSON
-			UPGRADE_PLAN_JSON
+			MANAGED_PLAN_JSON
+			GREEDY_PLAN_JSON
 		].filter_map { |name| ENV[name] }.select { |path| File.exist?(path) }.each do |path|
 			plan = JSON.parse(File.read(path))
 			plan.fetch("modules").each do |mod|

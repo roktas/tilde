@@ -142,9 +142,9 @@ ordinary proposal-first agent work until they are mature enough to deserve comma
 
 | Prompt | Meaning |
 | --- | --- |
-| `/tilde update` | Default fast update: system package-manager refresh plus desired-state reconciliation. |
-| `/tilde update --scope full` | Also refresh managed non-system package declarations. |
-| `/tilde update --upgrade` | Full update plus broad package-manager upgrade actions. |
+| `/tilde update` | Default update: system package-manager refresh plus desired-state reconciliation. |
+| `/tilde update --managed` | Also refresh managed non-system package declarations. |
+| `/tilde update --greedy` | Managed update plus broad package-manager upgrade actions. |
 | `/tilde repair` | Desired-state convergence without package refreshes, broad upgrades, or `Update` sections. |
 
 If target status shows missing `state.yml` or no `applied` anchors, an update workflow uses repair mode for that run to
@@ -169,8 +169,8 @@ Example prompts:
 /tilde deploy
 /tilde deploy spinoza
 /tilde update
-/tilde update --scope full
-/tilde update --upgrade
+/tilde update --managed
+/tilde update --greedy
 /tilde update spinoza
 /tilde update ALL
 /tilde update WORK
