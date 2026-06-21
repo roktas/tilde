@@ -185,7 +185,9 @@ package refreshes, broad package upgrades, or `Update` sections.
 
 When an agent workflow materializes plan JSON files, create them under a per-run temporary directory and remove that
 directory at exit. Do not write fixed plan paths such as `/tmp/opencode/HOST-public.json`, and do not leave plan files
-behind after `tilde apply`:
+behind after `tilde apply`. If generated plan files will be applied, generate and apply them inside the same temporary
+directory lifetime. A separate plan-only preflight is disposable and must not be described as the plan that was later
+applied:
 
 ```bash
 tmpdir=$(mktemp -d)
@@ -439,11 +441,16 @@ SCRIPT
 
 Every remote Tilde step must treat a non-zero exit as failed, deferred, or conflicted, even when stdout is empty. Do not
 redirect stderr to `/dev/null` for remote `status`, `doctor`, `checkout`, `plan`, `apply`, `align`, or verification
-work. A later successful status read does not turn a failed plan, apply, checkout, or align step into success.
+work. Do not append `; echo "EXIT: $?"`, `|| true`, or similar status markers to critical Tilde commands; they mask
+failures and can corrupt machine-readable output. If a tool UI needs an exit marker, first write the command stdout to a
+temporary file, preserve the command status in a variable, parse the file, then print any marker separately. A later
+successful status read does not turn a failed plan, apply, checkout, or align step into success.
 
-After `tilde apply`, inspect the JSON action results. `completed: true` only means the action list was processed; it is
-not full success when any result is `deferred`, `conflict`, or `notok`. Treat such a run as incomplete and report the
-exact action status and reason.
+After `tilde apply`, inspect the JSON action results with a JSON parser such as Ruby's `JSON` library or `jq`. Do not
+use `grep`, `rg`, or line counts to classify statuses. The apply stdout must remain one parseable JSON document; treat
+malformed or mixed output as failed. `completed: true` only means the action list was processed; it is not full success
+when any result is `deferred`, `conflict`, or `notok`. Treat such a run as incomplete and report the exact action
+status, `action_id`, and reason.
 
 After a successful mutating remote apply, verify target convergence with a separate cheap status read so the apply JSON
 stays easy to parse:
@@ -593,8 +600,9 @@ For weaker or low-context agents:
   target, then run `tilde plan --mode align --format json` for each target repository and `tilde apply` the plan files.
 - Never redirect remote Tilde stderr to `/dev/null`. Non-zero remote exit status means the step failed, deferred, or
   conflicted, even when the tool output pane says `(no output)`.
-- After `tilde apply`, inspect action results. Do not report success only because JSON was printed or `completed` is
-  true; any `deferred`, `conflict`, or `notok` action means the run is incomplete.
+- After `tilde apply`, inspect action results with a JSON parser. Do not use `grep`, `rg`, or line counts for status
+  classification, and do not report success only because JSON was printed or `completed` is true. Any `deferred`,
+  `conflict`, or `notok` action means the run is incomplete.
 - After a `notok` section or package result, do not run module snippets manually on the target for debugging or repair.
   Diagnose from structured output and source, fix desired state, then retry through `deploy` or `repair`. Any
   target-side manual mutation is a separate operator workflow and needs explicit approval.
@@ -609,7 +617,7 @@ For weaker or low-context agents:
   `### Install` or `### Configure`. Do not add dummy platform frontmatter, directories, links, packages, or platform
   `level` values just to force those nested sections to run.
 - A final status read is verification only; it does not make an earlier failed remote `checkout`, `plan`, `apply`, or
-  align step successful.
+  align step successful. Never mask those command exits with `; echo "EXIT: $?"`, `|| true`, or status-marker wrappers.
 - Call `checkout remote` only with the complete mapping: `--host HOST --repo CONTROLLER_REPO --target TARGET_REPO`.
   Do not expect it to infer target paths from `--host`. Quote target paths that start with `~`.
 - Use the `plan --mode refresh` implementation route for the `update` prompt command only when target status has
@@ -643,8 +651,9 @@ For weaker or low-context agents:
 - If active home policy asks for Dropbox conflicted-copy cleanup after update, apply that cleanup only to the bounded
   literal path named by the policy, normally `$HOME/Dropbox`. Do not substitute or additionally scan resolved Dropbox
   paths such as `$HOME/Library/CloudStorage/Dropbox` unless the active policy explicitly names them for cleanup.
-- Use `mktemp -d` and `trap` for all local and remote plan JSON files. Do not write fixed `/tmp/opencode/...` plan
-  paths or leave generated plan files behind after apply.
+- Use `mktemp -d` and `trap` for all local and remote plan JSON files. Generate and apply the plan files inside the same
+  temporary directory lifetime when they are part of one workflow. Do not write fixed `/tmp/opencode/...` plan paths or
+  leave generated plan files behind after apply.
 - After a successful Tilde-generated `refresh`/`update` run, verify final status and report the updated `applied`
   anchors. If any action was `deferred`, `conflict`, or `notok`, anchors remain unchanged.
 - Keep remote scripts `sh`-compatible unless Bash is explicitly required and the target is known to support it. Do not

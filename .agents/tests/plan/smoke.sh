@@ -294,9 +294,9 @@ EOF
 			linux_extra = JSON.parse(File.read(ENV.fetch("PRIVATE_EXTRA_PLAN_JSON")))
 			codex = linux_extra.fetch("modules").find { |mod| mod.fetch("name") == "codex" }
 			abort "missing private codex module" unless codex
-			abort "missing linux codex-switcher package" unless codex.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "github:Lampese/codex-switcher" }
-			abort "linux codex should not install codex cask" if codex.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "cask:codex" }
-			abort "codex wrappers should be removed" if codex.fetch("links_to_create").any? { |link| link.fetch("source") == "bin/codex" || link.fetch("target") == "~/Dropbox/_/bin/codex" || link.fetch("source") == "bin/codex-switcher" || link.fetch("target") == "~/Dropbox/_/bin/codex-switcher" }
+			abort "missing linux codex cask" unless codex.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "cask:codex" }
+			abort "codex should link sodexo locally" unless codex.fetch("links_to_create").any? { |link| link.fetch("source") == "bin/sodexo" && link.fetch("target") == "~/.local/bin/sodexo" }
+			abort "codex wrappers should be removed" if codex.fetch("links_to_create").any? { |link| link.fetch("source") == "bin/codex" || link.fetch("target") == "~/Dropbox/_/bin/codex" }
 			abort "codex should link hooks into shared codex state" unless codex.fetch("links_to_create").any? { |link| link.fetch("source") == "hooks/shellcheck" && link.fetch("target") == "~/Dropbox/_/var/codex/hooks/shellcheck" && link.fetch("fan_in") == true }
 			hook_action = linux_extra.fetch("actions").find { |action| action.fetch("kind") == "link" && action.fetch("target") == "~/Dropbox/_/var/codex/hooks/shellcheck" }
 			abort "missing codex hook action" unless hook_action
@@ -332,7 +332,6 @@ EOF
 			macos_codex = macos_extra.fetch("modules").find { |mod| mod.fetch("name") == "codex" }
 			abort "missing macos codex module" unless macos_codex
 			abort "missing macos codex cask" unless macos_codex.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "cask:codex" }
-			abort "macos codex should not install codex-switcher release" if macos_codex.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "github:Lampese/codex-switcher" }
 			macos_environment = macos.fetch("modules").find { |mod| mod.fetch("name") == "environment" }
 			abort "missing macos environment module" unless macos_environment
 			abort "environment should link macos session.conf" unless macos_environment.fetch("links_to_create").any? { |link| link.fetch("source") == "environment.d/session.macos.conf" && link.fetch("target") == "~/.config/environment.d/session.conf" }
@@ -360,13 +359,13 @@ EOF
 ---
 all:
   links:
-    bin/codex-switcher: ~/Dropbox/_/bin/codex-switcher
+    bin/sodexo: ~/Dropbox/_/bin/sodexo
     hooks/: ~/Dropbox/_/var/codex/hooks
 ---
 
 # Codex
 EOF
-	touch "$file_provider_repo/codex/bin/codex-switcher" "$file_provider_repo/codex/hooks/shellcheck"
+	touch "$file_provider_repo/codex/bin/sodexo" "$file_provider_repo/codex/hooks/shellcheck"
 
 	git -C "$file_provider_repo" init -q
 	git -C "$file_provider_repo" config user.email smoke@example.invalid
@@ -382,9 +381,9 @@ EOF
 		abort "missing Dropbox actions" if dropbox_actions.empty?
 		absolute = dropbox_actions.find { |action| action.fetch("link_value").start_with?("/") }
 		abort "Dropbox action should not use host-absolute link value: #{absolute.fetch("id")}" if absolute
-		wrapper = dropbox_actions.find { |action| action.fetch("target") == "~/Dropbox/_/bin/codex-switcher" }
+		wrapper = dropbox_actions.find { |action| action.fetch("target") == "~/Dropbox/_/bin/sodexo" }
 		abort "missing file-provider wrapper link" unless wrapper
-		abort "wrapper should use logical Dropbox-relative value" unless wrapper.fetch("link_value") == "../../home-/codex/bin/codex-switcher"
+		abort "wrapper should use logical Dropbox-relative value" unless wrapper.fetch("link_value") == "../../home-/codex/bin/sodexo"
 		hook = dropbox_actions.find { |action| action.fetch("target") == "~/Dropbox/_/var/codex/hooks/shellcheck" }
 		abort "missing file-provider hook link" unless hook
 		abort "hook should use logical Dropbox-relative value" unless hook.fetch("link_value") == "../../../../home-/codex/hooks/shellcheck"

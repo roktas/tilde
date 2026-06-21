@@ -327,7 +327,9 @@ desired-state convergence without package refresh actions, broad package upgrade
 
 Agents that materialize plan JSON files MUST write them under a per-run temporary directory and remove that directory at
 workflow exit. Fixed plan paths under shared temp locations, such as `/tmp/opencode/HOST-public.json`, are invalid for
-agent workflows because they leak state across runs and hosts.
+agent workflows because they leak state across runs and hosts. When generated plan files are intended for apply, plan
+generation and apply MUST happen inside the same temporary directory lifetime. Separate plan-only probes are disposable
+preflight checks and MUST NOT be treated as the plan that was later applied.
 
 Example:
 
@@ -1034,6 +1036,9 @@ If a run fails or is deferred:
 The `apply` runtime route MUST emit its structured JSON result before exit. If `completed` is false, or any required
 action result is `deferred`, `conflict`, or `notok`, `apply` MUST exit non-zero after writing that JSON. Agents MUST
 inspect the action results instead of treating a printed JSON document or `completed: true` alone as full success.
+Agents MUST parse the apply result as JSON. They MUST NOT use `grep`, `rg`, or line counts to classify statuses. If
+apply stdout is captured for later inspection, it MUST remain exactly one parseable JSON document; status sentinels,
+exit-code markers, logs, or summaries MUST NOT be appended to it. Malformed or mixed apply output is a failed workflow.
 
 If `state.yml` is missing or has no `applied` section, Tilde uses fresh-run semantics:
 
@@ -1316,6 +1321,10 @@ SCRIPT
 Agents MUST NOT redirect remote Tilde diagnostics to `/dev/null` for status, doctor, checkout, plan, apply, align, or
 verification steps. A non-zero remote exit status is failed, deferred, or conflicted work even when stdout is empty. A
 later successful status read does not convert an earlier failed checkout, plan, apply, or align step into success.
+Agents MUST NOT append `; echo "EXIT: $?"`, `|| true`, or similar status-marker wrappers to critical remote Tilde
+commands. Those wrappers mask non-zero exits and can corrupt JSON outputs. If a tool UI needs an exit marker, agents
+MUST preserve command stdout separately, retain the real status in a variable, parse the command output first, and then
+print any marker outside the machine-readable document.
 
 Remote scripts MUST be `sh`-compatible by default. Agents MUST use the plain `"$TILDE" ssh HOST << 'SCRIPT'` form for
 ordinary status, plan, apply, and verification work. Agents MUST NOT pass `-- bash` for macOS targets or for scripts
