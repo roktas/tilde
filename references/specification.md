@@ -1186,37 +1186,42 @@ repository bindings, and live checks come from the target host.
 
 Generating a plan on the controller for a remote host is invalid.
 
-After the target runtime is known current, machine-readable target status is the preferred source for repository
-bindings:
-
-```text
-"$TILDE" ssh spinoza << 'SCRIPT'
-tilde status --format json
-SCRIPT
-```
-
-Use the returned `state.public` and `state.private` paths exactly when generating target-local plans. Do not guess
-`~/Dropbox/home`, `~/Dropbox/home-`, `~/.local/src/home`, or `~/.local/src/home-` when status, explicit user arguments,
-or active home policy can supply the target binding.
-
-For Git-backed targets whose status binds repositories outside Dropbox, controller-side `~/Dropbox/...` source paths are
-not target paths. Agents MUST NOT create target-side `~/Dropbox` for repository binding, cleanup, shared app state, or
-convenience paths unless active target policy explicitly says that host has Dropbox-backed storage.
-
-When a remote workflow needs repository bindings in a target-side script, agents MUST bind them from target status JSON
-before planning. Agents MUST NOT retype host-convention paths in `tilde plan --repo ...` commands:
+After the target runtime is known current, sourceable target status is the preferred way to bind repository paths inside
+remote scripts:
 
 ```text
 "$TILDE" ssh spinoza << 'SCRIPT'
 tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT
-status_json=$tmpdir/status.json
+status_sh=$tmpdir/status.sh
 
-tilde status --format json > "$status_json"
-public=$(ruby -rjson -e 'data = JSON.parse(File.read(ARGV[0])); print data.dig("state", "public").to_s' "$status_json")
-private=$(ruby -rjson -e 'data = JSON.parse(File.read(ARGV[0])); print data.dig("state", "private").to_s' "$status_json")
-if [ -z "$public" ]; then
-  printf '%s\n' 'STATUS_FAILED: missing state.public' >&2
+tilde status --format shell > "$status_sh"
+. "$status_sh"
+SCRIPT
+```
+
+Use the returned `tilde_public_repo` and `tilde_private_repo` paths exactly when generating target-local plans. For
+update state recovery, use `tilde_update_mode`, which is `repair` when target status has no applied anchors and
+`refresh` otherwise. Do not guess `~/Dropbox/home`, `~/Dropbox/home-`, `~/.local/src/home`, or `~/.local/src/home-`
+when status, explicit user arguments, or active home policy can supply the target binding.
+
+For Git-backed targets whose status binds repositories outside Dropbox, controller-side `~/Dropbox/...` source paths are
+not target paths. Agents MUST NOT create target-side `~/Dropbox` for repository binding, cleanup, shared app state, or
+convenience paths unless active target policy explicitly says that host has Dropbox-backed storage.
+
+When a remote workflow needs repository bindings in a target-side script, agents MUST bind them from target status shell
+output before planning. Agents MUST NOT retype host-convention paths in `tilde plan --repo ...` commands:
+
+```text
+"$TILDE" ssh spinoza << 'SCRIPT'
+tmpdir=$(mktemp -d)
+trap 'rm -rf "$tmpdir"' EXIT
+status_sh=$tmpdir/status.sh
+
+tilde status --format shell > "$status_sh"
+. "$status_sh"
+if [ -z "$tilde_public_repo" ]; then
+  printf '%s\n' 'STATUS_FAILED: missing tilde_public_repo' >&2
   exit 1
 fi
 SCRIPT
@@ -1235,21 +1240,30 @@ SCRIPT
 "$TILDE" ssh spinoza << 'SCRIPT'
 tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT
-status_json=$tmpdir/status.json
-mode=refresh
-# Use mode=repair when target status reports missing state.yml or no applied anchors.
+status_sh=$tmpdir/status.sh
 
-tilde status --format json > "$status_json"
-public=$(ruby -rjson -e 'data = JSON.parse(File.read(ARGV[0])); print data.dig("state", "public").to_s' "$status_json")
-private=$(ruby -rjson -e 'data = JSON.parse(File.read(ARGV[0])); print data.dig("state", "private").to_s' "$status_json")
-if [ -z "$public" ]; then
-  printf '%s\n' 'STATUS_FAILED: missing state.public' >&2
+tilde status --format shell > "$status_sh"
+. "$status_sh"
+if [ -z "$tilde_public_repo" ]; then
+  printf '%s\n' 'STATUS_FAILED: missing tilde_public_repo' >&2
   exit 1
 fi
 
-tilde plan --mode "$mode" --repo "$public" --host spinoza --format json > "$tmpdir/public.json" || exit $?
-if [ -n "$private" ]; then
-  tilde plan --mode "$mode" --repo "$private" --host spinoza --format json > "$tmpdir/private.json" || exit $?
+tilde plan \
+  --mode "$tilde_update_mode" \
+  --repo "$tilde_public_repo" \
+  --host "$tilde_host" \
+  --platform "$tilde_platform" \
+  --level "$tilde_level" \
+  --format json > "$tmpdir/public.json" || exit $?
+if [ -n "$tilde_private_repo" ]; then
+  tilde plan \
+    --mode "$tilde_update_mode" \
+    --repo "$tilde_private_repo" \
+    --host "$tilde_host" \
+    --platform "$tilde_platform" \
+    --level "$tilde_level" \
+    --format json > "$tmpdir/private.json" || exit $?
   tilde apply --plan "$tmpdir/public.json" --plan "$tmpdir/private.json"
 else
   tilde apply --plan "$tmpdir/public.json"
@@ -1267,20 +1281,31 @@ Remote align uses the same target-local plan/apply shape with align mode:
 "$TILDE" ssh spinoza << 'SCRIPT'
 tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT
-status_json=$tmpdir/status.json
+status_sh=$tmpdir/status.sh
 mode=align
 
-tilde status --format json > "$status_json"
-public=$(ruby -rjson -e 'data = JSON.parse(File.read(ARGV[0])); print data.dig("state", "public").to_s' "$status_json")
-private=$(ruby -rjson -e 'data = JSON.parse(File.read(ARGV[0])); print data.dig("state", "private").to_s' "$status_json")
-if [ -z "$public" ]; then
-  printf '%s\n' 'STATUS_FAILED: missing state.public' >&2
+tilde status --format shell > "$status_sh"
+. "$status_sh"
+if [ -z "$tilde_public_repo" ]; then
+  printf '%s\n' 'STATUS_FAILED: missing tilde_public_repo' >&2
   exit 1
 fi
 
-tilde plan --mode "$mode" --repo "$public" --host spinoza --format json > "$tmpdir/public.json" || exit $?
-if [ -n "$private" ]; then
-  tilde plan --mode "$mode" --repo "$private" --host spinoza --format json > "$tmpdir/private.json" || exit $?
+tilde plan \
+  --mode "$mode" \
+  --repo "$tilde_public_repo" \
+  --host "$tilde_host" \
+  --platform "$tilde_platform" \
+  --level "$tilde_level" \
+  --format json > "$tmpdir/public.json" || exit $?
+if [ -n "$tilde_private_repo" ]; then
+  tilde plan \
+    --mode "$mode" \
+    --repo "$tilde_private_repo" \
+    --host "$tilde_host" \
+    --platform "$tilde_platform" \
+    --level "$tilde_level" \
+    --format json > "$tmpdir/private.json" || exit $?
   tilde apply --plan "$tmpdir/public.json" --plan "$tmpdir/private.json"
 else
   tilde apply --plan "$tmpdir/public.json"

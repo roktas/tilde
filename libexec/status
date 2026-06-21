@@ -6,11 +6,15 @@ require "json"
 require "open3"
 require "optparse"
 require "pathname"
+require "rbconfig"
+require "shellwords"
 require "socket"
 require "time"
 require "yaml"
 
 class Status
+  LEVELS = %w[minimal normal extra].freeze
+  PLATFORMS = %w[linux macos windows].freeze
   SKILL_ROOT = Pathname.new(__dir__).parent.expand_path.freeze
 
   def initialize(options)
@@ -24,10 +28,21 @@ class Status
 
   def run
     status = collect
-    @format == "markdown" ? puts_markdown(status) : puts(JSON.pretty_generate(status))
+    case @format
+    when "json"
+      puts(JSON.pretty_generate(status))
+    when "markdown"
+      puts_markdown(status)
+    when "shell"
+      puts_shell(status)
+    end
   end
 
   private
+
+  def applied_anchors?(applied)
+    %w[public private].any? { |key| !applied[key].to_s.empty? }
+  end
 
   def collect
     state = read_state
@@ -50,6 +65,21 @@ class Status
 
   def dirty?(repo)
     !git(repo, "status", "--porcelain", "--untracked-files=no").empty?
+  end
+
+  def detect_platform
+    host_os = RbConfig::CONFIG.fetch("host_os")
+
+    case host_os
+    when /darwin/i
+      "macos"
+    when /linux/i
+      "linux"
+    when /mswin|mingw|cygwin/i
+      "windows"
+    else
+      raise "Unsupported platform: #{host_os}"
+    end
   end
 
   def display_path(path)
@@ -192,6 +222,12 @@ class Status
     puts_warnings(status)
   end
 
+  def puts_shell(status)
+    shell_values(status).each do |key, value|
+      puts("#{key}=#{Shellwords.escape(value.to_s)}")
+    end
+  end
+
   def puts_repositories(status)
     puts("## Repositories")
     status.fetch(:repositories).each_value do |repo|
@@ -273,6 +309,49 @@ class Status
     summary.merge(error: e.message)
   end
 
+  def repo_shell_path(status, role)
+    state = status.fetch(:state)
+    repo = status.fetch(:repositories).fetch(role)
+
+    state[role] || repo[:path].to_s
+  end
+
+  def shell_bool(value)
+    value ? "true" : "false"
+  end
+
+  def shell_level(applied)
+    level = applied["level"].to_s
+    LEVELS.include?(level) ? level : "normal"
+  end
+
+  def shell_platform(applied)
+    platform = applied["platform"].to_s
+    PLATFORMS.include?(platform) ? platform : detect_platform
+  end
+
+  def shell_values(status)
+    state = status.fetch(:state)
+    applied = state.fetch(:applied, {})
+    anchors = applied_anchors?(applied)
+
+    {
+      "tilde_host" => status.fetch(:host),
+      "tilde_state_path" => state.fetch(:path),
+      "tilde_state_present" => shell_bool(state.fetch(:present)),
+      "tilde_state_has_applied" => shell_bool(anchors),
+      "tilde_update_mode" => anchors ? "refresh" : "repair",
+      "tilde_public_repo" => repo_shell_path(status, :public),
+      "tilde_private_repo" => repo_shell_path(status, :private),
+      "tilde_level" => shell_level(applied),
+      "tilde_platform" => shell_platform(applied),
+      "tilde_applied_public" => applied["public"],
+      "tilde_applied_private" => applied["private"],
+      "tilde_public_head" => status.dig(:repositories, :public, :head),
+      "tilde_private_head" => status.dig(:repositories, :private, :head)
+    }
+  end
+
   def repository_summary(state)
     {
       public: repo_summary("public", configured_path(@public, state && state["public"])),
@@ -295,7 +374,7 @@ class Status
       skill: state["skill"],
       public: state["public"],
       private: state["private"],
-      applied: state["applied"] || {}
+      applied: state["applied"].is_a?(Hash) ? state["applied"] : {}
     }
   end
 
@@ -370,7 +449,7 @@ def main(argv)
   OptionParser
     .new do |parser|
       parser.banner = "Usage: status [options]"
-      parser.on("--format FORMAT", "Output format: json or markdown") { |value| options[:format] = value }
+      parser.on("--format FORMAT", "Output format: json, markdown, or shell") { |value| options[:format] = value }
       parser.on("--host HOST", "Host short name") { |value| options[:host] = value }
       parser.on("--private PATH", "Private home repository path") { |value| options[:private] = value }
       parser.on("--public PATH", "Public home repository path") { |value| options[:public] = value }
@@ -378,7 +457,7 @@ def main(argv)
     end
     .parse!(argv)
 
-  unless %w[json markdown].include?(options[:format])
+  unless %w[json markdown shell].include?(options[:format])
     warn("Unsupported format: #{options[:format]}")
     return 2
   end

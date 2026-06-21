@@ -304,39 +304,44 @@ These bypass Tilde's PATH setup and sudo interceptor.
 
 After the Remote Freshness Preflight, plan and execute on the target host. Platform detection, package inventory,
 repository bindings, and live checks come from the target. A controller-side plan for a remote host is invalid.
-After the target runtime is known current, read target status in JSON when a workflow needs repository bindings:
-
-```bash
-TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
-"$TILDE" ssh spinoza << 'SCRIPT'
-tilde status --format json
-SCRIPT
-```
-
-Use the returned `state.public` and `state.private` paths exactly when generating target-local plans. Do not hard-code
-`~/Dropbox/home`, `~/Dropbox/home-`, `~/.local/src/home`, or `~/.local/src/home-` unless those paths came from target
-status, explicit user arguments, or active home policy for a stale Git-backed target that must be refreshed before
-status can be trusted.
-
-For Git-backed targets whose status binds repositories outside Dropbox, controller-side `~/Dropbox/...` source paths are
-not target paths. Do not create target-side `~/Dropbox` for repository binding, cleanup, shared app state, or convenience
-paths unless active target policy explicitly says that host has Dropbox-backed storage.
-
-When a remote workflow needs repository bindings in a target-side script, bind them from target status JSON before
-planning. Do not retype host-convention paths in `tilde plan --repo ...` commands:
+After the target runtime is known current, read target status in shell format when a remote script needs repository
+bindings:
 
 ```bash
 TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
 "$TILDE" ssh spinoza << 'SCRIPT'
 tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT
-status_json=$tmpdir/status.json
+status_sh=$tmpdir/status.sh
 
-tilde status --format json > "$status_json"
-public=$(ruby -rjson -e 'data = JSON.parse(File.read(ARGV[0])); print data.dig("state", "public").to_s' "$status_json")
-private=$(ruby -rjson -e 'data = JSON.parse(File.read(ARGV[0])); print data.dig("state", "private").to_s' "$status_json")
-if [ -z "$public" ]; then
-  printf '%s\n' 'STATUS_FAILED: missing state.public' >&2
+tilde status --format shell > "$status_sh"
+. "$status_sh"
+SCRIPT
+```
+
+Use the returned `tilde_public_repo` and `tilde_private_repo` paths when generating target-local plans, and use
+`tilde_update_mode` for update state recovery. Do not hard-code `~/Dropbox/home`, `~/Dropbox/home-`,
+`~/.local/src/home`, or `~/.local/src/home-` unless those paths came from target status, explicit user arguments, or
+active home policy for a stale Git-backed target that must be refreshed before status can be trusted.
+
+For Git-backed targets whose status binds repositories outside Dropbox, controller-side `~/Dropbox/...` source paths are
+not target paths. Do not create target-side `~/Dropbox` for repository binding, cleanup, shared app state, or convenience
+paths unless active target policy explicitly says that host has Dropbox-backed storage.
+
+When a remote workflow needs repository bindings in a target-side script, bind them from target status shell output
+before planning. Do not retype host-convention paths in `tilde plan --repo ...` commands:
+
+```bash
+TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
+"$TILDE" ssh spinoza << 'SCRIPT'
+tmpdir=$(mktemp -d)
+trap 'rm -rf "$tmpdir"' EXIT
+status_sh=$tmpdir/status.sh
+
+tilde status --format shell > "$status_sh"
+. "$status_sh"
+if [ -z "$tilde_public_repo" ]; then
+  printf '%s\n' 'STATUS_FAILED: missing tilde_public_repo' >&2
   exit 1
 fi
 SCRIPT
@@ -358,21 +363,30 @@ TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
 "$TILDE" ssh spinoza << 'SCRIPT'
 tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT
-status_json=$tmpdir/status.json
-mode=refresh
-# Use mode=repair when target status reports missing state.yml or no applied anchors.
+status_sh=$tmpdir/status.sh
 
-tilde status --format json > "$status_json"
-public=$(ruby -rjson -e 'data = JSON.parse(File.read(ARGV[0])); print data.dig("state", "public").to_s' "$status_json")
-private=$(ruby -rjson -e 'data = JSON.parse(File.read(ARGV[0])); print data.dig("state", "private").to_s' "$status_json")
-if [ -z "$public" ]; then
-  printf '%s\n' 'STATUS_FAILED: missing state.public' >&2
+tilde status --format shell > "$status_sh"
+. "$status_sh"
+if [ -z "$tilde_public_repo" ]; then
+  printf '%s\n' 'STATUS_FAILED: missing tilde_public_repo' >&2
   exit 1
 fi
 
-tilde plan --mode "$mode" --repo "$public" --host spinoza --format json > "$tmpdir/public.json" || exit $?
-if [ -n "$private" ]; then
-  tilde plan --mode "$mode" --repo "$private" --host spinoza --format json > "$tmpdir/private.json" || exit $?
+tilde plan \
+  --mode "$tilde_update_mode" \
+  --repo "$tilde_public_repo" \
+  --host "$tilde_host" \
+  --platform "$tilde_platform" \
+  --level "$tilde_level" \
+  --format json > "$tmpdir/public.json" || exit $?
+if [ -n "$tilde_private_repo" ]; then
+  tilde plan \
+    --mode "$tilde_update_mode" \
+    --repo "$tilde_private_repo" \
+    --host "$tilde_host" \
+    --platform "$tilde_platform" \
+    --level "$tilde_level" \
+    --format json > "$tmpdir/private.json" || exit $?
   tilde apply --plan "$tmpdir/public.json" --plan "$tmpdir/private.json"
 else
   tilde apply --plan "$tmpdir/public.json"
@@ -391,20 +405,31 @@ TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
 "$TILDE" ssh spinoza << 'SCRIPT'
 tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT
-status_json=$tmpdir/status.json
+status_sh=$tmpdir/status.sh
 mode=align
 
-tilde status --format json > "$status_json"
-public=$(ruby -rjson -e 'data = JSON.parse(File.read(ARGV[0])); print data.dig("state", "public").to_s' "$status_json")
-private=$(ruby -rjson -e 'data = JSON.parse(File.read(ARGV[0])); print data.dig("state", "private").to_s' "$status_json")
-if [ -z "$public" ]; then
-  printf '%s\n' 'STATUS_FAILED: missing state.public' >&2
+tilde status --format shell > "$status_sh"
+. "$status_sh"
+if [ -z "$tilde_public_repo" ]; then
+  printf '%s\n' 'STATUS_FAILED: missing tilde_public_repo' >&2
   exit 1
 fi
 
-tilde plan --mode "$mode" --repo "$public" --host spinoza --format json > "$tmpdir/public.json" || exit $?
-if [ -n "$private" ]; then
-  tilde plan --mode "$mode" --repo "$private" --host spinoza --format json > "$tmpdir/private.json" || exit $?
+tilde plan \
+  --mode "$mode" \
+  --repo "$tilde_public_repo" \
+  --host "$tilde_host" \
+  --platform "$tilde_platform" \
+  --level "$tilde_level" \
+  --format json > "$tmpdir/public.json" || exit $?
+if [ -n "$tilde_private_repo" ]; then
+  tilde plan \
+    --mode "$mode" \
+    --repo "$tilde_private_repo" \
+    --host "$tilde_host" \
+    --platform "$tilde_platform" \
+    --level "$tilde_level" \
+    --format json > "$tmpdir/private.json" || exit $?
   tilde apply --plan "$tmpdir/public.json" --plan "$tmpdir/private.json"
 else
   tilde apply --plan "$tmpdir/public.json"
@@ -608,9 +633,10 @@ For weaker or low-context agents:
   leaves active policy.
 - When traversing a host group, skip unreachable hosts after a bounded reachability check and continue with reachable
   hosts. Run this check through `"$TILDE" ssh`; do not use raw `ssh` for Tilde remote workflow probes.
-- After remote runtime freshness is verified, read `tilde status --format json` on the target, bind the returned
-  repository paths to shell variables, and use those variables for remote plan paths. Do not guess Dropbox or
-  Git-backed checkout paths when status or explicit policy can supply them.
+- After remote runtime freshness is verified, read `tilde status --format shell` on the target into a temp file, source
+  it, and use the returned `tilde_public_repo`, `tilde_private_repo`, and `tilde_update_mode` variables for remote plan
+  paths and update state recovery. Do not guess Dropbox or Git-backed checkout paths when status or explicit policy can
+  supply them.
 - Do not create `~/Dropbox` on a target just because controller source repositories live under Dropbox, an example uses
   `~/Dropbox/home`, or post-update cleanup mentions Dropbox. If target status binds Git-backed repositories under
   `~/.local/src`, use those paths and skip Dropbox-only maintenance when `~/Dropbox` is absent.
