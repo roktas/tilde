@@ -457,6 +457,22 @@ Recommended module README section order:
 
 Sections not relevant to a module may be omitted.
 
+Platform-scoped section groups are supported at level 2 with ordinary module sections nested at level 3:
+
+```text
+## Linux
+### Install
+
+## MacOS
+### Configure
+```
+
+Supported platform group headings are `All`, `All Platforms`, `Linux`, `MacOS`, `Darwin`, and `Windows`. During
+planning, Tilde selects top-level special sections plus sections nested under `All`/`All Platforms` and the target
+platform heading. Platform-scoped sections make a module applicable for that platform even when the README frontmatter
+does not contain a matching platform key. Do not add dummy `linux:`, `macos:`, directories, links, packages, or
+platform `level` entries solely to make a platform-scoped section run.
+
 ### 8.1 Prerequisites
 
 `Prerequisites` describes blocking external conditions required before a module can be fully applied.

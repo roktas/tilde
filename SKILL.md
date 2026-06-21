@@ -486,6 +486,11 @@ optimizations only.
 Module code blocks call Tilde helpers by their plain names, such as `line` and `span`. Privileged helper calls use the
 same plain form with `sudo`, such as `sudo line ...`.
 
+Platform-specific module code belongs under platform section groups such as `## Linux` or `## MacOS`, with ordinary
+action sections nested below them, for example `### Install` or `### Configure`. A platform-scoped section makes the
+module applicable for that platform; do not add placeholder platform frontmatter, links, directories, or packages just
+to make the section run.
+
 README frontmatter may declare `directories` along with `links`, `copies`, `seeds`, `resets`, and `packages`. Link
 sources are repository-relative by default. A source that starts with `~/` or `/` is a target-home source and must stay
 inside the target home. Use target-home sources for live home paths such as Dropbox-backed shared state directories and
@@ -575,6 +580,9 @@ For weaker or low-context agents:
   and `scoop` on Windows. Do not rewrite unprefixed Linux packages as `brew:` just for clarity, and do not inspect
   `dpkg` or apt state to decide whether an unprefixed package is installed. Debian packages must be declared with an
   explicit `deb:` prefix.
+- For platform-specific module code, use `## Linux` / `## MacOS` / `## Windows` with nested action headings such as
+  `### Install` or `### Configure`. Do not add dummy platform frontmatter, directories, links, packages, or platform
+  `level` values just to force those nested sections to run.
 - A final status read is verification only; it does not make an earlier failed remote `checkout`, `plan`, `apply`, or
   align step successful.
 - Call `checkout remote` only with the complete mapping: `--host HOST --repo CONTROLLER_REPO --target TARGET_REPO`.

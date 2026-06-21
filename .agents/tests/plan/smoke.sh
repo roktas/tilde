@@ -504,7 +504,7 @@ EOF
 		abort "missing bun formula" unless javascript.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "brew:bun" }
 		virtualbox = extra_plan.fetch("modules").find { |mod| mod.fetch("name") == "virtualbox" }
 		abort "missing virtualbox extra module" unless virtualbox
-		abort "virtualbox should be virtual" unless virtualbox.fetch("virtual") == true
+		abort "virtualbox should not be virtual when section actions exist" unless virtualbox.fetch("virtual") == false
 		abort "missing virtualbox install section" unless virtualbox.fetch("special_sections").key?("Install")
 		abort "missing virtualbox configure section" unless virtualbox.fetch("special_sections").key?("Configure")
 		abort "virtualbox should not rely on postinstall" if virtualbox.fetch("special_sections").key?("Post Install")
@@ -544,6 +544,16 @@ Run the macOS setup block.
 ```bash
 echo macos
 ```
+
+## Linux
+
+### Configure
+
+Run the Linux setup block without matching platform frontmatter.
+
+```bash
+echo linux
+```
 EOF
 
 	"$tilde" plan --repo "$repo" --allow-dirty --platform macos --host smoke >"$macos_plan_json"
@@ -567,6 +577,22 @@ EOF
 		body = smoke.fetch("special_sections").fetch("Install").fetch("body")
 		abort "platform scoped sections should preserve document order" unless body.index("echo all") < body.index("echo macos")
 	'
+
+	"$tilde" plan --repo "$repo" --allow-dirty --platform linux --host smoke >"$target_plan_json"
+
+	TARGET_PLAN_JSON=$target_plan_json ruby -rjson -e '
+		plan = JSON.parse(File.read(ENV.fetch("TARGET_PLAN_JSON")))
+		smoke = plan.fetch("modules").find { |mod| mod.fetch("name") == "zz-platform-smoke" }
+		abort "missing platform module without linux frontmatter" unless smoke
+		abort "missing all-platform install section" unless smoke.fetch("special_sections").key?("Install")
+		abort "missing linux configure section without linux frontmatter" unless smoke.fetch("special_sections").key?("Configure")
+		abort "linux plan should not include macos install body" if smoke.fetch("special_sections").fetch("Install").fetch("body").include?("echo macos")
+	'
+
+	"$tilde" plan --repo "$repo" --allow-dirty --platform linux --host smoke --format markdown >"$tmpdir/platform-sections.md"
+	grep -Fq -- "## zz-platform-smoke" "$tmpdir/platform-sections.md"
+	grep -Fq -- "Sections:" "$tmpdir/platform-sections.md"
+	grep -Fq -- "- \`Configure\`" "$tmpdir/platform-sections.md"
 
 	rm -rf "$platform_module"
 	mkdir -p "$platform_module"
@@ -639,11 +665,11 @@ EOF
 		abort "expected removed upgrade option to fail"
 	fi
 	grep -q -- "invalid option: --upgrade" "$invalid_greedy_err"
-	if "$tilde" plan --repo "$repo" --mode align --managed --platform linux --host smoke >"$invalid_plan_json" 2>"$invalid_greedy_err"; then
+	if "$tilde" plan --repo "$repo" --allow-dirty --mode align --managed --platform linux --host smoke >"$invalid_plan_json" 2>"$invalid_greedy_err"; then
 		abort "expected managed align to fail"
 	fi
 	grep -q -- "--managed is only supported with refresh mode" "$invalid_greedy_err"
-	if "$tilde" plan --repo "$repo" --mode align --greedy --platform linux --host smoke >"$invalid_plan_json" 2>"$invalid_greedy_err"; then
+	if "$tilde" plan --repo "$repo" --allow-dirty --mode align --greedy --platform linux --host smoke >"$invalid_plan_json" 2>"$invalid_greedy_err"; then
 		abort "expected greedy align to fail"
 	fi
 	grep -q -- "--greedy is only supported with refresh mode" "$invalid_greedy_err"

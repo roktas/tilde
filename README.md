@@ -109,6 +109,19 @@ Recommended module sections:
 ## Notes
 ```
 
+Platform-specific actions use a platform heading with normal action sections nested below it:
+
+```text
+## Linux
+### Install
+
+## MacOS
+### Configure
+```
+
+These platform-scoped sections are enough to make the module applicable for that platform. Do not add placeholder
+frontmatter entries just to force a platform section to run.
+
 Code blocks must be idempotent or guarded. If an effect cannot be safely detected from live target facts, represent it
 as a prerequisite, note, or explicit proposal-first operator action.
 

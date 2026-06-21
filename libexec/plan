@@ -856,6 +856,7 @@ class Plan
     home_entrypoint = home_entrypoint_declared?(config)
     packages = normalize_packages(config)
     phase = module_phase(frontmatter, config)
+    sections = section_actions(body)
 
     {
       id: module_id(module_name),
@@ -874,10 +875,10 @@ class Plan
       copies_to_create: files.fetch(:copies_to_create),
       resets_to_create: files.fetch(:resets_to_create),
       seeds_to_create: files.fetch(:seeds_to_create),
-      special_sections: section_actions(body),
+      special_sections: sections,
       skipped: false,
       skip_reason: nil,
-      virtual: !config.key?("packages")
+      virtual: !config.key?("packages") && sections.empty?
     }
   end
 
@@ -1056,6 +1057,9 @@ class Plan
       puts_action_list("Install Packages", mod[:packages_to_install]) { |pkg| "`#{pkg[:value]}`" }
       puts_action_list("Refresh Packages", mod[:packages_to_refresh]) { |pkg| "`#{pkg[:value]}`" }
       puts_action_list("Upgrade Packages", mod[:packages_to_upgrade]) { |pkg| "`#{pkg[:value]}`" }
+      unless mod[:special_sections].empty?
+        puts_action_list("Sections", mod[:special_sections].keys) { |name| "`#{name}`" }
+      end
     end
 
     puts("## Manual Actions")
