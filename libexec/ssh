@@ -56,7 +56,7 @@ write_prelude() {
 set -eu
 LC_ALL=en_US.UTF-8
 LANG=en_US.UTF-8
-PATH="/opt/homebrew/bin:/usr/local/bin:/home/linuxbrew/.linuxbrew/bin:$HOME/.local/bin:$PATH"
+PATH="/opt/homebrew/bin:/usr/local/bin:/home/linuxbrew/.linuxbrew/bin:$HOME/.local/bin:$HOME/.bun/bin:$PATH"
 export LC_ALL LANG PATH
 
 if [ -d "$HOME/.config/environment.d" ]; then

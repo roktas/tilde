@@ -1147,7 +1147,12 @@ class Apply
   end
 
   def runtime_env(log)
-    path = [TILDE_ROOT.join("bin").to_s, ENV.fetch("PATH", "")].reject(&:empty?).join(File::PATH_SEPARATOR)
+    path = [
+      TILDE_ROOT.join("bin").to_s,
+      @home.join(".local", "bin").to_s,
+      @home.join(".bun", "bin").to_s,
+      ENV.fetch("PATH", "")
+    ].reject(&:empty?).join(File::PATH_SEPARATOR)
     {
       "PATH" => path,
       "TILDE_ROOT" => TILDE_ROOT.to_s,
