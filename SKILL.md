@@ -282,6 +282,13 @@ Do not call `checkout remote` with only `--host`; the route cannot infer which c
 target checkout. Quote target paths that start with `~` so the controller shell does not expand them to the controller
 home before the remote receives the path.
 
+If `checkout remote` fails before delivery because the controller repository is dirty, lacks an upstream, or is ahead
+of upstream, treat that as a controller-source blocker, not a target failure. Do not commit, push, pass
+`--allow-unpushed`, or change checkout options automatically. Report the blocking repository and status, leave already
+successful hosts alone, and mark only the affected host as `deferred` or partial. If the operator explicitly approves
+the needed commit/push or unpushed-bundle retry, perform that separate source-control step and resume the affected host
+from the freshness checkout step.
+
 For read-only remote workflows such as `status` and `doctor`, detecting a stale target runtime is a reportable stale
 runtime condition, not permission to mutate the remote host. Report it and stop unless the user requested repair or
 update behavior.
@@ -620,6 +627,9 @@ For weaker or low-context agents:
   align step successful. Never mask those command exits with `; echo "EXIT: $?"`, `|| true`, or status-marker wrappers.
 - Call `checkout remote` only with the complete mapping: `--host HOST --repo CONTROLLER_REPO --target TARGET_REPO`.
   Do not expect it to infer target paths from `--host`. Quote target paths that start with `~`.
+- If `checkout remote` is blocked by a dirty, unpushed, or no-upstream controller repository, do not commit, push, or
+  pass `--allow-unpushed` on your own. Report the blocker, keep host-group successes intact, and retry only the blocked
+  host after explicit operator approval or source-control cleanup.
 - Use the `plan --mode refresh` implementation route for the `update` prompt command only when target status has
   existing `applied` anchors. If target status shows missing `state.yml` or no `applied` anchors, use
   `plan --mode repair` for state recovery.
