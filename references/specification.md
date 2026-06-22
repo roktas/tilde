@@ -289,6 +289,11 @@ unreachable, the command result is `deferred`.
 Reachability checks for Tilde workflows MUST use Tilde SSH transport. Agents MUST NOT use raw `ssh`, `sh -c`, or
 `bash -lc` for these probes.
 
+If the failure is an SSH host-key trust problem such as `Host key verification failed`, agents MUST report it as a
+reachability/trust deferral. Agents MUST NOT run `ssh-keyscan`, disable host-key checking, edit `known_hosts`, or accept
+a new host key automatically. They may present an exact manual remediation only after naming the host and the trust
+effect, and any automated host-key enrollment requires explicit operator approval for the exact hosts.
+
 Direct runtime commands such as `help`, `doctor`, `handoff`, and `status` may be run through `bin/tilde`. For remote
 targets, the command must run on the target host through the Tilde SSH transport.
 

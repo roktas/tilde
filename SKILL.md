@@ -88,6 +88,10 @@ When traversing a host group, perform a bounded noninteractive reachability chec
 unreachable hosts and continue with the remaining hosts. Report skipped hosts separately; an unreachable host inside a
 group is not a failure for reachable hosts. If every expanded host is unreachable, stop with a clear `deferred` result.
 Use Tilde SSH transport for the reachability check itself. Do not use raw `ssh`, even for this cheap probe.
+If reachability fails with `Host key verification failed` or another SSH host-key trust error, report it as a skipped
+trust deferral. Do not run `ssh-keyscan`, disable strict host-key checking, edit `known_hosts`, or accept host keys
+automatically. If suggesting remediation, name the exact host and trust effect; automated enrollment needs explicit
+operator approval for the exact hosts.
 
 ```bash
 TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
@@ -651,6 +655,8 @@ For weaker or low-context agents:
   leaves active policy.
 - When traversing a host group, skip unreachable hosts after a bounded reachability check and continue with reachable
   hosts. Run this check through `"$TILDE" ssh`; do not use raw `ssh` for Tilde remote workflow probes.
+- Treat SSH host-key verification failures as reachability/trust deferrals. Do not run `ssh-keyscan`, disable host-key
+  checking, edit `known_hosts`, or accept host keys automatically without explicit operator approval for exact hosts.
 - After remote runtime freshness is verified, read `tilde status --format shell` on the target into a temp file, source
   it, and use the returned `tilde_public_repo`, `tilde_private_repo`, and `tilde_update_mode` variables for remote plan
   paths and update state recovery. Do not guess Dropbox or Git-backed checkout paths when status or explicit policy can
