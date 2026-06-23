@@ -455,12 +455,12 @@ fi
 SCRIPT
 ```
 
-Every remote Tilde step must treat a non-zero exit as failed, deferred, or conflicted, even when stdout is empty. Do not
-redirect stderr to `/dev/null` for remote `status`, `doctor`, `checkout`, `plan`, `apply`, `align`, or verification
-work. Do not append `; echo "EXIT: $?"`, `|| true`, or similar status markers to critical Tilde commands; they mask
-failures and can corrupt machine-readable output. If a tool UI needs an exit marker, first write the command stdout to a
-temporary file, preserve the command status in a variable, parse the file, then print any marker separately. A later
-successful status read does not turn a failed plan, apply, checkout, or align step into success.
+Every Tilde `status`, `doctor`, `checkout`, `plan`, `apply`, `align`, or verification step must treat a non-zero exit
+as failed, deferred, or conflicted, even when stdout is empty. Do not redirect stderr to `/dev/null` for these steps,
+locally or remotely. Do not append `; echo "EXIT: $?"`, `|| true`, or similar status markers to critical Tilde
+commands; they mask failures and can corrupt machine-readable output. If a tool UI needs an exit marker, first write the
+command stdout to a temporary file, preserve the command status in a variable, parse the file, then print any marker
+separately. A later successful status read does not turn a failed plan, apply, checkout, or align step into success.
 
 Do not run `tilde apply` with `2>&1` when stdout will be parsed as JSON. Keep apply stdout as one JSON document and keep
 stderr separate.
@@ -470,6 +470,36 @@ use `grep`, `rg`, or line counts to classify statuses. The apply stdout must rem
 malformed or mixed output as failed. `completed: true` only means the action list was processed; it is not full success
 when any result is `deferred`, `conflict`, or `notok`. Treat such a run as incomplete and report the exact action
 status, `action_id`, and reason.
+
+For nontrivial plans, do not stream full `tilde apply` JSON directly to a truncating tool UI. Capture stdout to a
+per-run temp file, leave stderr visible or capture it separately, parse the captured JSON immediately, and print a
+compact summary. Do not run `tilde apply` a second time merely to reconstruct the status summary; if the original apply
+JSON was not captured, report that validation gap instead of pretending a later successful status read or rerun describes
+the first apply.
+
+```sh
+apply_json=$tmpdir/apply.json
+apply_status=0
+if [ -n "$tilde_private_repo" ]; then
+  tilde apply --plan "$tmpdir/public.json" --plan "$tmpdir/private.json" > "$apply_json" || apply_status=$?
+else
+  tilde apply --plan "$tmpdir/public.json" > "$apply_json" || apply_status=$?
+fi
+
+ruby -rjson -e '
+data = JSON.parse(File.read(ARGV.fetch(0)))
+bad = data.fetch("results").select { |r| ["deferred", "conflict", "notok"].include?(r.fetch("status")) }
+counts = data.fetch("results").each_with_object(Hash.new(0)) { |r, h| h[r.fetch("status")] += 1 }
+summary = {
+  completed: data.fetch("completed"),
+  counts: counts,
+  bad: bad.map { |r| { action_id: r.fetch("action_id"), status: r.fetch("status"), reason: r.dig("diagnostics", "reason") } }
+}
+puts JSON.generate(summary)
+exit(data.fetch("completed") && bad.empty? ? 0 : 1)
+' "$apply_json" || exit $?
+[ "$apply_status" -eq 0 ] || exit "$apply_status"
+```
 
 After a successful mutating remote apply, verify target convergence with a separate cheap status read so the apply JSON
 stays easy to parse:
@@ -631,6 +661,10 @@ For weaker or low-context agents:
 - Never redirect remote Tilde stderr to `/dev/null`. Non-zero remote exit status means the step failed, deferred, or
   conflicted, even when the tool output pane says `(no output)`.
 - Keep `tilde apply` stdout parseable as one JSON document; do not merge stderr into it and do not append exit sentinels.
+- For any large or host-group `tilde apply`, capture stdout to `$tmpdir/apply.json`, parse that file immediately, and
+  print only a compact status summary. Do not stream huge apply JSON to the tool UI and then recover by rerunning apply.
+- Do not validate Tilde apply by scraping agent-runner tool-output files, hard-coded output IDs, or truncated panes. The
+  authoritative validation artifact is the apply JSON captured during the same workflow.
 - After `tilde apply`, inspect action results with a JSON parser. Do not use `grep`, `rg`, or line counts for status
   classification, and do not report success only because JSON was printed or `completed` is true. Any `deferred`,
   `conflict`, or `notok` action means the run is incomplete.
