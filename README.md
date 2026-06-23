@@ -13,6 +13,10 @@ defines the stateless provisioning model used by the skill and runtime helpers.
 - The skill has been developed with Codex 5.5, but its workflow, guardrails, and deterministic helper routes are tuned
   for day-to-day use with DeepSeek Flash V4, especially the max variant.
 
+For a concrete public data repository, see [github.com/roktas/home](https://github.com/roktas/home). It shows the
+expected shape of a Tilde-managed home repository: root modules with `README.md` manifests, package declarations,
+managed links and files, and platform-specific lifecycle sections.
+
 > [!WARNING]
 > Tilde is currently pre-alpha software. Deployment experience is used to continuously refine and train the skill, so
 > make sure you are using the latest version before each deployment.
