@@ -309,8 +309,8 @@ TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
 "$TILDE" ssh spinoza
 ```
 
-It sets up the correct Tilde runtime environment (locale, non-secret `~/.config/environment.d/*.conf` values, PATH,
-TILDE_ROOT, TILDE_SUDO) and delivers the script body through `ssh host sh -s --`.
+It sets up the correct Tilde runtime environment (non-secret `~/.config/environment.d/*.conf` values, PATH, TILDE_ROOT,
+TILDE_SUDO) and delivers the script body through `ssh host sh -s --`.
 
 Do not use raw `ssh`, `sh -c`, or `bash -lc` for multi-command remote work.
 These bypass Tilde's PATH setup and sudo interceptor.
@@ -336,6 +336,11 @@ Use the returned `tilde_public_repo` and `tilde_private_repo` paths when generat
 `tilde_update_mode` for update state recovery. Do not hard-code `~/Dropbox/home`, `~/Dropbox/home-`,
 `~/.local/src/home`, or `~/.local/src/home-` unless those paths came from target status, explicit user arguments, or
 active home policy for a stale Git-backed target that must be refreshed before status can be trusted.
+
+For a fresh remote `deploy`, `state.yml` may not exist yet, so `tilde status --format shell` may not return repository
+bindings. If the immediately preceding preflight proves a Dropbox-backed target has clean public/private repositories,
+use those target-side preflight paths as the first deploy bindings. If preflight does not prove the path, stop with
+`deferred`; do not invent a target repository path from controller conventions.
 
 For Git-backed targets whose status binds repositories outside Dropbox, controller-side `~/Dropbox/...` source paths are
 not target paths. Do not create target-side `~/Dropbox` for repository binding, cleanup, shared app state, or convenience
@@ -457,6 +462,9 @@ failures and can corrupt machine-readable output. If a tool UI needs an exit mar
 temporary file, preserve the command status in a variable, parse the file, then print any marker separately. A later
 successful status read does not turn a failed plan, apply, checkout, or align step into success.
 
+Do not run `tilde apply` with `2>&1` when stdout will be parsed as JSON. Keep apply stdout as one JSON document and keep
+stderr separate.
+
 After `tilde apply`, inspect the JSON action results with a JSON parser such as Ruby's `JSON` library or `jq`. Do not
 use `grep`, `rg`, or line counts to classify statuses. The apply stdout must remain one parseable JSON document; treat
 malformed or mixed output as failed. `completed: true` only means the action list was processed; it is not full success
@@ -555,6 +563,13 @@ before replacing files, forcing links, copying repository versions over targets,
 from silence, from the fact that a conflict exists, or from the agent's own question. Conflict resolution may reveal
 additional conflicts in a later apply; repeat the same explicit-approval step for each newly revealed conflict.
 
+Exception: during a fresh `/tilde deploy` with no existing applied anchors, treat declared-target conflicts as install
+replacement. Back up the exact existing target when practical, remove only that exact target, rerun apply, and report
+the replacement. Do not ask again for ordinary fresh-install overwrites such as `~/.bashrc`. This exception does not
+apply to `update`, `repair`, `align`, broad directory cleanup, package removal, or paths outside declared targets.
+For example, if `public/bash:link:bashrc->~/.bashrc` conflicts with a default real `~/.bashrc`, back up `~/.bashrc`,
+remove only `~/.bashrc`, and rerun apply so the managed symlink is created.
+
 If the user chooses repository replacement for a conflict, back up the exact target when practical, remove only the exact
 conflicting target, and rerun apply so the normal declarative action recreates it. Do not rerun apply expecting a
 default conflict result to overwrite the target. Broad cleanup, such as clearing an entire font directory after
@@ -564,6 +579,8 @@ If an apply command times out or reports `state lock busy`, do not delete the lo
 with `flock` belongs to a process, and removing the pathname does not prove the process stopped. Treat this as
 `deferred` or an active-run check: use bounded read-only process inspection on the target, wait when a Tilde/apply
 process is still active, and remove a leftover lock only after proving no process holds it and getting explicit approval.
+Missing `lsof` is not proof that no process holds the lock; prefer a nonblocking `flock` probe when cleanup is approved
+or required.
 
 If sudo is required and noninteractive sudo fails, report `deferred` and present:
 
@@ -584,6 +601,8 @@ user to run it, then rerun the affected action and verify cleanup. Do not collec
 For weaker or low-context agents:
 
 - Plan from current committed repositories and targeted live facts.
+- If reading `references/specification.md` is truncated, reopen later line ranges until the relevant instruction file is
+  read through EOF before changing behavior.
 - Treat `Prerequisites` as read-only checks.
 - Advance `applied` anchors only after every required action succeeds.
 - Keep `applied` anchors unchanged after `deferred`, `conflict`, or `notok`.
@@ -611,6 +630,7 @@ For weaker or low-context agents:
   target, then run `tilde plan --mode align --format json` for each target repository and `tilde apply` the plan files.
 - Never redirect remote Tilde stderr to `/dev/null`. Non-zero remote exit status means the step failed, deferred, or
   conflicted, even when the tool output pane says `(no output)`.
+- Keep `tilde apply` stdout parseable as one JSON document; do not merge stderr into it and do not append exit sentinels.
 - After `tilde apply`, inspect action results with a JSON parser. Do not use `grep`, `rg`, or line counts for status
   classification, and do not report success only because JSON was printed or `completed` is true. Any `deferred`,
   `conflict`, or `notok` action means the run is incomplete.
@@ -661,6 +681,8 @@ For weaker or low-context agents:
   it, and use the returned `tilde_public_repo`, `tilde_private_repo`, and `tilde_update_mode` variables for remote plan
   paths and update state recovery. Do not guess Dropbox or Git-backed checkout paths when status or explicit policy can
   supply them.
+- For fresh remote `deploy`, if status has no bindings yet but preflight proved clean Dropbox-backed target
+  repositories, use those preflight target paths for the first deploy apply.
 - Do not create `~/Dropbox` on a target just because controller source repositories live under Dropbox, an example uses
   `~/Dropbox/home`, or post-update cleanup mentions Dropbox. If target status binds Git-backed repositories under
   `~/.local/src`, use those paths and skip Dropbox-only maintenance when `~/Dropbox` is absent.
@@ -683,7 +705,8 @@ For weaker or low-context agents:
 - In remote summaries, distinguish `target HEAD` from `applied anchor`; do not call the target repository commit
   `local`.
 - After an apply conflict, stop and wait for an explicit user answer before copying repo files over targets, forcing
-  links, or rerunning apply. Newly revealed conflicts need a new explicit answer.
+  links, or rerunning apply. Newly revealed conflicts need a new explicit answer. Fresh `/tilde deploy` is the narrow
+  exception: back up and replace exact declared targets automatically, then rerun apply.
 - After the user chooses repository replacement for a conflict, back up and remove only the exact conflicted target, then
   rerun apply. Broad directory cleanup needs a separate explicit approval.
 - Run `"$TILDE" handoff --host HOST --copy` on the controller after sudo deferral. Do not run handoff through

@@ -323,7 +323,7 @@ tilde_sudo_shim() {
 		[[ $candidate == "$(canonical_path "$shim" 2>/dev/null || true)" ]] && return 0
 	done
 
-	LC_ALL=C grep -aq "Tilde sudo shim" "$sudo" 2>/dev/null
+	grep -aq "Tilde sudo shim" "$sudo" 2>/dev/null
 }
 
 write_rule() {

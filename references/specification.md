@@ -131,6 +131,11 @@ locks such as `flock`, deleting the pathname does not prove the owning process h
 start while the first run is still active. Lock cleanup requires bounded read-only process inspection and explicit
 operator approval when the owning process cannot be proven absent.
 
+If lock cleanup is explicitly approved or required after a known-dead apply, agents MUST first prove the lock is not
+held. A missing `lsof` command or empty `lsof` output is not proof by itself. Prefer a nonblocking `flock` probe on the
+lock path; if the probe cannot acquire the lock, the run remains `deferred`. If `flock` is unavailable, use bounded
+process inspection for active Tilde/apply processes and treat uncertainty as `deferred`.
+
 `state.yml` MUST be written atomically:
 
 1. write a temporary file in the same directory,
@@ -1054,6 +1059,17 @@ If `state.yml` is missing or has no `applied` section, Tilde uses fresh-run sema
 Fresh-run semantics are not proof that the host was never deployed. They only mean no fully converged anchor is
 available for this run. Hosts without anchors run only declared desired-state actions automatically.
 
+For `/tilde deploy`, fresh-run semantics mean fresh install. If a deploy apply returns a `conflict` for an exact
+declared home target such as a link or repository-authored file target, agents SHOULD resolve it without asking again:
+preserve a backup of the exact existing target when practical, remove only that exact target, rerun apply, and report
+the replacement in the closeout. This fresh-deploy replacement policy does not authorize broad directory cleanup,
+package removal, cleanup outside declared targets, or automatic conflict replacement during `update`, `repair`, or
+`align`.
+
+Example: if fresh deploy reports `public/bash:link:bashrc->~/.bashrc` as `conflict` because the target host has a
+default real `~/.bashrc`, back up `~/.bashrc`, remove only `~/.bashrc`, and rerun apply so the declared symlink is
+created.
+
 ## 19. Remote Hosts
 
 For remote deployment, `state.yml` and `applied` anchors live on the target host.
@@ -1215,6 +1231,12 @@ update state recovery, use `tilde_update_mode`, which is `repair` when target st
 `refresh` otherwise. Do not guess `~/Dropbox/home`, `~/Dropbox/home-`, `~/.local/src/home`, or `~/.local/src/home-`
 when status, explicit user arguments, or active home policy can supply the target binding.
 
+During a fresh remote `deploy`, target status may have no repository bindings yet because `state.yml` has not been
+created. In that case, agents MUST use repository paths proven by the immediately preceding remote preflight. For a
+Dropbox-backed target whose preflight reports clean public/private repositories, those target-side paths are the deploy
+bindings for the first apply. This is bounded target discovery, not a controller-side path guess. If preflight does not
+prove the repository path, stop with `deferred` instead of inventing one.
+
 For Git-backed targets whose status binds repositories outside Dropbox, controller-side `~/Dropbox/...` source paths are
 not target paths. Agents MUST NOT create target-side `~/Dropbox` for repository binding, cleanup, shared app state, or
 convenience paths unless active target policy explicitly says that host has Dropbox-backed storage.
@@ -1331,6 +1353,9 @@ commands. Those wrappers mask non-zero exits and can corrupt JSON outputs. If a 
 MUST preserve command stdout separately, retain the real status in a variable, parse the command output first, and then
 print any marker outside the machine-readable document.
 
+Do not run `tilde apply` with `2>&1` when its stdout will be parsed as JSON. Keep apply stdout as one JSON document and
+let diagnostics remain on stderr, or capture stdout and stderr in separate files.
+
 Remote scripts MUST be `sh`-compatible by default. Agents MUST use the plain `"$TILDE" ssh HOST << 'SCRIPT'` form for
 ordinary status, plan, apply, and verification work. Agents MUST NOT pass `-- bash` for macOS targets or for scripts
 that can run under `sh`. Passing an interpreter after `--` is reserved for a verified non-macOS target and a script that
@@ -1404,6 +1429,9 @@ apply. Consent is not implied by silence, by the existence of a conflict, or by 
 one conflict reveals another conflict in a later apply, the later conflict requires a separate explicit response.
 `resets` actions are not conflict resolution; they are explicit repository-authoritative desired state and may replace
 their exact targets according to the module declaration.
+
+The exception is fresh `/tilde deploy` conflict replacement described in Failure Semantics: fresh install deploys may
+back up and replace exact declared targets without another prompt.
 
 When the user chooses repository replacement for a conflict, agents SHOULD preserve a backup when practical, remove only
 the exact conflicting target, and rerun apply so the declarative action recreates it. Agents MUST NOT treat a replacement

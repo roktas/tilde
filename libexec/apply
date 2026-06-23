@@ -15,9 +15,8 @@ require "time"
 require "tmpdir"
 require "yaml"
 
-ENV["LC_ALL"] = "en_US.UTF-8"
-ENV["LANG"] = "en_US.UTF-8"
 Encoding.default_external = Encoding::UTF_8
+Encoding.default_internal = Encoding::UTF_8
 
 TILDE_ROOT = Pathname.new(__dir__).parent.expand_path
 
@@ -262,7 +261,7 @@ class Apply
 
   def command_deferred_reason(command, stderr, status, sudo_events)
     return "privilege required" if privilege_deferred?(command, stderr, status, sudo_events)
-    return "homebrew locale encoding failure" if homebrew_locale_failure?(command, stderr)
+    return "homebrew encoding failure" if homebrew_encoding_failure?(command, stderr)
     return "apt update incomplete" if status.success? && apt_update_incomplete?(command, stderr)
 
     nil
@@ -1142,7 +1141,7 @@ class Apply
 
   def homebrew_command?(command) = command.first == "brew"
 
-  def homebrew_locale_failure?(command, stderr)
+  def homebrew_encoding_failure?(command, stderr)
     homebrew_command?(command) && stderr.match?(/US-ASCII|Encoding::InvalidByteSequenceError|invalid byte sequence/i)
   end
 
@@ -1157,9 +1156,7 @@ class Apply
       "PATH" => path,
       "TILDE_ROOT" => TILDE_ROOT.to_s,
       "TILDE_SUDO" => "intercept",
-      "TILDE_SUDO_LOG" => log,
-      "LC_ALL" => "en_US.UTF-8",
-      "LANG" => "en_US.UTF-8"
+      "TILDE_SUDO_LOG" => log
     }
   end
 
