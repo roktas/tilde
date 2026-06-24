@@ -1116,6 +1116,11 @@ transport without injecting a target runtime and returns one JSON document that 
 baseline, repository backend, target runtime, Dropbox runtime, target state, repository bindings, sudo state, controller
 runtime commit, and next steps.
 
+Remote freshness preflight does not inspect the host-local apply lock and does not prove that no apply process is
+active. Agents MUST NOT infer that a previously observed lock has cleared from reachability, runtime freshness,
+repository cleanliness, or the preflight `next` list. Before retrying a host after lock contention, timeout, or lost
+observation, agents MUST explicitly probe the target lock and active Tilde/apply processes.
+
 Agents MUST use `bootstrap.needed` and `next` from this JSON for the initial bootstrap decision. They MUST NOT infer
 bootstrap need from free-form logs, guessed package state, or controller-side state. The bootstrap baseline is
 intentionally small: Homebrew, `curl`, `git`, and `ruby` must be usable on the target.
@@ -1347,6 +1352,10 @@ let diagnostics remain on stderr, or capture stdout and stderr in separate files
 Agents MUST parse the captured apply JSON from the same attempt immediately and print only a compact summary. They MUST
 NOT stream a nontrivial apply document into a truncating tool UI, recover status by reading an agent tool-output cache,
 classify results with text searches, or rerun apply merely to reconstruct the first attempt's result.
+
+Lock contention is a structured apply failure. After plans are loaded and validated, `apply` MUST emit a
+`tilde.apply/v1` document with `completed: false`, an empty `results` list, and an error reason identifying the busy
+state lock before exiting non-zero. Human-readable lock diagnostics remain on stderr.
 
 Remote scripts MUST be `sh`-compatible by default. Agents MUST use the plain `"$TILDE" ssh HOST << 'SCRIPT'` form for
 ordinary status, plan, apply, and verification work. Agents MUST NOT pass `-- bash` for macOS targets or for scripts

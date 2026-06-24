@@ -49,6 +49,15 @@ class Apply
     "seed" => :execute_seed,
     "unlink" => :execute_unlink
   }.freeze
+  LockBusyError = Class.new(StandardError) do
+    attr_reader :path
+
+    def initialize(path)
+      @path = path
+      super("state lock busy: #{path}")
+    end
+  end
+
   APT_UPDATE_INCOMPLETE_PATTERNS = [
     /\AW: .*GPG error:/,
     /\AW: .*signature/i,
@@ -146,6 +155,13 @@ class Apply
     apply_actions
     write_state if advance_anchors?
     puts(JSON.pretty_generate(@apply))
+  rescue LockBusyError => e
+    @apply[:error] = {
+      reason: "state lock busy",
+      lock: display_path(e.path)
+    }
+    warn("error: #{e.message}")
+    puts(JSON.pretty_generate(@apply))
   end
 
   def success?
@@ -225,7 +241,7 @@ class Apply
     @lock = File.open(@lock_path.to_s, File::RDWR | File::CREAT, 0o600)
     return if @lock.flock(File::LOCK_EX | File::LOCK_NB)
 
-    raise "state lock busy: #{@lock_path}"
+    raise LockBusyError, @lock_path
   end
 
   def canonicalize(value)

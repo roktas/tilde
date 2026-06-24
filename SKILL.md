@@ -221,6 +221,8 @@ TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
 The route does not require a working target Tilde runtime. It uses Tilde SSH transport without target runtime injection
 and returns one JSON document that classifies reachability, bootstrap baseline, repository backend, target runtime,
 Dropbox runtime, target state, repository bindings, sudo state, controller runtime commit, and `next` steps.
+It does not report the apply lock or prove that no apply process is active. A successful preflight, current runtime, or
+clean repository is never evidence that a previously observed lock has cleared.
 
 Use `bootstrap.needed` and `next` from this JSON for the initial bootstrap decision. Do not infer bootstrap need from
 free-form logs, guessed package state, or controller-side state. The bootstrap baseline is intentionally small:
@@ -465,6 +467,10 @@ bounded read-only checks. If an apply process or held lock remains, do not retry
 leave it running. Never use an agent tool-output cache or a second apply as a substitute for the original captured
 `apply.json`.
 
+If `tilde apply` exits non-zero, parse its captured stdout only when that file contains a structured apply result. A
+current runtime emits `completed: false` JSON for lock contention. Empty or malformed stdout is a runtime/protocol
+failure; report the visible stderr and do not hide it behind a JSON parser error.
+
 After a successful mutating remote apply, verify target convergence with a separate cheap status read so the apply JSON
 stays easy to parse:
 
@@ -604,6 +610,8 @@ For weaker or low-context agents:
   still active and treat uncertainty as `deferred`.
 - After an apply timeout or lost connection, do not retry that host until bounded target checks prove no apply process
   and no held lock remain. An active process or held lock means the host is still active/deferred.
+- Preflight does not inspect the apply lock. Never infer that a lock cleared from `reachable`, `runtime.current`, clean
+  repositories, or a preflight `next` list; probe the target lock and active apply processes explicitly.
 - Do not remove remote Tilde lock files as routine closeout cleanup after a failed or partial apply. Lock cleanup is a
   separate recovery step after bounded holder checks and, when any uncertainty remains, explicit user approval.
 - Never plan a remote host from the controller.

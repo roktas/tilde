@@ -454,6 +454,9 @@ main() {
 	local host
 	local mismatch_apply_err
 	local mismatch_plan_json
+	local lock_apply_err
+	local lock_apply_json
+	local lock_fd
 	local package_apply_json
 	local package_plan_json
 	local package_repo
@@ -513,6 +516,8 @@ main() {
 	brew_plan_json=$tmpdir/brew-refresh-plan.json
 	mismatch_apply_err=$tmpdir/mismatch-apply.err
 	mismatch_plan_json=$tmpdir/mismatch-plan.json
+	lock_apply_err=$tmpdir/lock-apply.err
+	lock_apply_json=$tmpdir/lock-apply.json
 	plan_json=$tmpdir/plan.json
 	refresh_apply_json=$tmpdir/refresh-apply.json
 	refresh_plan_json=$tmpdir/refresh-plan.json
@@ -615,6 +620,24 @@ main() {
 	ln -s "$repo/app/reset.txt" "$home/.config/app/reset.txt"
 	rm -f "$home/.profile" "$home/post-install" "$home/configure"
 	HOME=$home XDG_STATE_HOME=$state "$tilde" plan --repo "$repo" --platform linux --host "$host" >"$plan_json"
+
+	exec {lock_fd}>"$state/tilde/lock"
+	flock -n "$lock_fd"
+	if HOME=$home XDG_STATE_HOME=$state "$tilde" apply --plan "$plan_json" >"$lock_apply_json" 2>"$lock_apply_err"; then
+		printf '%s\n' "lock-busy apply should fail" >&2
+		exit 1
+	fi
+	exec {lock_fd}>&-
+
+	LOCK_APPLY_JSON=$lock_apply_json LOCK_PATH=$state/tilde/lock ruby -rjson -e '
+		apply = JSON.parse(File.read(ENV.fetch("LOCK_APPLY_JSON"), encoding: "UTF-8"))
+		abort "lock-busy apply should not complete" if apply.fetch("completed")
+		abort "lock-busy apply should have no results" unless apply.fetch("results").empty?
+		abort "wrong lock-busy reason" unless apply.dig("error", "reason") == "state lock busy"
+		abort "wrong lock path" unless apply.dig("error", "lock") == ENV.fetch("LOCK_PATH")
+	'
+	grep -Fq "state lock busy" "$lock_apply_err"
+
 	HOME=$home XDG_STATE_HOME=$state "$tilde" apply --plan "$plan_json" >"$apply_json"
 
 	[[ -L $home/.config/app/source.txt ]]
