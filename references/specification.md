@@ -1095,335 +1095,129 @@ created.
 
 ## 19. Remote Hosts
 
-For remote deployment, `state.yml` and `applied` anchors live on the target host.
+Remote workflows use the same desired-state and failure model as local workflows, with all target facts and persistent
+state read from the target host. The controller coordinates; it does not substitute its own host state for target state.
 
-Controller-side paths MUST NOT be written as target bindings.
+### 19.1 Target Authority
 
-For a remote target, the controller's `~/.local/state/tilde/state.yml` MUST NOT be used to discover or infer the target
-host's repository bindings, applied anchors, level, platform, bootstrap state, or desired-state status. That file belongs
-only to the controller host.
+For a remote target:
 
-A controller may inspect or mirror remote status, but the target host's own state file is authoritative for that host:
+- `~/.local/state/tilde/state.yml`, the apply lock, repository bindings, platform, level, and applied anchors are
+  target-local.
+- The controller's `state.yml` MUST NOT be used to infer any target fact.
+- Controller repository paths are source paths only. They MUST NOT be written as target bindings.
+- Status paths outside the `state.yml` model, such as `config.yml` or `hosts/HOST/state.md`, prove the target runtime is
+  stale; agents MUST refresh it or stop with `deferred`.
 
-```text
-~/.local/state/tilde/state.yml
-```
+### 19.2 Remote Workflow
 
-The host-local lock is also target-local.
+Each remote host is one independent workflow. Run these steps in order and keep the preflight adjacent to the work it
+authorizes:
 
-### 19.1 Agent Remote-Work Pattern
+1. Run `"$TILDE" preflight remote HOST --format json` on the controller.
+2. Use `bootstrap.needed`, repository classifications, runtime state, sudo state, and `next` from that JSON. Do not infer
+   them from free-form output.
+3. Refresh stale Git-backed runtime or desired-state checkouts when preflight requires it. If freshness cannot be
+   established safely, stop with `deferred`.
+4. Read `tilde status --format shell` on the target through Tilde SSH transport.
+5. Plan on the target with the returned `tilde_public_repo`, `tilde_private_repo`, `tilde_update_mode`, `tilde_host`,
+   `tilde_platform`, and `tilde_level` values.
+6. Capture one apply attempt as JSON, parse that same result, and fail the workflow for `deferred`, `conflict`, `notok`,
+   malformed JSON, or a non-zero apply exit.
+7. After a successful mutating apply, read final target status and verify applied anchors against target repository HEADs.
+8. If preflight reported `cleanup-sudoers`, remove the temporary rule after privileged work and verify it is gone with a
+   new preflight.
 
-Agents delivering remote work MUST use Tilde SSH transport for script delivery.
-This guarantees the Tilde runtime and sudo intercept environment are active on
-the target.
+For a host group, every parallel job MUST contain this complete preflight-to-verification sequence. A preflight result
+from an earlier group-wide pass MUST NOT authorize later mutations.
 
-Tilde SSH transport loads non-secret `~/.config/environment.d/*.conf` values before the remote script body. It does not
-load shell credentials.
+Preflight does not inspect the apply lock and cannot prove that an earlier apply stopped. Before retrying after a
+timeout, lost connection, or lock contention, probe the target process and lock state as required by Section 18.
 
-The remote freshness preflight is the first remote workflow step. Before reading target state, generating plans, applying
-plans, or deciding state-recovery mode, agents MUST perform it with the deterministic controller-side route:
+`sudo.noninteractive=false` alone is not a handoff trigger. On Linux, `sudo.apt=true` permits ordinary apt work; request
+handoff only when `next` requires it or an actual action returns a sudo deferral.
 
-```text
-"$TILDE" preflight remote HOST --format json
-```
+### 19.3 Transport and Shell
 
-The route MUST NOT require the target `~/.agents/skills/tilde` runtime to exist or be current. It uses Tilde SSH
-transport without injecting a target runtime and returns one JSON document that classifies reachability, bootstrap
-baseline, repository backend, target runtime, Dropbox runtime, target state, repository bindings, sudo state, controller
-runtime commit, and next steps.
+All remote status, plan, apply, align, doctor, and verification work MUST run through `"$TILDE" ssh HOST`. Raw `ssh`,
+`sh -c`, and `bash -lc` bypass Tilde runtime setup and are invalid for these workflows.
 
-Remote freshness preflight does not inspect the host-local apply lock and does not prove that no apply process is
-active. Agents MUST NOT infer that a previously observed lock has cleared from reachability, runtime freshness,
-repository cleanliness, or the preflight `next` list. Before retrying a host after lock contention, timeout, or lost
-observation, agents MUST explicitly probe the target lock and active Tilde/apply processes.
+The default transport executes POSIX `sh`. Remote scripts MUST therefore avoid `pipefail`, `[[ ]]`, arrays, `source`,
+`local`, process substitution, here-strings, brace expansion, and `$'...'`. Do not pass `-- bash` for macOS or for an
+ordinary workflow that is expressible in `sh`.
 
-Agents MUST use `bootstrap.needed` and `next` from this JSON for the initial bootstrap decision. They MUST NOT infer
-bootstrap need from free-form logs, guessed package state, or controller-side state. The bootstrap baseline is
-intentionally small: Homebrew, `curl`, `git`, and `ruby` must be usable on the target.
+Inside a Tilde SSH script, bare `tilde` is valid because the transport supplies the target runtime on `PATH`. On the
+controller, agents MUST use the resolved `"$TILDE"` entrypoint.
 
-The `sudo.noninteractive` field reports the broad `sudo -n true` probe. It is not a general handoff trigger for
-already deployed Linux hosts, because a host may intentionally allow only package-management commands without a
-password. The `sudo.apt` field reports whether the exact noninteractive apt form used by Tilde package actions can run.
-For ordinary `update` and `repair` package work, agents MUST proceed when `sudo.apt=true` and MUST request handoff only
-when preflight `next` asks for it or a real apply step returns a sudo deferral.
+### 19.4 Runtime and Repository Freshness
 
-Remote freshness preflight checks:
+The remote preflight classifies runtime and repository freshness before target status or planning:
 
-- the target `~/.agents/skills/tilde` runtime commit matches the controller-side loaded Tilde runtime commit,
-- on Dropbox-backed interactive hosts, whether the durable runtime symlink can be used,
-- Git-backed target desired-state checkouts match the controller-side public/private repositories selected for the run,
-- target checkouts are clean before any controller bundle is applied,
-- Dropbox-backed target repositories are not replaced with controller bundles unless explicitly requested.
-
-For Dropbox-backed interactive hosts, the durable runtime shape is:
-
-```text
-~/.agents/skills/tilde -> ~/Dropbox/tilde
-```
-
-A clean clone at `~/.agents/skills/tilde` is only a provisional bootstrap or freshness runtime. Agents MAY convert it
-with:
-
-```text
-"$TILDE" checkout runtime-link --host HOST --source '~/Dropbox/tilde' --target '~/.agents/skills/tilde' --expected COMMIT
-```
-
-only when preflight shows the Dropbox runtime exists, is a Git checkout, has executable `bin/tilde`, is clean, and
-matches the controller runtime commit. If the Dropbox checkout is absent, dirty, missing `bin/tilde`, or stale, agents
-MUST defer symlink conversion instead of replacing it with a controller bundle.
-
-For mutating remote prompt workflows such as `deploy`, `update`, `repair`, and remote `align`, a stale
-Git-backed target runtime or desired-state checkout SHOULD be refreshed from the controller checkout with the
-`checkout remote` implementation route before target `tilde status`, `tilde plan`, or `tilde apply` is run. If a stale
-runtime or checkout cannot be refreshed safely because it is dirty, missing, not a Git checkout, or ambiguous, the run
-MUST return `deferred`.
-
-If a clean target runtime cannot fast-forward because its history differs from the controller runtime, agents MAY use
-`checkout remote --replace-clean` to replace that clean runtime checkout. Agents MUST NOT use `--replace-clean` for
-public/private desired-state checkouts unless the operator has explicitly approved replacing that clean checkout.
-
-Agents MUST NOT patch, edit, or `sed` target runtime or desired-state checkouts as part of deploy, update, repair, or
-align and then continue as if that target-side patch completed the workflow. The correct response is to
-capture the exact target diff, report it for source-repository review, and leave the workflow `deferred` unless the
-source repository is fixed and refreshed through normal checkout freshness routes.
-
-Temporary target edits are allowed only as a separate explicitly approved recovery or debugging operation. Accepted
-changes MUST be ported to the controller source repository, committed there, and delivered back to the target through
-normal checkout freshness routes before retrying the original workflow. Stashing, discarding, or otherwise cleaning
-target checkout changes is also a separate recovery step that requires explicit operator approval.
-
-The `checkout remote` route MUST be called with the full controller-to-target mapping:
+- Dropbox-backed interactive hosts use `~/.agents/skills/tilde -> ~/Dropbox/tilde` as the durable runtime shape. A
+  cloned runtime is provisional and may be replaced by that link only when the Dropbox checkout exists, is executable,
+  clean, and matches the controller runtime commit.
+- Git-backed targets refresh stale runtime and desired-state checkouts with `checkout remote` before planning.
+- `checkout remote` requires the complete mapping:
 
 ```text
 "$TILDE" checkout remote --host HOST --repo CONTROLLER_REPO --target TARGET_REPO
 ```
 
-For target runtime freshness, the controller repository is the loaded skill root and the target is
-`~/.agents/skills/tilde`:
+- `--replace-clean` may replace divergent history only for a clean runtime checkout. Desired-state checkout replacement
+  requires explicit operator approval.
+- Dropbox-backed desired-state repositories MUST NOT be replaced with controller bundles during an ordinary remote
+  workflow.
+- If checkout delivery is blocked because the controller repository is dirty, unpushed, or lacks an upstream, agents
+  MUST report that controller-source blocker. They MUST NOT commit, push, discard changes, or pass `--allow-unpushed`
+  without explicit approval.
+- Agents MUST NOT patch target runtime or desired-state checkouts and then continue the workflow. Temporary target edits,
+  stashing, or cleanup are separate proposal-first recovery actions; accepted fixes return through the controller source
+  repository and normal freshness routes.
+
+The runtime mapping is the loaded skill root to `~/.agents/skills/tilde`. Desired-state mappings use the controller data
+repository and the target binding reported by target status. Quote target paths beginning with `~` so the controller
+shell does not expand them.
+
+For read-only `status` or `doctor`, stale runtime is reportable state, not permission to refresh or replace it.
+
+### 19.5 Binding and Planning
+
+After freshness is established, target status is authoritative:
 
 ```text
-controller_runtime=${TILDE%/bin/tilde}
-"$TILDE" checkout remote --host spinoza --repo "$controller_runtime" --target '~/.agents/skills/tilde'
-```
-
-For Git-backed desired-state checkout freshness, the controller repository is the selected data repository and the
-target is the target host's bound checkout:
-
-```text
-"$TILDE" checkout remote --host vps --repo ~/Dropbox/home --target '~/.local/src/home'
-```
-
-Agents MUST NOT call `checkout remote` with only `--host`. The route cannot infer repository bindings from a host name.
-Agents MUST quote target paths that start with `~` so the controller shell does not expand them before delivery to the
-remote host.
-
-If the preflight JSON reports a temporary `/etc/sudoers.d/tilde` rule, agents SHOULD remove it after the
-privilege-dependent workflow no longer needs it:
-
-```text
-"$TILDE" sudo cleanup --host HOST
-```
-
-The cleanup is complete only when the following preflight no longer reports the rule.
-
-For read-only remote workflows such as `status` and `doctor`, a stale target runtime is reported as a stale-runtime
-condition. It is not permission to mutate the remote host.
-
-A target status output that references state paths outside this specification, such as
-`~/.local/state/tilde/config.yml` or `~/.local/state/tilde/hosts/HOST/state.md`, indicates a stale target runtime.
-Agents MUST stop and refresh or report the stale runtime before any state-recovery plan. State writes outside the
-`state.yml` model MUST NOT be reported as successful recovery under this specification.
-
-Agent-orchestrated remote workflows that generate plan files and apply them MUST deliver the full workflow as a single
-piped script body. Planning and apply MUST both run on the target host. Platform detection, package inventory,
-repository bindings, and live checks come from the target host.
-
-Generating a plan on the controller for a remote host is invalid.
-
-After the target runtime is known current, sourceable target status is the preferred way to bind repository paths inside
-remote scripts:
-
-```text
-"$TILDE" ssh spinoza << 'SCRIPT'
+"$TILDE" ssh HOST << 'SCRIPT'
 tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT
-status_sh=$tmpdir/status.sh
 
-tilde status --format shell > "$status_sh"
-. "$status_sh"
+tilde status --format shell > "$tmpdir/status.sh"
+. "$tmpdir/status.sh"
+[ -n "$tilde_public_repo" ] || exit 1
 SCRIPT
 ```
 
-Use the returned `tilde_public_repo` and `tilde_private_repo` paths exactly when generating target-local plans. For
-update state recovery, use `tilde_update_mode`, which is `repair` when target status has no applied anchors and
-`refresh` otherwise. Do not guess `~/Dropbox/home`, `~/Dropbox/home-`, `~/.local/src/home`, or `~/.local/src/home-`
-when status, explicit user arguments, or active home policy can supply the target binding.
+Agents MUST plan and apply on the target, not on the controller. They MUST NOT retype conventional paths such as
+`~/Dropbox/home`, `~/Dropbox/home-`, `~/.local/src/home`, or `~/.local/src/home-` when target status can supply them.
+Git-backed targets without Dropbox MUST NOT gain a synthetic `~/Dropbox` tree.
 
-During a fresh remote `deploy`, target status may have no repository bindings yet because `state.yml` has not been
-created. In that case, agents MUST use repository paths proven by the immediately preceding remote preflight. For a
-Dropbox-backed target whose preflight reports clean public/private repositories, those target-side paths are the deploy
-bindings for the first apply. This is bounded target discovery, not a controller-side path guess. If preflight does not
-prove the repository path, stop with `deferred` instead of inventing one.
+A fresh deploy may have no status bindings. In that case only repository paths proven by the immediately preceding
+preflight may be used. If preflight does not prove a target path, stop with `deferred`.
 
-For Git-backed targets whose status binds repositories outside Dropbox, controller-side `~/Dropbox/...` source paths are
-not target paths. Agents MUST NOT create target-side `~/Dropbox` for repository binding, cleanup, shared app state, or
-convenience paths unless active target policy explicitly says that host has Dropbox-backed storage.
+Remote align uses target-local `plan --mode align` plus `apply`; it MUST NOT call `tilde align --format json`.
 
-When a remote workflow needs repository bindings in a target-side script, agents MUST bind them from target status shell
-output before planning. Agents MUST NOT retype host-convention paths in `tilde plan --repo ...` commands:
+### 19.6 Apply Result Integrity
 
-```text
-"$TILDE" ssh spinoza << 'SCRIPT'
-tmpdir=$(mktemp -d)
-trap 'rm -rf "$tmpdir"' EXIT
-status_sh=$tmpdir/status.sh
+The generic result-integrity and single-attempt rules in Sections 7 and 18 apply unchanged to remote work. In
+particular:
 
-tilde status --format shell > "$status_sh"
-. "$status_sh"
-if [ -z "$tilde_public_repo" ]; then
-  printf '%s\n' 'STATUS_FAILED: missing tilde_public_repo' >&2
-  exit 1
-fi
-SCRIPT
-```
+- Capture apply stdout alone in a per-run temporary file; keep stderr separate.
+- Parse the captured JSON from that same attempt immediately.
+- Do not append exit sentinels, merge stderr with `2>&1`, scrape tool-output caches, or rerun apply to reconstruct a
+  missing result.
+- A timeout or lost connection means the target apply may still be active. Probe the target process and lock state before
+  retrying; an active process or held lock is `deferred`.
+- A later successful status read does not convert an earlier failed checkout, plan, apply, or align step into success.
 
-Reading controller deployment state before a remote workflow is also invalid. After remote freshness preflight, the
-first target-state read for remote work MUST be delivered to the target:
-
-```text
-"$TILDE" ssh spinoza << 'SCRIPT'
-tilde status --format markdown
-SCRIPT
-```
-
-```text
-"$TILDE" ssh spinoza << 'SCRIPT'
-tmpdir=$(mktemp -d)
-trap 'rm -rf "$tmpdir"' EXIT
-status_sh=$tmpdir/status.sh
-
-tilde status --format shell > "$status_sh"
-. "$status_sh"
-if [ -z "$tilde_public_repo" ]; then
-  printf '%s\n' 'STATUS_FAILED: missing tilde_public_repo' >&2
-  exit 1
-fi
-
-tilde plan \
-  --mode "$tilde_update_mode" \
-  --repo "$tilde_public_repo" \
-  --host "$tilde_host" \
-  --platform "$tilde_platform" \
-  --level "$tilde_level" \
-  --format json > "$tmpdir/public.json" || exit $?
-if [ -n "$tilde_private_repo" ]; then
-  tilde plan \
-    --mode "$tilde_update_mode" \
-    --repo "$tilde_private_repo" \
-    --host "$tilde_host" \
-    --platform "$tilde_platform" \
-    --level "$tilde_level" \
-    --format json > "$tmpdir/private.json" || exit $?
-  set -- --plan "$tmpdir/public.json" --plan "$tmpdir/private.json"
-else
-  set -- --plan "$tmpdir/public.json"
-fi
-
-apply_json=$tmpdir/apply.json
-apply_status=0
-tilde apply "$@" > "$apply_json" || apply_status=$?
-
-ruby -rjson -e '
-data = JSON.parse(File.read(ARGV.fetch(0)))
-bad = data.fetch("results").select { |r| ["deferred", "conflict", "notok"].include?(r.fetch("status")) }
-counts = data.fetch("results").each_with_object(Hash.new(0)) { |r, h| h[r.fetch("status")] += 1 }
-puts JSON.generate(
-  completed: data.fetch("completed"),
-  counts: counts,
-  bad: bad.map { |r| { action_id: r.fetch("action_id"), status: r.fetch("status"), reason: r.dig("diagnostics", "reason") } }
-)
-exit(data.fetch("completed") && bad.empty? ? 0 : 1)
-' "$apply_json" || exit $?
-[ "$apply_status" -eq 0 ] || exit "$apply_status"
-SCRIPT
-```
-
-Repository paths in remote scripts are the target host's configured bindings. Public-only targets omit the private plan.
-Inside the remote script body, bare `tilde` is valid because the Tilde SSH transport has already set the target runtime
-PATH.
-
-Remote align uses the same target-local plan and captured-apply workflow with `mode=align`.
-
-Agents MUST NOT redirect remote Tilde diagnostics to `/dev/null` for status, doctor, checkout, plan, apply, align, or
-verification steps. A non-zero remote exit status is failed, deferred, or conflicted work even when stdout is empty. A
-later successful status read does not convert an earlier failed checkout, plan, apply, or align step into success.
-Agents MUST NOT append `; echo "EXIT: $?"`, `|| true`, or similar status-marker wrappers to critical remote Tilde
-commands. Those wrappers mask non-zero exits and can corrupt JSON outputs. If a tool UI needs an exit marker, agents
-MUST preserve command stdout separately, retain the real status in a variable, parse the command output first, and then
-print any marker outside the machine-readable document.
-
-Do not run `tilde apply` with `2>&1` when its stdout will be parsed as JSON. Keep apply stdout as one JSON document and
-let diagnostics remain on stderr, or capture stdout and stderr in separate files.
-
-Agents MUST parse the captured apply JSON from the same attempt immediately and print only a compact summary. They MUST
-NOT stream a nontrivial apply document into a truncating tool UI, recover status by reading an agent tool-output cache,
-classify results with text searches, or rerun apply merely to reconstruct the first attempt's result.
-
-Lock contention is a structured apply failure. After plans are loaded and validated, `apply` MUST emit a
-`tilde.apply/v1` document with `completed: false`, an empty `results` list, and an error reason identifying the busy
-state lock before exiting non-zero. Human-readable lock diagnostics remain on stderr.
-
-Remote scripts MUST be `sh`-compatible by default. Agents MUST use the plain `"$TILDE" ssh HOST << 'SCRIPT'` form for
-ordinary status, plan, apply, and verification work. Agents MUST NOT pass `-- bash` for macOS targets or for scripts
-that can run under `sh`. Passing an interpreter after `--` is reserved for a verified non-macOS target and a script that
-truly needs syntax absent from `sh`; the transport MUST run that interpreter as the remote script reader.
-
-In the default remote form, `sh`-compatible means POSIX `sh`, not "Bash without a Bash shebang." Agents MUST NOT use
-the Bash skill prelude in these remote scripts. Agents MUST avoid common Bashisms:
-
-| Bashism | POSIX `sh` form |
-| --- | --- |
-| `set -o pipefail` | avoid critical pipelines; check each command separately |
-| `[[ -n $x ]]` | `[ -n "$x" ]` |
-| `[[ $x =~ re ]]` | `case $x in pattern) ... ;; esac` |
-| `arr=(a b)` and `${arr[@]}` | newline-separated strings, positional parameters, or repeated commands |
-| `source file` | `. file` |
-| `function name { ...; }` | `name() { ...; }` |
-| `local x=...`, `declare`, `mapfile`, `readarray`, `select` | simple variables and explicit loops |
-| `< <(cmd)` and `<<< "$text"` | temp files, pipes, or here-documents |
-| `{foo,bar}` brace expansion | spell out the words |
-| `$'...\n...'` strings | `printf '%s\n' ...` |
-
-`dash` is a common `/bin/sh`; scripts that only work in Bash are invalid in the plain remote form.
-
-After a successful mutating remote apply, agents MUST perform a final cheap target-local status read before final
-closeout:
-
-```text
-"$TILDE" ssh spinoza << 'SCRIPT'
-tilde status --format markdown
-SCRIPT
-```
-
-The final status read verifies target-local `state.yml`, target repository heads, and applied anchors without broad
-discovery. It is not required for `dry-run`, `plan-only`, failed apply, or deferred apply.
-
-Remote summaries MUST distinguish:
-
-```text
-target HEAD     the repository commit currently checked out on the target host
-applied anchor  the commit recorded under applied in the target host state file
-```
-
-Do not call the target repository HEAD `local`; from the controller that word is ambiguous.
-
-Single-command remote checks still use the same transport:
-
-```text
-"$TILDE" ssh spinoza << 'SCRIPT'
-tilde doctor
-SCRIPT
-```
+Final reporting MUST distinguish target repository HEAD from the applied anchor and summarize each host separately.
 
 ## 20. Security and Proposal-First Behavior
 
