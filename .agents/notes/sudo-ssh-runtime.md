@@ -1,7 +1,7 @@
 # Tilde sudo and ssh runtime rationale
 
 This note records the design rationale behind the routed SSH and sudo runtime. Canonical behavior lives in
-`references/specification/`, `SKILL.md`, and `references/development.md`.
+`references/specification.md`, `SKILL.md`, and `references/development.md`.
 
 ## Problem
 
