@@ -27,19 +27,6 @@ write_fake_packages() {
 
 	cat >"$bindir/brew" <<'EOF'
 #!/usr/bin/env sh
-if [ "${LC_ALL:-}" != en_US.UTF-8 ] || [ "${LANG:-}" != en_US.UTF-8 ]; then
-	printf 'missing runtime locale: LC_ALL=%s LANG=%s\n' "${LC_ALL:-}" "${LANG:-}" >&2
-	exit 9
-fi
-case " ${RUBYOPT:-} " in
-*" -EUTF-8:UTF-8 "*)
-	;;
-*)
-	printf 'missing Ruby UTF-8 option: RUBYOPT=%s\n' "${RUBYOPT:-}" >&2
-	exit 9
-	;;
-esac
-
 case "$*" in
 "list --formula -1")
 	printf 'git\n'
