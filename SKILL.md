@@ -25,20 +25,22 @@ When existing docs, code, habits, or memory conflict with `references/specificat
 
 When the user invokes a Tilde prompt such as `/tilde <command> [target] [qualifiers...]`:
 
-1. Treat `/tilde`, `$tilde`, and similar Tilde prompt markers as agent prompt contracts. They are not shell commands.
-2. Resolve the controller-side runtime entrypoint before shell execution. Use the loaded skill directory's `bin/tilde`;
+1. For nontrivial work, read `references/specification.md` through EOF before acting. Loading this skill or seeing an
+   embedded copy of it is not a substitute for reading the canonical specification.
+2. Treat `/tilde`, `$tilde`, and similar Tilde prompt markers as agent prompt contracts. They are not shell commands.
+3. Resolve the controller-side runtime entrypoint before shell execution. Use the loaded skill directory's `bin/tilde`;
    if that path is not available, use `~/.agents/skills/tilde/bin/tilde`. Do not rely on bare `tilde` being on `PATH`.
-3. Identify the target: current host, the current host name, `host`, `ssh:host`, or an all-caps host group such as
+4. Identify the target: current host, the current host name, `host`, `ssh:host`, or an all-caps host group such as
    `ALL`, `HOME`, or `WORK`.
-4. Classify the command from the Command Reference below.
-5. Map agent-orchestrated commands to the Workflow Matrix before running helpers.
-6. For remote targets, run `"$TILDE" preflight remote HOST --format json` before reading target state, generating
+5. Classify the command from the Command Reference below.
+6. Map agent-orchestrated commands to the Workflow Matrix before running helpers.
+7. For remote targets, run `"$TILDE" preflight remote HOST --format json` before reading target state, generating
    plans, or applying results.
-7. Use the resolved runtime entrypoint for script delivery. Generate plans, run live checks, and apply results on the
+8. Use the resolved runtime entrypoint for script delivery. Generate plans, run live checks, and apply results on the
    target host, not on the controller.
-8. Keep proposal-first behavior for destructive, preference-sensitive, privilege-requiring, or remote mutations.
-9. After a successful mutating remote apply, run a cheap final status read on the target before closeout.
-10. After the run, summarize successful, changed, deferred, conflicted, and failed work.
+9. Keep proposal-first behavior for destructive, preference-sensitive, privilege-requiring, or remote mutations.
+10. After a successful mutating remote apply, run a cheap final status read on the target before closeout.
+11. After the run, summarize successful, changed, deferred, conflicted, and failed work.
 
 If a direct runtime call says a command is agent-orchestrated, stop trying shell variants of that command. Load this
 skill, classify the command, and run the appropriate agent workflow.
@@ -405,55 +407,35 @@ if [ -n "$tilde_private_repo" ]; then
     --platform "$tilde_platform" \
     --level "$tilde_level" \
     --format json > "$tmpdir/private.json" || exit $?
-  tilde apply --plan "$tmpdir/public.json" --plan "$tmpdir/private.json"
+  set -- --plan "$tmpdir/public.json" --plan "$tmpdir/private.json"
 else
-  tilde apply --plan "$tmpdir/public.json"
+  set -- --plan "$tmpdir/public.json"
 fi
+
+apply_json=$tmpdir/apply.json
+apply_status=0
+tilde apply "$@" > "$apply_json" || apply_status=$?
+
+ruby -rjson -e '
+data = JSON.parse(File.read(ARGV.fetch(0)))
+bad = data.fetch("results").select { |r| ["deferred", "conflict", "notok"].include?(r.fetch("status")) }
+counts = data.fetch("results").each_with_object(Hash.new(0)) { |r, h| h[r.fetch("status")] += 1 }
+puts JSON.generate(
+  completed: data.fetch("completed"),
+  counts: counts,
+  bad: bad.map { |r| { action_id: r.fetch("action_id"), status: r.fetch("status"), reason: r.dig("diagnostics", "reason") } }
+)
+exit(data.fetch("completed") && bad.empty? ? 0 : 1)
+' "$apply_json" || exit $?
+[ "$apply_status" -eq 0 ] || exit "$apply_status"
 SCRIPT
 ```
 
 Replace repository paths with the target host's configured bindings. Omit the private plan when the target has no
 private repository.
 
-For remote align, use the same target-local plan/apply shape with `mode=align`. Do not call the target's direct
-`tilde align` route for a remote prompt workflow, and do not suppress diagnostics:
-
-```bash
-TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
-"$TILDE" ssh spinoza << 'SCRIPT'
-tmpdir=$(mktemp -d)
-trap 'rm -rf "$tmpdir"' EXIT
-status_sh=$tmpdir/status.sh
-mode=align
-
-tilde status --format shell > "$status_sh"
-. "$status_sh"
-if [ -z "$tilde_public_repo" ]; then
-  printf '%s\n' 'STATUS_FAILED: missing tilde_public_repo' >&2
-  exit 1
-fi
-
-tilde plan \
-  --mode "$mode" \
-  --repo "$tilde_public_repo" \
-  --host "$tilde_host" \
-  --platform "$tilde_platform" \
-  --level "$tilde_level" \
-  --format json > "$tmpdir/public.json" || exit $?
-if [ -n "$tilde_private_repo" ]; then
-  tilde plan \
-    --mode "$mode" \
-    --repo "$tilde_private_repo" \
-    --host "$tilde_host" \
-    --platform "$tilde_platform" \
-    --level "$tilde_level" \
-    --format json > "$tmpdir/private.json" || exit $?
-  tilde apply --plan "$tmpdir/public.json" --plan "$tmpdir/private.json"
-else
-  tilde apply --plan "$tmpdir/public.json"
-fi
-SCRIPT
-```
+For remote align, use the same target-local workflow and apply-capture pattern with `mode=align`. Do not call the
+target's direct `tilde align` route for a remote prompt workflow, and do not suppress diagnostics.
 
 Every Tilde `status`, `doctor`, `checkout`, `plan`, `apply`, `align`, or verification step must treat a non-zero exit
 as failed, deferred, or conflicted, even when stdout is empty. Do not redirect stderr to `/dev/null` for these steps,
@@ -477,29 +459,11 @@ compact summary. Do not run `tilde apply` a second time merely to reconstruct th
 JSON was not captured, report that validation gap instead of pretending a later successful status read or rerun describes
 the first apply.
 
-```sh
-apply_json=$tmpdir/apply.json
-apply_status=0
-if [ -n "$tilde_private_repo" ]; then
-  tilde apply --plan "$tmpdir/public.json" --plan "$tmpdir/private.json" > "$apply_json" || apply_status=$?
-else
-  tilde apply --plan "$tmpdir/public.json" > "$apply_json" || apply_status=$?
-fi
-
-ruby -rjson -e '
-data = JSON.parse(File.read(ARGV.fetch(0)))
-bad = data.fetch("results").select { |r| ["deferred", "conflict", "notok"].include?(r.fetch("status")) }
-counts = data.fetch("results").each_with_object(Hash.new(0)) { |r, h| h[r.fetch("status")] += 1 }
-summary = {
-  completed: data.fetch("completed"),
-  counts: counts,
-  bad: bad.map { |r| { action_id: r.fetch("action_id"), status: r.fetch("status"), reason: r.dig("diagnostics", "reason") } }
-}
-puts JSON.generate(summary)
-exit(data.fetch("completed") && bad.empty? ? 0 : 1)
-' "$apply_json" || exit $?
-[ "$apply_status" -eq 0 ] || exit "$apply_status"
-```
+Each host gets one apply attempt at a time. If the controller tool times out or loses the connection, assume the
+target-side apply may still be running. Before any retry, inspect the target lock and active Tilde/apply processes with
+bounded read-only checks. If an apply process or held lock remains, do not retry; report that host as active/deferred and
+leave it running. Never use an agent tool-output cache or a second apply as a substitute for the original captured
+`apply.json`.
 
 After a successful mutating remote apply, verify target convergence with a separate cheap status read so the apply JSON
 stays easy to parse:
@@ -638,6 +602,8 @@ For weaker or low-context agents:
 - Keep `applied` anchors unchanged after `deferred`, `conflict`, or `notok`.
 - On timeout or `state lock busy`, do not remove `~/.local/state/tilde/lock` blindly. Check whether an apply process is
   still active and treat uncertainty as `deferred`.
+- After an apply timeout or lost connection, do not retry that host until bounded target checks prove no apply process
+  and no held lock remain. An active process or held lock means the host is still active/deferred.
 - Do not remove remote Tilde lock files as routine closeout cleanup after a failed or partial apply. Lock cleanup is a
   separate recovery step after bounded holder checks and, when any uncertainty remains, explicit user approval.
 - Never plan a remote host from the controller.

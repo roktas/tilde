@@ -341,6 +341,13 @@ agent workflows because they leak state across runs and hosts. When generated pl
 generation and apply MUST happen inside the same temporary directory lifetime. Separate plan-only probes are disposable
 preflight checks and MUST NOT be treated as the plan that was later applied.
 
+Each target host MUST have at most one apply attempt active at a time. If the controller command times out, loses its
+connection, or otherwise stops observing an apply before receiving and parsing its result, agents MUST assume the
+target-side apply may still be running. They MUST perform bounded read-only target checks for the lock holder and active
+Tilde/apply processes before any retry. An active process or held lock makes the host `deferred`; agents MUST NOT start a
+second apply, scrape an agent tool-output cache, or use a later apply as a substitute for the missing result of the first
+attempt.
+
 Example:
 
 ```text
@@ -1296,10 +1303,27 @@ if [ -n "$tilde_private_repo" ]; then
     --platform "$tilde_platform" \
     --level "$tilde_level" \
     --format json > "$tmpdir/private.json" || exit $?
-  tilde apply --plan "$tmpdir/public.json" --plan "$tmpdir/private.json"
+  set -- --plan "$tmpdir/public.json" --plan "$tmpdir/private.json"
 else
-  tilde apply --plan "$tmpdir/public.json"
+  set -- --plan "$tmpdir/public.json"
 fi
+
+apply_json=$tmpdir/apply.json
+apply_status=0
+tilde apply "$@" > "$apply_json" || apply_status=$?
+
+ruby -rjson -e '
+data = JSON.parse(File.read(ARGV.fetch(0)))
+bad = data.fetch("results").select { |r| ["deferred", "conflict", "notok"].include?(r.fetch("status")) }
+counts = data.fetch("results").each_with_object(Hash.new(0)) { |r, h| h[r.fetch("status")] += 1 }
+puts JSON.generate(
+  completed: data.fetch("completed"),
+  counts: counts,
+  bad: bad.map { |r| { action_id: r.fetch("action_id"), status: r.fetch("status"), reason: r.dig("diagnostics", "reason") } }
+)
+exit(data.fetch("completed") && bad.empty? ? 0 : 1)
+' "$apply_json" || exit $?
+[ "$apply_status" -eq 0 ] || exit "$apply_status"
 SCRIPT
 ```
 
@@ -1307,43 +1331,7 @@ Repository paths in remote scripts are the target host's configured bindings. Pu
 Inside the remote script body, bare `tilde` is valid because the Tilde SSH transport has already set the target runtime
 PATH.
 
-Remote align uses the same target-local plan/apply shape with align mode:
-
-```text
-"$TILDE" ssh spinoza << 'SCRIPT'
-tmpdir=$(mktemp -d)
-trap 'rm -rf "$tmpdir"' EXIT
-status_sh=$tmpdir/status.sh
-mode=align
-
-tilde status --format shell > "$status_sh"
-. "$status_sh"
-if [ -z "$tilde_public_repo" ]; then
-  printf '%s\n' 'STATUS_FAILED: missing tilde_public_repo' >&2
-  exit 1
-fi
-
-tilde plan \
-  --mode "$mode" \
-  --repo "$tilde_public_repo" \
-  --host "$tilde_host" \
-  --platform "$tilde_platform" \
-  --level "$tilde_level" \
-  --format json > "$tmpdir/public.json" || exit $?
-if [ -n "$tilde_private_repo" ]; then
-  tilde plan \
-    --mode "$mode" \
-    --repo "$tilde_private_repo" \
-    --host "$tilde_host" \
-    --platform "$tilde_platform" \
-    --level "$tilde_level" \
-    --format json > "$tmpdir/private.json" || exit $?
-  tilde apply --plan "$tmpdir/public.json" --plan "$tmpdir/private.json"
-else
-  tilde apply --plan "$tmpdir/public.json"
-fi
-SCRIPT
-```
+Remote align uses the same target-local plan and captured-apply workflow with `mode=align`.
 
 Agents MUST NOT redirect remote Tilde diagnostics to `/dev/null` for status, doctor, checkout, plan, apply, align, or
 verification steps. A non-zero remote exit status is failed, deferred, or conflicted work even when stdout is empty. A
@@ -1355,6 +1343,10 @@ print any marker outside the machine-readable document.
 
 Do not run `tilde apply` with `2>&1` when its stdout will be parsed as JSON. Keep apply stdout as one JSON document and
 let diagnostics remain on stderr, or capture stdout and stderr in separate files.
+
+Agents MUST parse the captured apply JSON from the same attempt immediately and print only a compact summary. They MUST
+NOT stream a nontrivial apply document into a truncating tool UI, recover status by reading an agent tool-output cache,
+classify results with text searches, or rerun apply merely to reconstruct the first attempt's result.
 
 Remote scripts MUST be `sh`-compatible by default. Agents MUST use the plain `"$TILDE" ssh HOST << 'SCRIPT'` form for
 ordinary status, plan, apply, and verification work. Agents MUST NOT pass `-- bash` for macOS targets or for scripts
