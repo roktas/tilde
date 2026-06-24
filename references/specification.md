@@ -291,6 +291,11 @@ If the reachability check fails, agents MUST mark that host `skipped`, report th
 remaining hosts. An unreachable host inside a group MUST NOT fail reachable hosts. If every expanded host is
 unreachable, the command result is `deferred`.
 
+Each host's freshness preflight MUST remain adjacent to that host's status, planning, apply, and verification workflow.
+Agents MUST NOT preflight an entire group and later rely on those results after unrelated host mutations or a material
+delay. Parallel group execution is valid only when each independent host job performs its own complete
+preflight-to-verification sequence.
+
 Reachability checks for Tilde workflows MUST use Tilde SSH transport. Agents MUST NOT use raw `ssh`, `sh -c`, or
 `bash -lc` for these probes.
 
@@ -340,6 +345,17 @@ workflow exit. Fixed plan paths under shared temp locations, such as `/tmp/openc
 agent workflows because they leak state across runs and hosts. When generated plan files are intended for apply, plan
 generation and apply MUST happen inside the same temporary directory lifetime. Separate plan-only probes are disposable
 preflight checks and MUST NOT be treated as the plan that was later applied.
+
+Critical Tilde commands, including `status`, `doctor`, `preflight`, `checkout`, `plan`, `apply`, `align`, and final
+verification, MUST expose their real exit status to the agent runner. Agents MUST NOT append status sentinels such as
+`; echo "EXIT: $?"`, use `|| echo`, or merge stderr into machine-readable stdout with `2>&1`. When a structured
+non-zero result must be parsed, agents MAY save the command status in a variable while capturing stdout alone, then
+parse that file before returning the original failure.
+
+For local update workflows, agents MUST read `tilde status --format shell`, source that output from a temporary file,
+and use `tilde_public_repo`, `tilde_private_repo`, `tilde_update_mode`, `tilde_host`, `tilde_platform`, and
+`tilde_level` for planning. Agents MUST NOT manually retype values copied from human-readable status output. Plan JSON
+captures MUST contain stdout only; stderr remains separate.
 
 Each target host MUST have at most one apply attempt active at a time. If the controller command times out, loses its
 connection, or otherwise stops observing an apply before receiving and parsing its result, agents MUST assume the

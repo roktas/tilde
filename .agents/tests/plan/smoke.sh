@@ -295,7 +295,9 @@ EOF
 			codex = linux_extra.fetch("modules").find { |mod| mod.fetch("name") == "codex" }
 			abort "missing private codex module" unless codex
 			abort "missing linux codex cask" unless codex.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "cask:codex" }
-			abort "codex should link sodexo locally" unless codex.fetch("links_to_create").any? { |link| link.fetch("source") == "bin/sodexo" && link.fetch("target") == "~/.local/bin/sodexo" }
+			abort "codex should link sodexo locally" unless codex.fetch("links_to_create").any? { |link| link.fetch("source") == "~/Dropbox/colon/sodexo/bin/sodexo" && link.fetch("target") == "~/.local/bin/sodexo" && link.fetch("source_external") == true }
+			abort "codex should seed local config" unless codex.fetch("seeds_to_create").any? { |seed| seed.fetch("source") == "config.toml" && seed.fetch("target") == "~/.codex/config.toml" }
+			abort "codex should not seed account state" if codex.fetch("seeds_to_create").any? { |seed| seed.fetch("target") == "~/.codex/accounts.json" }
 			abort "codex wrappers should be removed" if codex.fetch("links_to_create").any? { |link| link.fetch("source") == "bin/codex" || link.fetch("target") == "~/Dropbox/_/bin/codex" }
 			abort "codex should link hooks into shared codex state" unless codex.fetch("links_to_create").any? { |link| link.fetch("source") == "hooks/shellcheck" && link.fetch("target") == "~/Dropbox/_/var/codex/hooks/shellcheck" && link.fetch("fan_in") == true }
 			hook_action = linux_extra.fetch("actions").find { |action| action.fetch("kind") == "link" && action.fetch("target") == "~/Dropbox/_/var/codex/hooks/shellcheck" }
@@ -332,6 +334,7 @@ EOF
 			macos_codex = macos_extra.fetch("modules").find { |mod| mod.fetch("name") == "codex" }
 			abort "missing macos codex module" unless macos_codex
 			abort "missing macos codex cask" unless macos_codex.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "cask:codex" }
+			abort "macos codex should seed local config" unless macos_codex.fetch("seeds_to_create").any? { |seed| seed.fetch("source") == "config.toml" && seed.fetch("target") == "~/.codex/config.toml" }
 			macos_environment = macos.fetch("modules").find { |mod| mod.fetch("name") == "environment" }
 			abort "missing macos environment module" unless macos_environment
 			abort "environment should link macos session.conf" unless macos_environment.fetch("links_to_create").any? { |link| link.fetch("source") == "environment.d/session.macos.conf" && link.fetch("target") == "~/.config/environment.d/session.conf" }
@@ -501,12 +504,7 @@ EOF
 		javascript = extra_plan.fetch("modules").find { |mod| mod.fetch("name") == "javascript" }
 		abort "missing javascript module" unless javascript
 		abort "missing bun formula" unless javascript.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "brew:bun" }
-		virtualbox = extra_plan.fetch("modules").find { |mod| mod.fetch("name") == "virtualbox" }
-		abort "missing virtualbox extra module" unless virtualbox
-		abort "virtualbox should not be virtual when section actions exist" unless virtualbox.fetch("virtual") == false
-		abort "missing virtualbox install section" unless virtualbox.fetch("special_sections").key?("Install")
-		abort "missing virtualbox configure section" unless virtualbox.fetch("special_sections").key?("Configure")
-		abort "virtualbox should not rely on postinstall" if virtualbox.fetch("special_sections").key?("Post Install")
+		abort "virtualbox module should be removed" if extra_plan.fetch("modules").any? { |mod| mod.fetch("name") == "virtualbox" }
 		ghostty = extra_plan.fetch("modules").find { |mod| mod.fetch("name") == "ghostty" }
 		abort "missing ghostty module" unless ghostty
 		abort "ghostty linux plan should not install cask" if ghostty.fetch("packages_to_install").any? { |pkg| pkg.fetch("type") == "cask" }

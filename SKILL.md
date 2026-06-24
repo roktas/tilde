@@ -90,6 +90,9 @@ When traversing a host group, perform a bounded noninteractive reachability chec
 unreachable hosts and continue with the remaining hosts. Report skipped hosts separately; an unreachable host inside a
 group is not a failure for reachable hosts. If every expanded host is unreachable, stop with a clear `deferred` result.
 Use Tilde SSH transport for the reachability check itself. Do not use raw `ssh`, even for this cheap probe.
+Keep each host's freshness preflight adjacent to that host's status, plan, and apply workflow. Do not preflight the
+whole group, wait while other hosts mutate, and later rely on those earlier results. Parallel group execution is valid
+only when each independent host job contains its own preflight-to-verification sequence.
 If reachability fails with `Host key verification failed` or another SSH host-key trust error, report it as a skipped
 trust deferral. Do not run `ssh-keyscan`, disable strict host-key checking, edit `known_hosts`, or accept host keys
 automatically. If suggesting remediation, name the exact host and trust effect; automated enrollment needs explicit
@@ -205,6 +208,48 @@ trap 'rm -rf "$tmpdir"' EXIT
 
 Successful Tilde-generated `refresh` plans advance `applied` anchors after every required action succeeds. If a refresh
 apply returns `deferred`, `conflict`, or `notok`, anchors stay unchanged and the run did not fully converge.
+
+### Command Result Integrity
+
+Run critical Tilde commands directly and let the tool runner observe their real exit status. This applies to `status`,
+`doctor`, `preflight`, `checkout`, `plan`, `apply`, `align`, and final verification.
+
+Never use diagnostic wrappers such as:
+
+```sh
+tilde plan ... 2>&1 || echo "PLAN_EXIT: $?"
+tilde apply ...; echo "APPLY_EXIT: $?"
+```
+
+They turn failure into apparent success and can mix diagnostics into JSON. Redirect only stdout when capturing
+machine-readable output, leave stderr separate, and preserve a non-zero status explicitly only when the workflow must
+parse a structured failure document.
+
+### Local Update Binding
+
+For a local update, derive repository paths, mode, host, platform, and level from local status just as remote workflows
+derive them from target status. Do not retype values observed in status output:
+
+```bash
+TILDE=${TILDE:-"$HOME/.agents/skills/tilde/bin/tilde"}
+tmpdir=$(mktemp -d)
+trap 'rm -rf "$tmpdir"' EXIT
+
+"$TILDE" status --format shell > "$tmpdir/status.sh"
+. "$tmpdir/status.sh"
+[ -n "$tilde_public_repo" ] || exit 1
+
+"$TILDE" plan \
+  --mode "$tilde_update_mode" \
+  --repo "$tilde_public_repo" \
+  --host "$tilde_host" \
+  --platform "$tilde_platform" \
+  --level "$tilde_level" \
+  --format json > "$tmpdir/public.json"
+```
+
+Generate the optional private plan in the same directory, then use the captured-apply JSON parsing pattern from the
+remote workflow below. Do not redirect plan stderr into its JSON file.
 
 ## Remote Script Execution
 
