@@ -1073,6 +1073,11 @@ Agents MUST parse the apply result as JSON. They MUST NOT use `grep`, `rg`, or l
 apply stdout is captured for later inspection, it MUST remain exactly one parseable JSON document; status sentinels,
 exit-code markers, logs, or summaries MUST NOT be appended to it. Malformed or mixed apply output is a failed workflow.
 
+A `notok` action is not a transient-success probe. Agents MUST NOT immediately run a second apply or repeat the same
+update merely to see whether the failure clears. They MUST inspect the captured result from the failed attempt and retry
+only after a concrete source fix, approved operator recovery, or observed external-state change explains why the next
+attempt is different. Without that evidence, the host remains incomplete and anchors remain unchanged.
+
 If `state.yml` is missing or has no `applied` section, Tilde uses fresh-run semantics:
 
 - generate the current desired manifest,
@@ -1213,6 +1218,8 @@ particular:
 - Parse the captured JSON from that same attempt immediately.
 - Do not append exit sentinels, merge stderr with `2>&1`, scrape tool-output caches, or rerun apply to reconstruct a
   missing result.
+- Do not rerun a failed apply just because a `notok` result might be transient; require a concrete source fix, approved
+  recovery, or observed external-state change before the next attempt.
 - A timeout or lost connection means the target apply may still be active. Probe the target process and lock state before
   retrying; an active process or held lock is `deferred`.
 - A later successful status read does not convert an earlier failed checkout, plan, apply, or align step into success.

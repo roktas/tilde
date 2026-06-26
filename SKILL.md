@@ -464,13 +464,45 @@ apply_status=0
 tilde apply "$@" > "$apply_json" || apply_status=$?
 
 ruby -rjson -e '
+def snippet(value)
+  text = value.to_s
+  return nil if text.empty?
+
+  text.lines.map(&:rstrip).reject(&:empty?).join("\n")[0, 800]
+end
+
+def bad_summary(result)
+  diagnostics = result["diagnostics"] || {}
+  runs =
+    if diagnostics["blocks"].is_a?(Array)
+      diagnostics["blocks"]
+    elsif diagnostics["commands"].is_a?(Array)
+      diagnostics["commands"]
+    else
+      []
+    end
+  failed = runs.reverse.find { |run| run["exit"].nil? || run["exit"].to_i != 0 } || runs.last
+  summary = {
+    action_id: result.fetch("action_id"),
+    status: result.fetch("status"),
+    reason: diagnostics["reason"]
+  }
+  if failed
+    summary[:command] = failed["command"]
+    summary[:exit] = failed["exit"]
+    summary[:stderr] = snippet(failed["stderr"])
+    summary[:stdout] = snippet(failed["stdout"])
+  end
+  summary.compact
+end
+
 data = JSON.parse(File.read(ARGV.fetch(0)))
 bad = data.fetch("results").select { |r| ["deferred", "conflict", "notok"].include?(r.fetch("status")) }
 counts = data.fetch("results").each_with_object(Hash.new(0)) { |r, h| h[r.fetch("status")] += 1 }
 puts JSON.generate(
   completed: data.fetch("completed"),
   counts: counts,
-  bad: bad.map { |r| { action_id: r.fetch("action_id"), status: r.fetch("status"), reason: r.dig("diagnostics", "reason") } }
+  bad: bad.map { |r| bad_summary(r) }
 )
 exit(data.fetch("completed") && bad.empty? ? 0 : 1)
 ' "$apply_json" || exit $?
@@ -499,6 +531,11 @@ use `grep`, `rg`, or line counts to classify statuses. The apply stdout must rem
 malformed or mixed output as failed. `completed: true` only means the action list was processed; it is not full success
 when any result is `deferred`, `conflict`, or `notok`. Treat such a run as incomplete and report the exact action
 status, `action_id`, and reason.
+
+When an apply result contains `deferred`, `conflict`, or `notok`, do not immediately run a second apply or repeat the
+same `update` just to see whether it clears. Inspect the captured JSON and stderr from that attempt. Retry only after a
+specific source fix, approved operator recovery, or observed external-state change explains why the next attempt is
+different; otherwise report the host as incomplete.
 
 For nontrivial plans, do not stream full `tilde apply` JSON directly to a truncating tool UI. Capture stdout to a
 per-run temp file, leave stderr visible or capture it separately, parse the captured JSON immediately, and print a
@@ -687,6 +724,8 @@ For weaker or low-context agents:
 - After `tilde apply`, inspect action results with a JSON parser. Do not use `grep`, `rg`, or line counts for status
   classification, and do not report success only because JSON was printed or `completed` is true. Any `deferred`,
   `conflict`, or `notok` action means the run is incomplete.
+- Do not treat an unexplained retry as diagnosis. After `notok`, do not rerun the same apply/update merely because it
+  might be transient; retry only after a concrete source fix, approved recovery, or observed external-state change.
 - After a `notok` section or package result, do not run module snippets manually on the target for debugging or repair.
   Diagnose from structured output and source, fix desired state, then retry through `deploy` or `repair`. Any
   target-side manual mutation is a separate operator workflow and needs explicit approval.
