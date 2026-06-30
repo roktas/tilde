@@ -112,7 +112,8 @@ The PATH-visible runtime surface is `bin/tilde`, `bin/sudo`, and helper commands
 runtime PATH. Normal command implementations live in `libexec/` and are dispatched through `bin/tilde`.
 
 Controller-side runtime calls must go through the resolved entrypoint. Bare `tilde` is valid only when the Tilde runtime
-PATH is already active, such as inside a remote script delivered by Tilde SSH transport.
+PATH is already active, such as inside a remote script delivered by Tilde SSH transport. A local heredoc, controller
+subshell, or controller-side temporary script is still controller-side; use `"$TILDE"` there, not bare `tilde`.
 
 `bin/tilde` has direct runtime routes for helper and diagnostic commands. It intentionally refuses agent-orchestrated
 prompt commands; those commands are interpreted and orchestrated by the loaded Tilde skill.
@@ -130,7 +131,8 @@ The agent interprets these high-level commands and orchestrates the workflow. Th
 
 - `deploy`: prepare a local or remote host and apply desired state.
 - `update`: refresh package managers, reconcile current desired state, and run `Update` sections.
-- `repair`: apply the current desired state again; it does not read a repair queue or module-level state.
+- `repair`: apply the current desired state again; it does not read a repair queue or module-level state. This repairs
+  managed target drift, not source repository health or Dropbox/Git checkout corruption.
 
 Treat `dry-run`, `plan-only`, `--managed`, and `--greedy` as qualifiers. `update --greedy` uses refresh mode with
 managed non-system package refreshes and broad package-manager upgrade actions; do not use or reintroduce a separate
@@ -223,7 +225,9 @@ tilde apply ...; echo "APPLY_EXIT: $?"
 
 They turn failure into apparent success and can mix diagnostics into JSON. Redirect only stdout when capturing
 machine-readable output, leave stderr separate, and preserve a non-zero status explicitly only when the workflow must
-parse a structured failure document.
+parse a structured failure document. Do not run JSON routes such as `"$TILDE" preflight ... --format json` with `2>&1`,
+and do not append `EXIT`, `TILDE_EXIT`, or `APPLY_EXIT` markers to reachability, status, plan, apply, preflight, or
+verification commands; the tool runner already observes the command exit status.
 
 ### Local Update Binding
 
@@ -313,6 +317,16 @@ For mutating remote prompt workflows such as `deploy`, `update`, `repair`, and r
   stop with `deferred`.
 - On Dropbox-backed remote hosts, do not replace synced repositories with controller bundles; report stale or unsynced
   target checkouts as `deferred` unless the user asks for a Git-backed checkout refresh.
+- On Dropbox-backed remote hosts, missing Git objects, `bad object` errors, or failed commit-diff traversal in public or
+  private desired-state repositories are repository-health deferrals. Do not run `git fetch`, `git fetch --refetch`,
+  `git fsck`, `git gc`, checkout replacement, or direct repository repair inside `deploy`, `update`, `align`, or the
+  public `/tilde repair` desired-state workflow. Report the exact repo, path, and error, mark only that host
+  `deferred`, and propose a separate operator repository-health recovery. The default recovery proposal is: wait briefly
+  for Dropbox to finish syncing; if the same object error remains, run an
+  explicit target-side `git fetch --refetch` for the affected synced repository; verify the missing object or path with
+  `git cat-file`; then restart the Tilde host workflow from preflight. If the repository is dirty, has divergent history,
+  or refetch does not restore the object, stop and propose a clean repository replacement or resync as a separate
+  confirmed recovery.
 - If preflight reports `cleanup-sudoers`, run `"$TILDE" sudo cleanup --host HOST` after the privilege-dependent workflow
   no longer needs the temporary handoff rule, then verify the next preflight no longer reports it.
 
@@ -710,12 +724,16 @@ For weaker or low-context agents:
 - Before any controller-side runtime call, resolve `TILDE` to the loaded skill directory's `bin/tilde`, falling back to
   `~/.agents/skills/tilde/bin/tilde`.
 - If bare `tilde` is not found on the controller, do not search for it; rerun through `"$TILDE"`.
+- Bare `tilde` is valid only inside a script body delivered by `"$TILDE" ssh HOST`. In local workflows, local heredocs,
+  controller subshells, and controller temp scripts, use the resolved `"$TILDE"` entrypoint for every runtime call.
 - Do not run agent-orchestrated prompt routes through `"$TILDE"`: `deploy`, `update`, and `repair`. `align` is a
   direct route only for current-host reconciliation; remote align is still a prompt workflow.
 - For remote `/tilde align HOST`, do not run `tilde align --format json` on the target. Read target bindings on the
   target, then run `tilde plan --mode align --format json` for each target repository and `tilde apply` the plan files.
 - Never redirect remote Tilde stderr to `/dev/null`. Non-zero remote exit status means the step failed, deferred, or
   conflicted, even when the tool output pane says `(no output)`.
+- Never run machine-readable Tilde routes with `2>&1`; `"$TILDE" preflight remote HOST --format json 2>&1` can corrupt
+  JSON in exactly the same way as a bad `plan` or `apply` capture.
 - Keep `tilde apply` stdout parseable as one JSON document; do not merge stderr into it and do not append exit sentinels.
 - For any large or host-group `tilde apply`, capture stdout to `$tmpdir/apply.json`, parse that file immediately, and
   print only a compact status summary. Do not stream huge apply JSON to the tool UI and then recover by rerunning apply.
@@ -781,6 +799,12 @@ For weaker or low-context agents:
 - If active home policy asks for Dropbox conflicted-copy cleanup after update, apply that cleanup only to the bounded
   literal path named by the policy, normally `$HOME/Dropbox`. Do not substitute or additionally scan resolved Dropbox
   paths such as `$HOME/Library/CloudStorage/Dropbox` unless the active policy explicitly names them for cleanup.
+- If a Dropbox-backed target reports missing Git objects, `bad object`, or commit traversal failures during status,
+  plan, or apply, stop that host as `deferred`. Do not repair the synced checkout with target-side `git fetch`,
+  `git fetch --refetch`, `git fsck`, or path-specific edits inside the Tilde workflow.
+- For that `deferred` host, give the operator a concrete next repair action instead of only reporting failure: name the
+  affected repo and path, recommend waiting for Dropbox sync first, then recommend an explicit separate refetch/verify
+  recovery when the repo is clean. After the separate recovery succeeds, resume only that host from preflight.
 - Use `mktemp -d` and `trap` for all local and remote plan JSON files. Generate and apply the plan files inside the same
   temporary directory lifetime when they are part of one workflow. Do not write fixed `/tmp/opencode/...` plan paths or
   leave generated plan files behind after apply.

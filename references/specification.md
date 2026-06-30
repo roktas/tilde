@@ -1023,7 +1023,8 @@ Examples:
 
 ## 16. Repair
 
-`repair` does not depend on module-level state.
+`repair` does not depend on module-level state. It repairs managed target drift, not source repository health or
+Dropbox/Git checkout corruption.
 
 In the stateless model:
 
@@ -1172,6 +1173,16 @@ The remote preflight classifies runtime and repository freshness before target s
   requires explicit operator approval.
 - Dropbox-backed desired-state repositories MUST NOT be replaced with controller bundles during an ordinary remote
   workflow.
+- On Dropbox-backed targets, missing Git objects, `bad object` errors, and failed commit-diff traversal in public or
+  private desired-state repositories are repository-health deferrals. The active `deploy`, `update`, `align`, or public
+  `/tilde repair` desired-state workflow MUST NOT run `git fetch`, `git fetch --refetch`, `git fsck`, `git gc`, checkout
+  replacement, or direct path edits to repair the synced repository. It MUST mark only that host `deferred`, report the
+  affected repo, path, and error, and propose a separate operator repository-health recovery.
+- The default separate recovery proposal is: wait briefly for Dropbox sync; if the same object error remains and the
+  repository is clean, run an explicitly approved target-side `git fetch --refetch` for the affected synced repository;
+  verify the missing commit, object, or path with `git cat-file`; then restart the Tilde host workflow from preflight.
+  If refetch fails, the repository is dirty, or history diverged, propose a clean repository replacement or resync as a
+  separate confirmed recovery.
 - If checkout delivery is blocked because the controller repository is dirty, unpushed, or lacks an upstream, agents
   MUST report that controller-source blocker. They MUST NOT commit, push, discard changes, or pass `--allow-unpushed`
   without explicit approval.
