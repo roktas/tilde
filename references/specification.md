@@ -1042,6 +1042,12 @@ Repair differs from update by skipping package refresh actions, broad package up
 
 One-off operator/agent workflows live outside the desired-state model. They are proposal-first and operator-approved.
 
+An explicit user request for autonomous execution of a Tilde operation counts as prior operator approval for bounded,
+non-destructive recovery steps that are already specified for that operation. The agent MUST still name the recovery
+step, run the checks that make it bounded, report what it changed, and return to the normal workflow boundary afterward.
+Autonomous execution is not blanket approval for destructive cleanup, dirty repository mutation, divergent history
+replacement, host-key trust changes, secrets handling, or broad resync.
+
 An operator workflow SHOULD include:
 
 - intent,
@@ -1174,15 +1180,17 @@ The remote preflight classifies runtime and repository freshness before target s
 - Dropbox-backed desired-state repositories MUST NOT be replaced with controller bundles during an ordinary remote
   workflow.
 - On Dropbox-backed targets, missing Git objects, `bad object` errors, and failed commit-diff traversal in public or
-  private desired-state repositories are repository-health deferrals. The active `deploy`, `update`, `align`, or public
-  `/tilde repair` desired-state workflow MUST NOT run `git fetch`, `git fetch --refetch`, `git fsck`, `git gc`, checkout
-  replacement, or direct path edits to repair the synced repository. It MUST mark only that host `deferred`, report the
-  affected repo, path, and error, and propose a separate operator repository-health recovery.
-- The default separate recovery proposal is: wait briefly for Dropbox sync; if the same object error remains and the
-  repository is clean, run an explicitly approved target-side `git fetch --refetch` for the affected synced repository;
-  verify the missing commit, object, or path with `git cat-file`; then restart the Tilde host workflow from preflight.
-  If refetch fails, the repository is dirty, or history diverged, propose a clean repository replacement or resync as a
-  separate confirmed recovery.
+  private desired-state repositories are repository-health problems, not ordinary desired-state drift. The active
+  `deploy`, `update`, `align`, or public `/tilde repair` desired-state workflow MUST NOT hide `git fetch`,
+  `git fetch --refetch`, `git fsck`, `git gc`, checkout replacement, or direct path edits as ordinary workflow steps.
+  It MUST report the affected repo, path, and error.
+- If autonomous repository-health recovery was not already approved, the workflow MUST mark only that host `deferred`
+  and propose a separate operator recovery.
+- If autonomous repository-health recovery was already approved, the workflow MAY run this bounded recovery as a named
+  separate step: wait briefly for Dropbox sync; if the same object error remains and the repository is clean, run
+  target-side `git fetch --refetch` for the affected synced repository; verify the missing commit, object, or path with
+  `git cat-file`; then restart the Tilde host workflow from preflight. If refetch fails, the repository is dirty, or
+  history diverged, propose a clean repository replacement or resync as a separate confirmed recovery.
 - If checkout delivery is blocked because the controller repository is dirty, unpushed, or lacks an upstream, agents
   MUST report that controller-source blocker. They MUST NOT commit, push, discard changes, or pass `--allow-unpushed`
   without explicit approval.

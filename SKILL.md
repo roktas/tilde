@@ -318,15 +318,16 @@ For mutating remote prompt workflows such as `deploy`, `update`, `repair`, and r
 - On Dropbox-backed remote hosts, do not replace synced repositories with controller bundles; report stale or unsynced
   target checkouts as `deferred` unless the user asks for a Git-backed checkout refresh.
 - On Dropbox-backed remote hosts, missing Git objects, `bad object` errors, or failed commit-diff traversal in public or
-  private desired-state repositories are repository-health deferrals. Do not run `git fetch`, `git fetch --refetch`,
-  `git fsck`, `git gc`, checkout replacement, or direct repository repair inside `deploy`, `update`, `align`, or the
-  public `/tilde repair` desired-state workflow. Report the exact repo, path, and error, mark only that host
-  `deferred`, and propose a separate operator repository-health recovery. The default recovery proposal is: wait briefly
-  for Dropbox to finish syncing; if the same object error remains, run an
-  explicit target-side `git fetch --refetch` for the affected synced repository; verify the missing object or path with
-  `git cat-file`; then restart the Tilde host workflow from preflight. If the repository is dirty, has divergent history,
-  or refetch does not restore the object, stop and propose a clean repository replacement or resync as a separate
-  confirmed recovery.
+  private desired-state repositories are repository-health problems, not ordinary desired-state drift. Do not hide
+  `git fetch`, `git fetch --refetch`, `git fsck`, `git gc`, checkout replacement, or direct repository repair inside
+  `deploy`, `update`, `align`, or the public `/tilde repair` desired-state workflow. Report the exact repo, path, and
+  error. If the user has not already approved autonomous recovery for this operation, mark only that host `deferred` and
+  propose a separate operator repository-health recovery. If autonomous recovery is already approved, run the bounded
+  recovery as a named separate step: wait briefly for Dropbox to finish syncing; if the same object error remains and
+  the repository is clean, run target-side `git fetch --refetch` for the affected synced repository; verify the missing
+  object or path with `git cat-file`; then restart the Tilde host workflow from preflight. If the repository is dirty,
+  has divergent history, or refetch does not restore the object, stop and propose a clean repository replacement or
+  resync as a separate confirmed recovery.
 - If preflight reports `cleanup-sudoers`, run `"$TILDE" sudo cleanup --host HOST` after the privilege-dependent workflow
   no longer needs the temporary handoff rule, then verify the next preflight no longer reports it.
 
@@ -800,11 +801,13 @@ For weaker or low-context agents:
   literal path named by the policy, normally `$HOME/Dropbox`. Do not substitute or additionally scan resolved Dropbox
   paths such as `$HOME/Library/CloudStorage/Dropbox` unless the active policy explicitly names them for cleanup.
 - If a Dropbox-backed target reports missing Git objects, `bad object`, or commit traversal failures during status,
-  plan, or apply, stop that host as `deferred`. Do not repair the synced checkout with target-side `git fetch`,
-  `git fetch --refetch`, `git fsck`, or path-specific edits inside the Tilde workflow.
-- For that `deferred` host, give the operator a concrete next repair action instead of only reporting failure: name the
-  affected repo and path, recommend waiting for Dropbox sync first, then recommend an explicit separate refetch/verify
-  recovery when the repo is clean. After the separate recovery succeeds, resume only that host from preflight.
+  plan, or apply, classify it as repository-health recovery, not ordinary desired-state repair.
+- Without prior autonomous or explicit approval, stop that host as `deferred` and give the operator a concrete next
+  repair action: name the affected repo and path, recommend waiting for Dropbox sync first, then recommend a separate
+  refetch/verify recovery when the repo is clean.
+- With prior autonomous or explicit approval, the agent may run that bounded refetch/verify recovery as a named separate
+  step, then resume only that host from preflight. Do not use this approval for dirty repos, divergent history,
+  checkout replacement, resync, or path-specific edits; those remain separate confirmed recovery actions.
 - Use `mktemp -d` and `trap` for all local and remote plan JSON files. Generate and apply the plan files inside the same
   temporary directory lifetime when they are part of one workflow. Do not write fixed `/tmp/opencode/...` plan paths or
   leave generated plan files behind after apply.
