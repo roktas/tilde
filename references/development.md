@@ -8,7 +8,7 @@ Load this reference when editing this repository, the Tilde skill, helper script
 - Fallback home entrypoint template: `assets/AGENTS.md`
 - Public data repo shared user-wide instructions module: `../home/agents/AGENTS.md` when present
 - Durable specification: `references/specification.md`
-- Dotagents spec alias: `.agents/specs/tilde.md`
+- Specification alias: `.agents/specs/tilde.md`
 - Tilde skill: `SKILL.md`
 - Runtime router helper: `bin/tilde`
 - Sudo PATH shim: `bin/sudo`
