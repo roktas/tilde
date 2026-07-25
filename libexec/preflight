@@ -182,7 +182,7 @@ remote_preflight() {
 	trap 'rm -f "'"$out"'" "'"$err"'"' RETURN
 
 	set +e
-	"$root/bin/tilde" ssh --no-root "$host" >"$out" 2>"$err" <<'SH'
+	"$root/bin/tilde" ssh --no-root -o BatchMode=yes -o ConnectTimeout=5 "$host" >"$out" 2>"$err" <<'SH'
 emit() {
 	printf '%s\t%s\n' "$1" "${2:-}"
 }

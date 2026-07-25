@@ -272,6 +272,8 @@ and returns one JSON document that classifies reachability, bootstrap baseline, 
 Dropbox runtime, target state, repository bindings, sudo state, controller runtime commit, and `next` steps.
 It does not report the apply lock or prove that no apply process is active. A successful preflight, current runtime, or
 clean repository is never evidence that a previously observed lock has cleared.
+Its SSH probe is noninteractive and bounded with a five-second connection timeout; callers do not need an additional
+timeout wrapper for ordinary unreachable-host classification.
 
 Use `bootstrap.needed` and `next` from this JSON for the initial bootstrap decision. Do not infer bootstrap need from
 free-form logs, guessed package state, or controller-side state. The bootstrap baseline is intentionally small:

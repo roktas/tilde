@@ -41,6 +41,9 @@ main() {
 	local dirty_repo
 	local extra_module
 	local extra_plan_json
+	local fan_in_head
+	local fan_in_plan_json
+	local fan_in_repo
 	local file_provider_plan_json
 	local file_provider_repo
 	local head
@@ -102,6 +105,8 @@ main() {
 	align_state_plan_json=$tmpdir/align-state-plan.json
 	dirty_plan_err=$tmpdir/dirty-plan.err
 	extra_plan_json=$tmpdir/extra-plan.json
+	fan_in_plan_json=$tmpdir/fan-in-plan.json
+	fan_in_repo=$tmpdir/fan-in-repo
 	file_provider_plan_json=$tmpdir/file-provider-plan.json
 	greedy_plan_json=$tmpdir/greedy-plan.json
 	invalid_plan_err=$tmpdir/invalid-package-plan.err
@@ -152,6 +157,61 @@ EOF
 
 	grep -q "Dirty worktree" "$dirty_plan_err"
 
+	mkdir -p "$fan_in_repo/agents/skills/current" "$fan_in_repo/agents/skills/legacy"
+	cat >"$fan_in_repo/AGENTS.md" <<'EOF'
+---
+tilde:
+  protocol: tilde/v1
+  role: public
+---
+
+# Fan-in
+EOF
+	cat >"$fan_in_repo/agents/README.md" <<'EOF'
+---
+all:
+  links:
+    skills/: ~/.agents/skills
+---
+
+# Agents
+EOF
+	printf '# Current\n' >"$fan_in_repo/agents/skills/current/SKILL.md"
+	printf '# Legacy\n' >"$fan_in_repo/agents/skills/legacy/SKILL.md"
+	git -C "$fan_in_repo" init -q
+	git -C "$fan_in_repo" config user.email smoke@example.invalid
+	git -C "$fan_in_repo" config user.name Smoke
+	git -C "$fan_in_repo" add .
+	git -C "$fan_in_repo" commit -q -m initial
+	fan_in_head=$(git -C "$fan_in_repo" rev-parse HEAD)
+	rm "$fan_in_repo/agents/skills/legacy/SKILL.md"
+	git -C "$fan_in_repo" add -u
+	git -C "$fan_in_repo" commit -q -m remove
+	mkdir -p "$fan_in_repo/agents/skills/legacy/agents" "$fan_in_repo/agents/skills/legacy/references"
+	mkdir -p "$tmpdir/fan-in-state/tilde"
+	cat >"$tmpdir/fan-in-state/tilde/state.yml" <<EOF
+protocol: tilde/v1
+public: $fan_in_repo
+applied:
+  level: normal
+  platform: linux
+  public: $fan_in_head
+EOF
+
+	XDG_STATE_HOME=$tmpdir/fan-in-state \
+		"$tilde" plan --repo "$fan_in_repo" --platform linux --host smoke >"$fan_in_plan_json"
+
+	FAN_IN_PLAN_JSON=$fan_in_plan_json ruby -rjson -e '
+		plan = JSON.parse(File.read(ENV.fetch("FAN_IN_PLAN_JSON")))
+		agents = plan.fetch("modules").find { |mod| mod.fetch("name") == "agents" }
+		abort "missing fan-in module" unless agents
+		links = agents.fetch("links_to_create")
+		abort "missing committed fan-in child" unless links.any? { |link| link.fetch("source") == "skills/current" }
+		abort "empty untracked fan-in child leaked" if links.any? { |link| link.fetch("source") == "skills/legacy" }
+		stale = plan.fetch("core").fetch("links_to_remove")
+		abort "missing stale fan-in cleanup" unless stale.any? { |link| link.fetch("target") == "~/.agents/skills/legacy" }
+	'
+
 	"$tilde" plan --repo "$repo" --allow-dirty --platform linux --host smoke >"$plan_json"
 
 	PLAN_JSON=$plan_json ruby -rjson -e '
@@ -188,7 +248,9 @@ EOF
 		abort "wrong linux module id" unless linux.fetch("id") == "public/linux"
 		abort "linux platform module should be first" unless plan.fetch("modules").first.fetch("name") == "linux"
 		abort "missing linux install section" unless linux.fetch("special_sections").key?("Install")
-		abort "linux platform module should install shared shell tools" unless linux.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "brew:zoxide" }
+		all = plan.fetch("modules").find { |mod| mod.fetch("name") == "all" }
+		abort "missing shared baseline module" unless all
+		abort "shared baseline should install shared shell tools" unless all.fetch("packages_to_install").any? { |pkg| pkg.fetch("value") == "brew:zoxide" }
 		misc = plan.fetch("modules").find { |mod| mod.fetch("name") == "misc" }
 		abort "missing misc module" unless misc
 		abort "misc module should run alphabetically" unless plan.fetch("modules").map { |mod| mod.fetch("name") }.index("misc") > plan.fetch("modules").map { |mod| mod.fetch("name") }.index("markdown")
@@ -200,8 +262,8 @@ EOF
 		agents = plan.fetch("modules").find { |mod| mod.fetch("name") == "agents" }
 		abort "missing agents module" unless agents
 		abort "agents should default to normal level" unless agents.fetch("level") == "normal"
-		abort "agents should be a virtual shared-asset module" unless agents.fetch("virtual") == true
-		abort "agents should not install agent-specific packages" unless agents.fetch("packages_to_install").empty?
+		abort "agents should install shared agent tools" unless agents.fetch("packages_to_install").map { |pkg| pkg.fetch("value") }.sort == %w[brew:playwright-cli brew:rtk]
+		abort "agents should configure shared agent tools" unless agents.fetch("special_sections").key?("Configure")
 		abort "agents should not own the home entrypoint" if agents.fetch("links_to_create").any? { |link| link.fetch("target") == "~/AGENTS.md" }
 		abort "agents should link shared instructions under ~/.agents" unless agents.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.agents/AGENTS.md" }
 		abort "agents should keep common skills under ~/.agents" unless agents.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.agents/skills/colon" }
@@ -245,7 +307,9 @@ EOF
 		linux = plan.fetch("modules").find { |mod| mod.fetch("name") == "linux" }
 		abort "missing linux module" unless linux
 		abort "state must not skip linux module" if linux.fetch("skipped")
-		abort "linux packages should still be planned" if linux.fetch("packages_to_install").empty?
+		all = plan.fetch("modules").find { |mod| mod.fetch("name") == "all" }
+		abort "missing shared baseline module" unless all
+		abort "state must not skip shared packages" if all.fetch("packages_to_install").empty?
 		git = plan.fetch("modules").find { |mod| mod.fetch("name") == "git" }
 		abort "missing git module" unless git
 		abort "state must not skip git module" if git.fetch("skipped")

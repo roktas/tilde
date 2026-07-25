@@ -192,6 +192,16 @@ cat >"$ssh_script" <<'EOF'
 #!/usr/bin/env bash
 set -e
 printf '%s\n' "$@" >"$TILDE_FAKE_SSH_ARGS"
+while [[ ${1:-} == -* ]]; do
+	case $1 in
+	-o)
+		shift 2
+		;;
+	*)
+		shift
+		;;
+	esac
+done
 shift
 interpreter=$1
 shift
@@ -202,6 +212,7 @@ EOF
 	chmod +x "$ssh_script"
 	PATH=$tmpdir:$PATH TILDE_FAKE_REMOTE_HOME=$remote_home TILDE_FAKE_SSH_ARGS=$ssh_args \
 		"$tilde" preflight remote spinoza --format json >"$out"
+	tr '\n' ' ' <"$ssh_args" | grep -Fq -- '-o BatchMode=yes -o ConnectTimeout=5 spinoza sh -s -- '
 	ruby -rjson -e '
 	  data = JSON.parse(File.read(ARGV[0]))
 	  abort "backend" unless data["backend"] == "dropbox"

@@ -591,11 +591,18 @@ class Plan
     [link_action(dir, source, target)]
   end
 
+  def fan_in_children(dir, source, source_dir)
+    return source_dir.children.sort_by { |child| child.basename.to_s } if @allow_dirty
+
+    relative_dir = dir.relative_path_from(@repo).join(source).cleanpath.to_s
+    tree_children_at(@head, relative_dir).map { |child| source_dir.join(Pathname.new(child).basename) }
+  end
+
   def fan_in_link_actions(dir, source, target)
     source_dir = Pathname.new(source_path(dir, source))
     raise "Link fan-in source is not a directory: #{source}" unless source_dir.directory?
 
-    source_dir.children.sort_by { |child| child.basename.to_s }.filter_map do |child|
+    fan_in_children(dir, source, source_dir).filter_map do |child|
       next if suppressed_fan_in_child?(source, target, child)
 
       child_source = File.join(source, child.basename.to_s)

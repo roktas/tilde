@@ -160,6 +160,11 @@ Tilde MUST NOT include untracked files in the desired manifest unless an explici
 
 Untracked files under recognized desired-state paths MAY be reported by status or doctor as warnings, but they MUST NOT block commit-anchor advancement by default.
 
+Ordinary repo-local link fan-in MUST enumerate direct children from the committed `HEAD` tree. It MUST ignore untracked
+children, including empty directory trees left behind after tracked content is removed. The development-only
+`--allow-dirty` planner MAY enumerate fan-in children from the working tree so uncommitted fixtures and previews remain
+observable.
+
 Default behavior:
 
 ```text
@@ -1139,6 +1144,9 @@ authorizes:
 7. After a successful mutating apply, read final target status and verify applied anchors against target repository HEADs.
 8. If preflight reported `cleanup-sudoers`, remove the temporary rule after privileged work and verify it is gone with a
    new preflight.
+
+The remote preflight route MUST make its own Tilde SSH probe noninteractive and bounded with `BatchMode=yes` and
+`ConnectTimeout=5`. It MUST NOT rely on a caller-side timeout to return from an unreachable host.
 
 For a host group, every parallel job MUST contain this complete preflight-to-verification sequence. A preflight result
 from an earlier group-wide pass MUST NOT authorize later mutations.
