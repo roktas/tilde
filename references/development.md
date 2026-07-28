@@ -81,8 +81,8 @@ bin/tilde plan --repo ../home --allow-dirty --platform linux --host smoke --form
 .agents/tests/router/smoke.sh
 .agents/tests/status/smoke.sh
 REPO_ROOT=../home .agents/tests/plan/smoke.sh
-RUBOCOP_SERVER=false RUBOCOP_CACHE_ROOT=.agents/state/rubocop-cache rubocop --cache false --config .agents/tests/rubocop.yml libexec/plan libexec/apply libexec/doctor libexec/status bin/line bin/span
-mapfile -t shell_files < <(rg --hidden -l '^#!.*(bash|sh)' -g '!**/.git/**' -g '!**/.agents/state/**')
+RUBOCOP_SERVER=false RUBOCOP_CACHE_ROOT=.local/var/rubocop rubocop --cache false --config .agents/tests/rubocop.yml libexec/plan libexec/apply libexec/doctor libexec/status bin/line bin/span
+mapfile -t shell_files < <(rg --hidden -l '^#!.*(bash|sh)' -g '!**/.git/**' -g '!**/.agents/state/**' -g '!**/.local/var/**')
 shellcheck "${shell_files[@]}"
 ```
 
