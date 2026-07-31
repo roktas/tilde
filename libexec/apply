@@ -36,7 +36,7 @@ class Apply
   SUPPORTED_ACTIONS = %w[entrypoint package section link copy directory manual reset seed unlink].freeze
   SUPPORTED_CONDITIONS = %w[graphical].freeze
   SUPPORTED_CONFLICTS = %w[none write-fallback-file].freeze
-  SUPPORTED_PACKAGE_TYPES = %w[brew cask deb egg flatpak gem github npm scoop skill].freeze
+  SUPPORTED_PACKAGE_TYPES = %w[brew cask deb flatpak gem github npm scoop skill uv].freeze
   ACTION_HANDLERS = {
     "copy" => :execute_copy,
     "directory" => :execute_directory,
@@ -68,7 +68,6 @@ class Apply
     %w[install brew] => -> (name) { ["brew", "install", name] },
     %w[install cask] => -> (name) { ["brew", "install", "--cask", name] },
     %w[install deb] => -> (name) { %w[sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install -y] + [name] },
-    %w[install egg] => -> (name) { ["uv", "tool", "install", name] },
     %w[install flatpak] => -> (name) { ["flatpak", "install", "-y", "--user", "flathub", name] },
     %w[install gem] => lambda { |name|
       ["gem", "install", "--user-install", "--bindir", File.join(Dir.home, ".local", "bin"), "--no-document", name]
@@ -87,7 +86,6 @@ class Apply
         %w[sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install --only-upgrade -y] + [name]
       end
     },
-    %w[refresh egg] => -> (name) { ["uv", "tool", "upgrade", name] },
     %w[refresh flatpak] => -> (name) { ["flatpak", "update", "-y", "--user", name] },
     %w[refresh gem] => lambda { |name|
       ["gem", "update", "--user-install", "--bindir", File.join(Dir.home, ".local", "bin"), "--no-document", name]
@@ -105,7 +103,6 @@ class Apply
         %w[sudo -n env DEBIAN_FRONTEND=noninteractive apt-get install --only-upgrade -y] + [name]
       end
     },
-    %w[upgrade egg] => -> (name) { ["uv", "tool", "upgrade", name] },
     %w[upgrade flatpak] => lambda { |name|
       name == "*" ? %w[flatpak update -y --user] : ["flatpak", "update", "-y", "--user", name]
     },
@@ -119,7 +116,6 @@ class Apply
     "brew" => %w[brew list --formula -1],
     "cask" => %w[brew list --cask -1],
     "deb" => ["dpkg-query", "-W", "-f", "${binary:Package}\\n"],
-    "egg" => %w[uv tool list],
     "flatpak" => %w[flatpak list --app --columns=application],
     "gem" => %w[gem list --no-versions],
     "npm" => %w[bun list -g],
@@ -260,6 +256,8 @@ class Apply
   def commands_for(action)
     package = action.fetch("package")
     name = package.fetch("name")
+    return [uv_command(action.fetch("operation"), name)] if package.fetch("type") == "uv"
+
     command = PACKAGE_COMMANDS[[action.fetch("operation"), package.fetch("type")]]
 
     commands = command&.call(name)
@@ -483,6 +481,8 @@ class Apply
     @home.join(".local", "bin", name).executable? || command_available?(name)
   end
 
+  def normalize_python_package(name) = name.downcase.gsub(/[-_.]+/, "-")
+
   def package_inventory(type)
     @package_inventory ||= {}
     return @package_inventory[type] if @package_inventory.key?(type)
@@ -493,7 +493,23 @@ class Apply
 
   def package_install_present?(action, package) = action.fetch("operation") == "install" && package_present?(package)
 
-  def package_inventory_command(type) = PACKAGE_INVENTORY_COMMANDS[type]
+  def package_inventory_command(type)
+    if type == "uv"
+      return [
+        "uv",
+        "pip",
+        "list",
+        "--python",
+        "python3",
+        "--target",
+        python_user_site.to_s,
+        "--format",
+        "json"
+      ]
+    end
+
+    PACKAGE_INVENTORY_COMMANDS[type]
+  end
 
   def package_inventory_output(type, command)
     log = Tempfile.new(["tilde-sudo", ".jsonl"])
@@ -519,7 +535,8 @@ class Apply
       skill_present?(name)
     else
       inventory = package_inventory(type)
-      inventory ? inventory.include?(name) : false
+      candidate = type == "uv" ? normalize_python_package(name) : name
+      inventory ? inventory.include?(candidate) : false
     end
   end
 
@@ -543,10 +560,6 @@ class Apply
     action_result(action, "unchanged", {"reason" => "package already present"})
   end
 
-  def parse_egg_inventory(output)
-    output.lines.filter_map { |line| line.match(/\A([^\s-]\S*)\s+v\d/) { |match| match[1] } }
-  end
-
   def parse_npm_inventory_line(line)
     text = line.strip
     return if text.empty? || text.include?("node_modules")
@@ -560,9 +573,9 @@ class Apply
   def parse_npm_inventory(output) = output.lines.filter_map { |line| parse_npm_inventory_line(line) }
 
   def parse_package_inventory(type, output)
-    return parse_egg_inventory(output) if type == "egg"
     return parse_npm_inventory(output) if type == "npm"
     return parse_scoop_inventory(output) if type == "scoop"
+    return parse_uv_inventory(output) if type == "uv"
 
     output.lines.map(&:strip).reject(&:empty?)
   end
@@ -571,9 +584,40 @@ class Apply
     output.lines.filter_map { |line| line.split.first }.grep_v(/\A(?:Name|Installed|-+)\z/i)
   end
 
+  def parse_uv_inventory(output)
+    JSON.parse(output).filter_map do |package|
+      name = package["name"] if package.is_a?(Hash)
+      normalize_python_package(name) if name
+    end
+
+  rescue JSON::ParserError
+    nil
+  end
+
+  def python_user_site
+    return @python_user_site if defined?(@python_user_site)
+
+    command = %w[python3 -m site --user-site]
+    stdout, stderr, status, = capture_command(command)
+    unless status&.success?
+      raise "cannot resolve python user site: #{stderr.strip.empty? ? command.join(" ") : stderr.strip}"
+    end
+
+    path = Pathname.new(stdout.strip).expand_path
+    raise "python user site escapes home: #{path}" unless path_inside?(path, @home)
+
+    @python_user_site = path
+  end
+
   def skill_present?(source)
     target = skill_target(source)
     target&.join(".git")&.directory?
+  end
+
+  def uv_command(operation, name)
+    command = ["uv", "pip", "install", "--python", "python3", "--target", python_user_site.to_s]
+    command << "--upgrade" if %w[refresh upgrade].include?(operation)
+    command << name
   end
 
   def execute_commands(action, commands, diagnostics = {})

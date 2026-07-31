@@ -179,7 +179,7 @@ print_command_help() {
 
 	if [[ $name = update ]]; then
 		printf '\nImplementation note: `%s` uses planning mode `refresh`; do not use `--mode update`.\n' "$name"
-		printf 'Managed note: `--managed` also refreshes managed non-system package declarations such as gem, npm, egg, skill, and declared flatpak packages.\n'
+		printf 'Managed note: `--managed` also refreshes managed non-system package declarations such as gem, npm, skill, uv, and declared flatpak packages.\n'
 		printf 'Greedy note: `--greedy` implies `--managed` and adds broad package-manager upgrade actions after update actions.\n'
 		printf 'State recovery note: if target status shows missing `state.yml` or no `applied` anchors, use `plan --mode repair` for that run so successful apply can write recovered bindings and anchors; missing state is not proof the host was never deployed.\n'
 	fi

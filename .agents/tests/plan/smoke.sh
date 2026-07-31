@@ -798,6 +798,10 @@ EOF
 		javascript = plan.fetch("modules").find { |mod| mod.fetch("name") == "javascript" }
 		abort "missing javascript module" unless javascript
 		abort "missing managed npm refresh" unless javascript.fetch("packages_to_refresh").any? { |pkg| pkg.fetch("value") == "npm:@biomejs/biome" }
+		python = plan.fetch("modules").find { |mod| mod.fetch("name") == "python" }
+		abort "missing python module" unless python
+		uv_packages = python.fetch("packages_to_refresh").filter_map { |pkg| pkg.fetch("value") if pkg.fetch("type") == "uv" }
+		abort "missing managed uv refreshes" unless uv_packages == %w[uv:pyyaml]
 		neovim = plan.fetch("modules").find { |mod| mod.fetch("name") == "neovim" }
 		abort "missing neovim module" unless neovim
 		git = plan.fetch("modules").find { |mod| mod.fetch("name") == "git" }

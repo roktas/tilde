@@ -341,7 +341,7 @@ this as state recovery unless bounded evidence proves otherwise.
 Refresh mode reconciles current desired-state declarations. A repository change that adds a package, link, copy, seed,
 reset, or other install-time declaration is reconciled by ordinary update. The default refresh updates system package
 managers such as Homebrew and apt. `--managed` also refreshes managed non-system package declarations such as gem, npm,
-egg, skill, and declared flatpak packages. `--greedy` is valid only with refresh mode, implies `--managed`, and appends
+skill, uv, and declared flatpak packages. `--greedy` is valid only with refresh mode, implies `--managed`, and appends
 broad package-manager upgrade actions after normal update actions. Repair remains available when the intent is
 desired-state convergence without package refresh actions, broad package upgrade actions, or `Update` sections.
 
@@ -473,7 +473,7 @@ Supported desired-state keys are:
 - `packages`: package declarations.
 
 Package declarations are strings in either prefixed or unprefixed form. Prefixed values use `type:name`, such as
-`deb:curl`, `cask:google-chrome`, `flatpak:org.gimp.GIMP`, or `skill:github.com/owner/repo`. Unprefixed values resolve
+`deb:curl`, `cask:google-chrome`, `flatpak:org.gimp.GIMP`, `uv:pyyaml`, or `skill:github.com/owner/repo`. Unprefixed values resolve
 to the platform default package manager: `brew` on Linux and macOS, and `scoop` on Windows. Debian packages MUST use the
 explicit `deb:` prefix; agents MUST NOT treat an unprefixed Linux package as a Debian package merely because the target
 uses apt.
@@ -672,13 +672,17 @@ formula state. Use `deb:name` only for packages that must be installed through a
 
 Package operations MUST be idempotent or safely repeatable.
 
+The `uv` package type installs importable Python distributions into the target `python3` user-site directory reported
+by `python3 -m site --user-site`. Presence checks and managed refreshes inspect that same directory. Python
+applications with console entrypoints must use a package type that exposes their commands on `PATH`.
+
 Examples:
 
 ```text
 brew install foo
 apt-get install foo
 gem install foo
-uv tool install foo
+uv pip install --python python3 --target USER_SITE foo
 ```
 
 A package operation that requires privilege or external input returns `deferred`.
@@ -716,7 +720,7 @@ gem          : gem list --no-versions
 npm global   : npm list -g --depth=0 --json
 flatpak      : flatpak list --app --columns=application
 scoop        : scoop list
-uv tools     : uv tool list
+uv packages  : uv pip list --python python3 --target USER_SITE --format json
 ```
 
 Presence checks MUST NOT require privilege. For Debian packages, use `dpkg-query`; do not use `sudo` merely to check whether a package is installed.

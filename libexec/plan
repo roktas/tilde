@@ -31,8 +31,8 @@ class Plan
   }.freeze
   MODES = %w[align apply refresh repair].freeze
 
-  MANAGED_REFRESH_PACKAGE_TYPES = %w[egg flatpak gem github npm skill].freeze
-  PACKAGE_TYPES = %w[brew cask deb npm gem egg flatpak scoop github skill].freeze
+  MANAGED_REFRESH_PACKAGE_TYPES = %w[flatpak gem github npm skill uv].freeze
+  PACKAGE_TYPES = %w[brew cask deb flatpak gem github npm scoop skill uv].freeze
   PACKAGE_CONDITIONS = {
     "flatpak" => "graphical"
   }.freeze

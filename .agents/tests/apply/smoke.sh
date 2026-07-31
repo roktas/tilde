@@ -84,6 +84,18 @@ case "$*" in
 	;;
 esac
 EOF
+	cat >"$bindir/python3" <<'EOF'
+#!/usr/bin/env sh
+case "$*" in
+"-m site --user-site")
+	printf '%s\n' "$HOME/.local/lib/python/site-packages"
+	;;
+*)
+	printf 'unexpected python3 command: %s\n' "$*" >&2
+	exit 9
+	;;
+esac
+EOF
 	cat >"$bindir/scoop" <<'EOF'
 #!/usr/bin/env sh
 case "$*" in
@@ -128,8 +140,12 @@ EOF
 	cat >"$bindir/uv" <<'EOF'
 #!/usr/bin/env sh
 case "$*" in
-"tool list")
-	printf 'ruff v1.0.0\n- ruff\n'
+"pip list --python python3 --target $HOME/.local/lib/python/site-packages --format json")
+	printf '[{"name":"requests","version":"1.0.0"}]\n'
+	;;
+"pip install --python python3 --target $HOME/.local/lib/python/site-packages pyyaml")
+	;;
+"pip install --python python3 --target $HOME/.local/lib/python/site-packages --upgrade pyyaml")
 	;;
 *)
 	printf 'unexpected uv command: %s\n' "$*" >&2
@@ -162,7 +178,6 @@ all:
     - brew:git
     - cask:visual-studio-code
     - deb:curl
-    - egg:ruff
     - flatpak:org.example.App
     - gem:rubocop
     - gem:standard
@@ -170,6 +185,8 @@ all:
     - npm:@scope/pkg
     - scoop:less
     - skill:github.com/example/skillfoo
+    - uv:pyyaml
+    - uv:requests
 ---
 
 # Packages
@@ -468,6 +485,8 @@ main() {
 	local state
 	local tilde
 	local tmpdir
+	local uv_apply_json
+	local uv_plan_json
 
 	script_dir=$(cd -- "${BASH_SOURCE[0]%/*}" >/dev/null && pwd)
 	skill_root=$(cd -- "$script_dir/../../.." >/dev/null && pwd)
@@ -520,6 +539,8 @@ main() {
 	split_state=$tmpdir/split-state
 	stale_apply_json=$tmpdir/stale-apply.json
 	stale_plan_json=$tmpdir/stale-plan.json
+	uv_apply_json=$tmpdir/uv-refresh-apply.json
+	uv_plan_json=$tmpdir/uv-refresh-plan.json
 
 	mkdir -p "$fake_bin" "$home/Dropbox" "$refresh_state/tilde" "$state/tilde"
 	write_fake_packages "$fake_bin"
@@ -728,17 +749,36 @@ EOF
 	PACKAGE_APPLY_JSON=$package_apply_json HOME_UNDER_TEST=$home ruby -rjson -e '
 		apply = JSON.parse(File.read(ENV.fetch("PACKAGE_APPLY_JSON"), encoding: "UTF-8"))
 		packages = apply.fetch("results").select { |result| result.fetch("kind") == "package" }
-		abort "expected all package types" unless packages.length == 11
+		abort "expected all package types" unless packages.length == 12
+		pyyaml = packages.find { |result| result.fetch("action_id") == "public/packages:package:install:uv:pyyaml" }
+		abort "missing pyyaml result" unless pyyaml
+		abort "pyyaml should install" unless pyyaml.fetch("status") == "ok"
+		expected = ["uv", "pip", "install", "--python", "python3", "--target", File.join(ENV.fetch("HOME_UNDER_TEST"), ".local", "lib", "python", "site-packages"), "pyyaml"]
+		command = pyyaml.dig("diagnostics", "commands", 0, "command")
+		abort "pyyaml target mismatch: #{command.inspect}" unless command == expected
 		standard = packages.find { |result| result.fetch("action_id") == "public/packages:package:install:gem:standard" }
 		abort "missing standard gem result" unless standard
 		abort "standard gem should install" unless standard.fetch("status") == "ok"
 		expected = ["gem", "install", "--user-install", "--bindir", File.join(ENV.fetch("HOME_UNDER_TEST"), ".local", "bin"), "--no-document", "standard"]
 		command = standard.dig("diagnostics", "commands", 0, "command")
 		abort "standard gem bindir mismatch: #{command.inspect}" unless command == expected
-		bad = packages.reject { |result| result.equal?(standard) || result.fetch("status") == "unchanged" }
+		changed = [pyyaml, standard]
+		bad = packages.reject { |result| changed.include?(result) || result.fetch("status") == "unchanged" }
 		abort "installed packages should be unchanged: #{bad.inspect}" unless bad.empty?
-		ran = packages.reject { |result| result.equal?(standard) }.select { |result| result.fetch("diagnostics").key?("commands") }
+		ran = packages.reject { |result| changed.include?(result) }.select { |result| result.fetch("diagnostics").key?("commands") }
 		abort "package install commands should not run when inventory says present: #{ran.inspect}" unless ran.empty?
+	'
+
+	write_refresh_plan "$uv_plan_json" "$repo" "$state" "$home" "$host" uv pyyaml
+	HOME=$home XDG_STATE_HOME=$state PATH=$fake_bin:$PATH "$tilde" apply --plan "$uv_plan_json" >"$uv_apply_json"
+
+	UV_APPLY_JSON=$uv_apply_json HOME_UNDER_TEST=$home ruby -rjson -e '
+		apply = JSON.parse(File.read(ENV.fetch("UV_APPLY_JSON"), encoding: "UTF-8"))
+		result = apply.fetch("results").fetch(0)
+		abort "uv refresh should succeed" unless result.fetch("status") == "ok"
+		expected = ["uv", "pip", "install", "--python", "python3", "--target", File.join(ENV.fetch("HOME_UNDER_TEST"), ".local", "lib", "python", "site-packages"), "--upgrade", "pyyaml"]
+		command = result.dig("diagnostics", "commands", 0, "command")
+		abort "uv refresh command mismatch: #{command.inspect}" unless command == expected
 	'
 
 	mkdir -p "$home/.agents/skills/badskill/.git"
