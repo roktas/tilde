@@ -216,6 +216,21 @@ apply returns `deferred`, `conflict`, or `notok`, anchors stay unchanged and the
 Run critical Tilde commands directly and let the tool runner observe their real exit status. This applies to `status`,
 `doctor`, `preflight`, `checkout`, `plan`, `apply`, `align`, and final verification.
 
+#### Yielded execution sessions
+
+A runner response with a live `session_id`, job handle, or equivalent continuation marker is an intermediate state, not
+a command result. Preserve that handle and resume the same execution through the runner's matching continuation method
+until it returns a terminal exit status. Blank output from a yielded call does not mean that the command finished.
+
+When one orchestration tool invokes another command runner, keep their handles distinct. Do not resume an outer cell
+with an inner command's session handle, or reduce a structured command result to `output` while discarding its
+`session_id`. Poll the inner command inside the wrapper or propagate its full continuation handle before the wrapper
+finishes.
+
+Keep the plan directory and captured `apply.json` alive through this continuation. While a resumable handle exists, do
+not replace it with lock inspection, final status, or a second apply. Use the lost-observation recovery below only when
+the original execution can no longer be resumed.
+
 Never use diagnostic wrappers such as:
 
 ```sh
@@ -227,7 +242,8 @@ They turn failure into apparent success and can mix diagnostics into JSON. Redir
 machine-readable output, leave stderr separate, and preserve a non-zero status explicitly only when the workflow must
 parse a structured failure document. Do not run JSON routes such as `"$TILDE" preflight ... --format json` with `2>&1`,
 and do not append `EXIT`, `TILDE_EXIT`, or `APPLY_EXIT` markers to reachability, status, plan, apply, preflight, or
-verification commands; the tool runner already observes the command exit status.
+verification commands; the tool runner observes the command exit status after its execution session reaches a terminal
+result.
 
 ### Local Update Binding
 
@@ -560,10 +576,11 @@ compact summary. Do not run `tilde apply` a second time merely to reconstruct th
 JSON was not captured, report that validation gap instead of pretending a later successful status read or rerun describes
 the first apply.
 
-Each host gets one apply attempt at a time. If the controller tool times out or loses the connection, assume the
-target-side apply may still be running. Before any retry, inspect the target lock and active Tilde/apply processes with
-bounded read-only checks. If an apply process or held lock remains, do not retry; report that host as active/deferred and
-leave it running. Never use an agent tool-output cache or a second apply as a substitute for the original captured
+Each host gets one apply attempt at a time. First resume any live execution handle returned by the controller tool. If
+that handle is unavailable, the command reaches a terminal timeout, or the connection is lost, assume the target-side
+apply may still be running. Before any retry, inspect the target lock and active Tilde/apply processes with bounded
+read-only checks. If an apply process or held lock remains, do not retry; report that host as active/deferred and leave
+it running. Never use an agent tool-output cache or a second apply as a substitute for the original captured
 `apply.json`.
 
 If `tilde apply` exits non-zero, parse its captured stdout only when that file contains a structured apply result. A

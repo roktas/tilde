@@ -357,17 +357,33 @@ verification, MUST expose their real exit status to the agent runner. Agents MUS
 non-zero result must be parsed, agents MAY save the command status in a variable while capturing stdout alone, then
 parse that file before returning the original failure.
 
+### 7.1 Execution Session Continuity
+
+A tool-runner response that contains a live `session_id`, job handle, or equivalent continuation marker is not a command
+result. Agents MUST preserve and resume the exact execution handle through the matching continuation operation until the
+runner returns a terminal exit status. Empty output from a yielded execution is not evidence that the command exited.
+
+An orchestration layer and its nested command runner may expose different handles. Agents MUST keep those layers
+distinct and MUST NOT discard a nested command's continuation handle by returning only its `output` field. A wrapper
+MUST either poll the nested command to completion itself or propagate the complete handle needed to continue it.
+
+The per-run temporary directory, plan files, and captured `apply.json` MUST remain alive until the continued command
+finishes and the same apply result is parsed. While the original handle remains resumable, agents MUST NOT substitute a
+lock probe, final status read, or second apply for that continuation. Lost-observation recovery applies only when the
+original execution can no longer be resumed.
+
 For local update workflows, agents MUST read `tilde status --format shell`, source that output from a temporary file,
 and use `tilde_public_repo`, `tilde_private_repo`, `tilde_update_mode`, `tilde_host`, `tilde_platform`, and
 `tilde_level` for planning. Agents MUST NOT manually retype values copied from human-readable status output. Plan JSON
 captures MUST contain stdout only; stderr remains separate.
 
-Each target host MUST have at most one apply attempt active at a time. If the controller command times out, loses its
-connection, or otherwise stops observing an apply before receiving and parsing its result, agents MUST assume the
-target-side apply may still be running. They MUST perform bounded read-only target checks for the lock holder and active
-Tilde/apply processes before any retry. An active process or held lock makes the host `deferred`; agents MUST NOT start a
-second apply, scrape an agent tool-output cache, or use a later apply as a substitute for the missing result of the first
-attempt.
+Each target host MUST have at most one apply attempt active at a time. A yielded controller command with a resumable
+execution handle remains observed and MUST be continued as specified in Section 7.1. If the handle is unavailable, the
+command reaches a terminal timeout, the connection is lost, or the runner otherwise stops observing an apply before
+receiving and parsing its result, agents MUST assume the target-side apply may still be running. They MUST perform
+bounded read-only target checks for the lock holder and active Tilde/apply processes before any retry. An active process
+or held lock makes the host `deferred`; agents MUST NOT start a second apply, scrape an agent tool-output cache, or use a
+later apply as a substitute for the missing result of the first attempt.
 
 Example:
 
