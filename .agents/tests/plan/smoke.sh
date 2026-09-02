@@ -268,10 +268,14 @@ EOF
 		agents = plan.fetch("modules").find { |mod| mod.fetch("name") == "agents" }
 		abort "missing agents module" unless agents
 		abort "agents should default to normal level" unless agents.fetch("level") == "normal"
-		abort "agents should install shared agent tools" unless agents.fetch("packages_to_install").map { |pkg| pkg.fetch("value") }.sort == %w[brew:playwright-cli brew:rtk skill:github.com/AminBlg/SimpleEnglish]
+		abort "agents should install shared agent tools" unless agents.fetch("packages_to_install").map { |pkg| pkg.fetch("value") }.sort == %w[brew:playwright-cli brew:rtk]
+		configure = agents.fetch("special_sections").fetch("Configure").fetch("body")
+		abort "agents should install SimpleEnglish with npx" unless configure.include?("npx -y skills add AminBlg/SimpleEnglish")
+		abort "agents should skip SimpleEnglish without npx" unless configure.include?("if ! command -v npx")
 		abort "agents should configure shared agent tools" unless agents.fetch("special_sections").key?("Configure")
 		abort "agents should not own the home entrypoint" if agents.fetch("links_to_create").any? { |link| link.fetch("target") == "~/AGENTS.md" }
 		abort "agents should link shared instructions under ~/.agents" unless agents.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.agents/AGENTS.md" }
+		abort "agents should not link the SimpleEnglish repository" if agents.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.agents/skills/simple-english" }
 		bash_link = agents.fetch("links_to_create").find { |link| link.fetch("target") == "~/.agents/skills/bash" }
 		abort "agents should expose the Ajans bash skill" unless bash_link
 		abort "agents bash link should use the sibling checkout" unless bash_link.fetch("source") == "../../ajans/skills/bash"
