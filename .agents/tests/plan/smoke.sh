@@ -280,7 +280,9 @@ EOF
 		abort "agents should expose the Ajans bash skill" unless bash_link
 		abort "agents bash link should use the sibling checkout" unless bash_link.fetch("source") == "../../ajans/skills/bash"
 		abort "agents bash link should be external to the home data repo" unless bash_link.fetch("source_external")
-		abort "agents should expose the Ajans writing skill" unless agents.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.agents/skills/writing" }
+		abort "agents should expose the Ajans English skill" unless agents.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.agents/skills/english" }
+		abort "agents should expose the Ajans Turkish skill" unless agents.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.agents/skills/turkish" }
+		abort "agents should not expose the superseded writing skill" if agents.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.agents/skills/writing" }
 		abort "agents should not expose the tilde control plane" if agents.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.agents/skills/tilde" }
 		abort "agents should not expose system skills globally" if agents.fetch("links_to_create").any? { |link| link.fetch("target").include?("/.system") }
 		abort "agents module should not contain skill fixtures" if File.exist?("agents/skills")
