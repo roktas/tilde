@@ -64,6 +64,7 @@ main() {
 	local private_repo
 	local refresh_plan_json
 	local refresh_module
+	local repair_home
 	local repair_repo=
 	local repair_plan_json
 	local repo
@@ -228,7 +229,12 @@ EOF
 		abort "actions should use role-qualified module ids" unless actions.all? { |action| action.fetch("module_id") == "core" || action.fetch("module_id").include?("/") }
 		abort "home-entrypoint action kind leaked" if actions.any? { |action| action.fetch("kind") == "home-entrypoint" }
 		abort "missing linux install section action" unless actions.any? { |action| action.fetch("kind") == "section" && action.fetch("module_id") == "public/linux" && action.fetch("name") == "Install" && action.fetch("bash_only") == true }
-		abort "missing agents link action" unless actions.any? { |action| action.fetch("kind") == "link" && action.fetch("module_id") == "public/agents" && action.fetch("target") == "~/.agents/AGENTS.md" && action.fetch("link_value").end_with?("/agents/AGENTS.md") }
+		agents_action = actions.find { |action| action.fetch("kind") == "link" && action.fetch("module_id") == "public/agents" && action.fetch("target") == "~/.agents/AGENTS.md" }
+		abort "missing agents link action" unless agents_action
+		expected_agents_source = File.expand_path("../ajans/agents/AGENTS.md", plan.fetch("repo"))
+		abort "agents link should use the sibling Ajans checkout" unless agents_action.fetch("source_path") == expected_agents_source
+		abort "agents link should be external to the home data repo" unless agents_action.fetch("source_external")
+		abort "agents link should be direct" unless agents_action.fetch("link_value") == expected_agents_source
 		abort "wrong mode" unless plan.fetch("mode") == "apply"
 		abort "wrong level" unless plan.fetch("level") == "normal"
 		abort "wrong platform" unless plan.fetch("platform") == "linux"
@@ -262,15 +268,18 @@ EOF
 		agents = plan.fetch("modules").find { |mod| mod.fetch("name") == "agents" }
 		abort "missing agents module" unless agents
 		abort "agents should default to normal level" unless agents.fetch("level") == "normal"
-		abort "agents should install shared agent tools" unless agents.fetch("packages_to_install").map { |pkg| pkg.fetch("value") }.sort == %w[brew:playwright-cli brew:rtk]
+		abort "agents should install shared agent tools" unless agents.fetch("packages_to_install").map { |pkg| pkg.fetch("value") }.sort == %w[brew:playwright-cli brew:rtk skill:github.com/AminBlg/SimpleEnglish]
 		abort "agents should configure shared agent tools" unless agents.fetch("special_sections").key?("Configure")
 		abort "agents should not own the home entrypoint" if agents.fetch("links_to_create").any? { |link| link.fetch("target") == "~/AGENTS.md" }
 		abort "agents should link shared instructions under ~/.agents" unless agents.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.agents/AGENTS.md" }
-		abort "agents should keep common skills under ~/.agents" unless agents.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.agents/skills/colon" }
-		abort "agents should expose common commits skill under ~/.agents" unless agents.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.agents/skills/commits" }
+		bash_link = agents.fetch("links_to_create").find { |link| link.fetch("target") == "~/.agents/skills/bash" }
+		abort "agents should expose the Ajans bash skill" unless bash_link
+		abort "agents bash link should use the sibling checkout" unless bash_link.fetch("source") == "../../ajans/skills/bash"
+		abort "agents bash link should be external to the home data repo" unless bash_link.fetch("source_external")
+		abort "agents should expose the Ajans writing skill" unless agents.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.agents/skills/writing" }
 		abort "agents should not expose the tilde control plane" if agents.fetch("links_to_create").any? { |link| link.fetch("target") == "~/.agents/skills/tilde" }
 		abort "agents should not expose system skills globally" if agents.fetch("links_to_create").any? { |link| link.fetch("target").include?("/.system") }
-		abort "agents colon skill should be the common source" if File.symlink?("agents/skills/colon")
+		abort "agents module should not contain skill fixtures" if File.exist?("agents/skills")
 		abort "agents TILDE alias should be removed" if File.exist?("agents/TILDE.md")
 		abort "agents- module should be removed" if plan.fetch("modules").any? { |mod| mod.fetch("name") == "agents-" }
 		abort "codex should be a private module" if plan.fetch("modules").any? { |mod| mod.fetch("name") == "codex" }
@@ -367,7 +376,7 @@ EOF
 			hook_action = linux_extra.fetch("actions").find { |action| action.fetch("kind") == "link" && action.fetch("target") == "~/Dropbox/_/var/codex/hooks/shellcheck" }
 			abort "missing codex hook action" unless hook_action
 			abort "codex hook should use a relative Dropbox link value" unless hook_action.fetch("link_value") == "../../../../home-/codex/hooks/shellcheck"
-			abort "codex should expose shared agent instructions" unless codex.fetch("links_to_create").any? { |link| link.fetch("source") == "~/Dropbox/home/agents/AGENTS.md" && link.fetch("target") == "~/Dropbox/_/var/codex/AGENTS.md" && link.fetch("source_external") == true }
+			abort "codex should expose shared agent instructions" unless codex.fetch("links_to_create").any? { |link| link.fetch("source") == "~/Dropbox/ajans/agents/AGENTS.md" && link.fetch("target") == "~/Dropbox/_/var/codex/AGENTS.md" && link.fetch("source_external") == true }
 			abort "codex should keep auth host-local" if codex.fetch("links_to_create").any? { |link| link.fetch("source") == "~/Dropbox/_/var/codex/auth.json" || link.fetch("target") == "~/.codex/auth.json" }
 			copilot = linux.fetch("modules").find { |mod| mod.fetch("name") == "copilot" }
 			abort "missing linux copilot module" unless copilot
@@ -375,7 +384,7 @@ EOF
 			abort "linux copilot wrapper should be removed" if copilot.fetch("links_to_create").any? { |link| link.fetch("source") == "bin/copilot" || link.fetch("target") == "~/Dropbox/_/bin/copilot" }
 			abort "copilot should export COPILOT_HOME through environment.d" unless copilot.fetch("links_to_create").any? { |link| link.fetch("source") == "environment.d/copilot.conf" && link.fetch("target") == "~/.config/environment.d/copilot.conf" }
 			abort "copilot should create shared state directory" unless copilot.fetch("directories_to_create").any? { |dir| dir.fetch("target") == "~/Dropbox/_/var/copilot" }
-			abort "copilot should expose shared instructions" unless copilot.fetch("links_to_create").any? { |link| link.fetch("source") == "~/Dropbox/home/agents/AGENTS.md" && link.fetch("target") == "~/Dropbox/_/var/copilot/copilot-instructions.md" && link.fetch("source_external") == true }
+			abort "copilot should expose shared instructions" unless copilot.fetch("links_to_create").any? { |link| link.fetch("source") == "~/Dropbox/ajans/agents/AGENTS.md" && link.fetch("target") == "~/Dropbox/_/var/copilot/copilot-instructions.md" && link.fetch("source_external") == true }
 			environment = linux.fetch("modules").find { |mod| mod.fetch("name") == "environment" }
 			abort "missing linux environment module" unless environment
 			abort "environment should link linux session.conf" unless environment.fetch("links_to_create").any? { |link| link.fetch("source") == "environment.d/session.linux.conf" && link.fetch("target") == "~/.config/environment.d/session.conf" }
@@ -389,7 +398,7 @@ EOF
 			abort "opencode should create shared data directory" unless opencode.fetch("directories_to_create").any? { |dir| dir.fetch("target") == "~/Dropbox/_/var/opencode/share" }
 			abort "opencode should link XDG config to shared state" unless opencode.fetch("links_to_create").any? { |link| link.fetch("source") == "~/Dropbox/_/var/opencode/config" && link.fetch("target") == "~/.config/opencode" && link.fetch("source_external") == true }
 			abort "opencode should link XDG data to shared state" unless opencode.fetch("links_to_create").any? { |link| link.fetch("source") == "~/Dropbox/_/var/opencode/share" && link.fetch("target") == "~/.local/share/opencode" && link.fetch("source_external") == true }
-			abort "opencode should use shared agent instructions" unless opencode.fetch("links_to_create").any? { |link| link.fetch("source") == "~/Dropbox/home/agents/AGENTS.md" && link.fetch("target") == "~/Dropbox/_/var/opencode/config/AGENTS.md" && link.fetch("source_external") == true }
+			abort "opencode should use shared agent instructions" unless opencode.fetch("links_to_create").any? { |link| link.fetch("source") == "~/Dropbox/ajans/agents/AGENTS.md" && link.fetch("target") == "~/Dropbox/_/var/opencode/config/AGENTS.md" && link.fetch("source_external") == true }
 			abort "opencode should not link skills directly" if opencode.fetch("links_to_create").any? { |link| link.fetch("target").include?("/skills/") }
 
 			macos = JSON.parse(File.read(ENV.fetch("PRIVATE_MACOS_PLAN_JSON")))
@@ -801,7 +810,7 @@ EOF
 		python = plan.fetch("modules").find { |mod| mod.fetch("name") == "python" }
 		abort "missing python module" unless python
 		uv_packages = python.fetch("packages_to_refresh").filter_map { |pkg| pkg.fetch("value") if pkg.fetch("type") == "uv" }
-		abort "missing managed uv refreshes" unless uv_packages == %w[uv:pyyaml]
+		abort "missing managed uv refreshes" unless uv_packages == %w[uv:pyyaml uv:rich]
 		neovim = plan.fetch("modules").find { |mod| mod.fetch("name") == "neovim" }
 		abort "missing neovim module" unless neovim
 		git = plan.fetch("modules").find { |mod| mod.fetch("name") == "git" }
@@ -884,9 +893,12 @@ EOF
 		end
 	'
 
-	repair_repo=$(mktemp -d)
-	cleanup_repair_repo=$repair_repo
-	cp -a "$repo/." "$repair_repo"
+	repair_home=$tmpdir/repair-home
+	repair_repo=$repair_home/Dropbox/home
+	cleanup_repair_repo=$repair_home
+	mkdir -p "$repair_home/Dropbox"
+	cp -a "$repo" "$repair_repo"
+	cp -a "$repo/../ajans" "$repair_home/Dropbox/ajans"
 	head=$(git -C "$repair_repo" rev-parse HEAD)
 	cat >"$XDG_STATE_HOME/tilde/state.yml" <<EOF
 protocol: tilde/v1
@@ -897,7 +909,7 @@ applied:
   public: $head
 EOF
 
-	"$tilde" plan --repo "$repair_repo" --allow-dirty --mode repair --platform linux --host smoke-repair >"$repair_plan_json"
+	HOME=$repair_home "$tilde" plan --repo "$repair_repo" --allow-dirty --mode repair --platform linux --host smoke-repair >"$repair_plan_json"
 
 	REPAIR_PLAN_JSON=$repair_plan_json ruby -rjson -e '
 		plan = JSON.parse(File.read(ENV.fetch("REPAIR_PLAN_JSON")))

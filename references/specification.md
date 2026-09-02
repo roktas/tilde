@@ -495,10 +495,13 @@ before normal actions across all plans in the same apply run, while preserving r
 Use `phase: early` only for small prerequisite-style modules that unblock later desired-state actions, such as a private
 Linux sudoers baseline. Early modules still follow the normal section order and must remain idempotent.
 
-Link sources are repository-relative by default. A link source that starts with `~/` or `/` is a target-home source and
-MUST stay inside the target home. Use target-home sources for managed links between home-managed live paths, such as
-Dropbox-backed shared state directories and XDG entrypoints. When both source and target are inside `~/Dropbox`, Tilde
-MUST write the symlink value relative to the target directory rather than using an absolute host path.
+Link sources are module-relative by default. A relative link source MAY refer to a sibling checkout outside the data
+repository. The resolved path MUST stay inside the target home. A relative directory source that ends with `/` creates
+fan-in links for all direct children of the sibling directory. The sibling checkout MUST be present before planning.
+
+A link source that starts with `~/` or `/` is a target-home source and MUST stay inside the target home. Use target-home
+sources for managed links between live home paths. When both source and target are inside `~/Dropbox`, Tilde MUST write
+the symlink value relative to the target directory.
 
 Recommended module README section order:
 
@@ -780,6 +783,10 @@ Missing links may be created. Correct links are `unchanged`. Links removed from 
 only when the live target is a symlink and its link value exactly matches an old desired source derived from the last
 applied commit anchors. Wrong or dangling managed links may be replaced or proposed for replacement. Regular files or
 directories at the target are `conflict` unless an explicit backup strategy is active.
+
+An external fan-in declaration also proves ownership when a target symlink resolves to a direct child of its source
+directory. If that child is absent from the current fan-in, Tilde MAY remove the exact target symlink. Tilde MUST NOT
+remove other entries from the target directory.
 
 ### 11.2 Spans
 

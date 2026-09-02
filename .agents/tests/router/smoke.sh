@@ -200,7 +200,7 @@ EOF
 	grep -Fq 'Remote state note: do not read controller `~/.local/state/tilde/state.yml`' "$status_help"
 	"$tilde" .help update >"$update_help"
 	grep -Fq 'Prompt: `/tilde update [host|ssh:<host>|GROUP] [--managed] [--greedy] [dry-run|plan-only]`' "$update_help"
-	grep -Fq 'Managed note: `--managed` also refreshes managed non-system package declarations such as gem, npm, egg, skill, and declared flatpak packages.' "$update_help"
+	grep -Fq 'Managed note: `--managed` also refreshes managed non-system package declarations such as gem, npm, skill, uv, and declared flatpak packages.' "$update_help"
 	grep -Fq 'Greedy note: `--greedy` implies `--managed` and adds broad package-manager upgrade actions after update actions.' "$update_help"
 	grep -Fq 'Remote preflight note: first run `"$TILDE" preflight remote HOST --format json` to classify bootstrap, repository backend, runtime, and sudo cleanup state.' "$update_help"
 	grep -Fq 'Remote freshness note: before target status reads that gate a mutating workflow, plan, or apply, verify target runtime freshness and refresh stale Git-backed target checkouts; defer if they cannot be safely refreshed.' "$update_help"

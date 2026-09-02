@@ -578,11 +578,10 @@ class Plan
   end
 
   def link_actions(dir, source, target)
+    return fan_in_link_actions(dir, source, target) if source.end_with?("/")
     return external_link_actions(dir, source, target) if external_source?(source)
 
-    return [link_action(dir, source, target)] unless source.end_with?("/")
-
-    fan_in_link_actions(dir, source, target)
+    [link_action(dir, source, target)]
   end
 
   def external_link_actions(dir, source, target)
@@ -598,11 +597,38 @@ class Plan
     tree_children_at(@head, relative_dir).map { |child| source_dir.join(Pathname.new(child).basename) }
   end
 
+  def fan_in_children_at(commit, dir, source, source_dir)
+    return source_dir.children.sort_by { |child| child.basename.to_s } unless path_inside?(source_dir, @repo)
+
+    tree_children_at(commit, File.join(dir, source))
+  end
+
+  def current_fan_in_children(dir, source, source_dir)
+    return source_dir.children.sort_by { |child| child.basename.to_s } unless path_inside?(source_dir, @repo)
+
+    fan_in_children(dir, source, source_dir)
+  end
+
+  def fan_in_source_dir(dir, source)
+    return external_source_path(source) if external_source?(source)
+
+    Pathname.new(link_source_path(dir, source))
+  end
+
+  def fan_in_source_dir_at(dir, source)
+    return external_source_path(source) if external_source?(source)
+
+    Pathname.new(link_source_path_at(dir, source))
+  end
+
   def fan_in_link_actions(dir, source, target)
-    source_dir = Pathname.new(source_path(dir, source))
+    source_dir = fan_in_source_dir(dir, source)
+
     raise "Link fan-in source is not a directory: #{source}" unless source_dir.directory?
 
-    fan_in_children(dir, source, source_dir).filter_map do |child|
+    children = current_fan_in_children(dir, source, source_dir)
+
+    children.filter_map do |child|
       next if suppressed_fan_in_child?(source, target, child)
 
       child_source = File.join(source, child.basename.to_s)
@@ -612,12 +638,12 @@ class Plan
   end
 
   def link_action(dir, source, target, metadata = {})
-    source_path = external_source?(source) ? external_source_path(source).to_s : source_path(dir, source)
+    source_path = external_source?(source) ? external_source_path(source).to_s : link_source_path(dir, source)
 
     {
       source:,
       source_path:,
-      source_external: external_source?(source),
+      source_external: external_source?(source) || !path_inside?(Pathname.new(source_path), @repo),
       target:,
       fan_in: false,
       fan_in_source: nil,
@@ -788,17 +814,13 @@ class Plan
   end
 
   def link_actions_at_commit(commit, dir, source, target)
-    if external_source?(source)
-      raise "external link source cannot use fan-in: #{source}" if source.end_with?("/")
-
-      return [link_action_at(dir, source, target)]
-    end
-
     return [link_action_at(dir, source, target)] unless source.end_with?("/")
 
-    source_dir = File.join(dir, source)
-    tree_children_at(commit, source_dir).filter_map do |child|
-      child_path = Pathname.new(child)
+    source_dir = fan_in_source_dir_at(dir, source)
+    children = fan_in_children_at(commit, dir, source, source_dir)
+
+    children.filter_map do |child|
+      child_path = Pathname.new(child.to_s)
       next if suppressed_fan_in_child?(source, target, child_path)
 
       child_source = File.join(source, child_path.basename.to_s)
@@ -808,12 +830,12 @@ class Plan
   end
 
   def link_action_at(dir, source, target, metadata = {})
-    source_path = external_source?(source) ? external_source_path(source).to_s : source_path_at(dir, source)
+    source_path = external_source?(source) ? external_source_path(source).to_s : link_source_path_at(dir, source)
 
     {
       source:,
       source_path:,
-      source_external: external_source?(source),
+      source_external: external_source?(source) || !path_inside?(Pathname.new(source_path), @repo),
       target:,
       fan_in: false,
       fan_in_source: nil,
@@ -1106,6 +1128,24 @@ class Plan
     @repo_role ||= tilde_frontmatter(@repo.join("AGENTS.md"))["role"] || "unknown"
   end
 
+  def link_source_path(dir, source)
+    path = (dir + source).cleanpath
+    return path.to_s if path_inside?(path, @repo)
+
+    raise "Link source escapes home: #{source}" unless path_inside?(path, Pathname.new(Dir.home))
+
+    path.to_s
+  end
+
+  def link_source_path_at(dir, source)
+    path = (@repo + dir + source).cleanpath
+    return path.to_s if path_inside?(path, @repo)
+
+    raise "Link source escapes home: #{source}" unless path_inside?(path, Pathname.new(Dir.home))
+
+    path.to_s
+  end
+
   def source_path(dir, source)
     path = (dir + source).cleanpath
     repo = @repo.to_s
@@ -1128,14 +1168,83 @@ class Plan
     git("show", "#{commit}:#{dir}/README.md")
   end
 
-  def stale_link_actions(_modules)
+  def stale_link_actions(modules)
     current = current_link_action_keys
 
-    previous_link_actions.filter_map do |action|
+    previous = previous_link_actions.filter_map do |action|
       next if current.include?(link_action_key(action))
 
       stale_link_action(action)
     end
+
+    previous + stale_live_fan_in_links(modules)
+  end
+
+  def stale_live_fan_in_links(modules)
+    groups = external_fan_in_links(modules).group_by do |mod, link|
+      [mod.fetch(:id), link.fetch(:fan_in_source), link.fetch(:fan_in_target)]
+    end
+
+    groups.flat_map do |(_module_id, source, target), desired|
+      mod = desired.first.fetch(0)
+      stale_live_fan_in_group(source, target, desired.map { |pair| pair.fetch(1) }, mod)
+    end
+  end
+
+  def external_fan_in_links(modules)
+    modules.flat_map do |mod|
+      mod
+        .fetch(:links_to_create)
+        .select { |link| link.fetch(:fan_in) && link.fetch(:source_external) }
+        .map { |link| [mod, link] }
+    end
+  end
+
+  def stale_live_fan_in_group(source, target, desired, mod)
+    target_dir = target_path(target)
+    return [] unless target_dir.directory?
+
+    source_dir = Pathname.new(desired.first.fetch(:source_path)).dirname.cleanpath
+    desired_targets = desired.map { |link| target_path(link.fetch(:target)).to_s }
+    context = {
+      source: source,
+      target: target,
+      source_dir: source_dir,
+      desired_targets: desired_targets.to_h { |path| [path, true] },
+      mod: mod
+    }
+
+    target_dir.children.filter_map do |candidate|
+      stale_live_fan_in_candidate(candidate, context)
+    end
+  end
+
+  def stale_live_fan_in_candidate(candidate, context)
+    return nil unless candidate.symlink?
+    return nil if context.fetch(:desired_targets).key?(candidate.to_s)
+
+    value = File.readlink(candidate)
+    resolved = Pathname.new(value)
+    resolved = candidate.dirname.join(resolved) unless resolved.absolute?
+    return nil unless resolved.cleanpath.dirname == context.fetch(:source_dir)
+
+    stale_live_fan_in_action(context.fetch(:source), context.fetch(:target), candidate, value, context.fetch(:mod))
+  end
+
+  def stale_live_fan_in_action(source, target, candidate, value, mod)
+    child = candidate.basename.to_s
+    stale_link_action(
+      {
+        id: "#{mod.fetch(:id)}:link:#{File.join(source, child)}->#{File.join(target, child)}",
+        module_id: mod.fetch(:id),
+        module_name: mod.fetch(:name),
+        phase: mod.fetch(:phase),
+        repo_role: mod.fetch(:repo_role),
+        source: File.join(source, child),
+        target: File.join(target, child),
+        link_value: value
+      }
+    )
   end
 
   def stale_link_action(action)

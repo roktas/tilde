@@ -659,9 +659,16 @@ module applicable for that platform; do not add placeholder platform frontmatter
 to make the section run.
 
 README frontmatter may declare `directories` along with `links`, `copies`, `seeds`, `resets`, and `packages`. Link
-sources are repository-relative by default. A source that starts with `~/` or `/` is a target-home source and must stay
-inside the target home. Use target-home sources for live home paths such as Dropbox-backed shared state directories and
-XDG entrypoints; Dropbox-to-Dropbox symlink values must be relative to the target directory.
+sources are module-relative by default. A relative source can name one item in a sibling checkout outside the data
+repository. The resolved path must stay inside the target home. A relative directory source that ends with `/` creates
+fan-in links for all direct children. The sibling checkout must be present before planning.
+
+External fan-in cleanup is limited to symlinks that resolve to direct children of the declared source directory. Other
+entries in the target directory are not managed by that declaration.
+
+A source that starts with `~/` or `/` is a target-home source and must stay inside the target home. Use target-home
+sources for live home paths such as Dropbox-backed shared state directories and XDG entrypoints. Dropbox-to-Dropbox
+symlink values must be relative to the target directory.
 
 `phase: early` is reserved for small prerequisite-style modules whose actions must run before normal actions across all
 plans in the same apply run, such as a private Linux sudoers baseline. Do not use it for ordinary ordering preferences.

@@ -99,8 +99,9 @@ Each root module is a direct child directory containing `README.md`. README fron
 `phase: early` is reserved for small prerequisite-style modules that must unblock later actions in the same apply run;
 ordinary modules use the default `normal` phase.
 
-Link sources are repository-relative by default. A source beginning with `~/` or `/` is a target-home source for
-managed links between live home paths. Dropbox-to-Dropbox links are written relative to the target directory.
+Link sources are module-relative by default. A relative source can name an item in a sibling checkout when the resolved
+path stays inside the target home. A relative directory source that ends with `/` links all direct children. The sibling
+checkout must be present before planning. A source beginning with `~/` or `/` names a live target-home source.
 
 Recommended module sections:
 

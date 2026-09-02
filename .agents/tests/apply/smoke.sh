@@ -266,7 +266,11 @@ EOF
 write_repo() {
 	local repo=$1
 
-	mkdir -p "$repo/app" "$repo/section"
+	local ajans=${repo%/*}/ajans
+
+	mkdir -p "$ajans/skills/demo" "$ajans/skills/legacy" "$repo/app" "$repo/section"
+	printf '# Demo\n' >"$ajans/skills/demo/SKILL.md"
+	printf '# Legacy\n' >"$ajans/skills/legacy/SKILL.md"
 
 	cat >"$repo/AGENTS.md" <<'EOF'
 ---
@@ -285,6 +289,7 @@ all:
     - ~/shared
     - ~/.config/app/cache
   links:
+    ../../ajans/skills/: ~/.agents/skills
     source.txt: ~/.config/app/source.txt
     ~/shared: ~/.config/app/shared
   copies:
@@ -453,6 +458,8 @@ main() {
 	local early_public_repo
 	local early_state
 	local fake_bin
+	local fan_in_apply_json
+	local fan_in_plan_json
 	local head
 	local home
 	local host
@@ -515,6 +522,8 @@ main() {
 	early_public_repo=$tmpdir/early-public
 	early_state=$tmpdir/early-state
 	fake_bin=$tmpdir/fake-bin
+	fan_in_apply_json=$tmpdir/fan-in-apply.json
+	fan_in_plan_json=$tmpdir/fan-in-plan.json
 	package_apply_json=$tmpdir/package-apply.json
 	package_plan_json=$tmpdir/package-plan.json
 	package_repo=$tmpdir/package-repo
@@ -618,9 +627,8 @@ main() {
 
 	CONFLICT_APPLY_JSON=$conflict_apply_json ruby -rjson -e '
 		apply = JSON.parse(File.read(ENV.fetch("CONFLICT_APPLY_JSON"), encoding: "UTF-8"))
-		conflict = apply.fetch("results").find { |result| result.fetch("kind") == "link" }
+		conflict = apply.fetch("results").find { |result| result.fetch("kind") == "link" && result.fetch("status") == "conflict" }
 		abort "missing conflict result" unless conflict
-		abort "link conflict should be reported" unless conflict.fetch("status") == "conflict"
 	'
 
 	rm -f "$home/.config/app/source.txt"
@@ -650,8 +658,11 @@ main() {
 
 	[[ -L $home/.config/app/source.txt ]]
 	[[ -L $home/.config/app/shared ]]
+	[[ -L $home/.agents/skills/demo ]]
+	[[ -L $home/.agents/skills/legacy ]]
 	[[ -d $home/shared ]]
 	[[ -d $home/.config/app/cache ]]
+	[[ $(readlink "$home/.agents/skills/demo") == "$home/Dropbox/ajans/skills/demo" ]]
 	[[ $(readlink "$home/.config/app/shared") == "$home/shared" ]]
 	[[ -L $home/.config/ordered/source.txt ]]
 	grep -Fqx 'copy' "$home/.config/app/copy.txt"
@@ -677,6 +688,16 @@ main() {
 		abort "wrong public anchor" unless state.fetch("applied").fetch("public") == ENV.fetch("HEAD")
 		abort "state must not contain done map" if state.key?("done")
 	'
+
+	rm -rf "$home/Dropbox/ajans/skills/legacy"
+	HOME=$home XDG_STATE_HOME=$state "$tilde" plan --repo "$repo" --platform linux --host "$host" >"$fan_in_plan_json"
+	FAN_IN_PLAN_JSON=$fan_in_plan_json ruby -rjson -e '
+		plan = JSON.parse(File.read(ENV.fetch("FAN_IN_PLAN_JSON"), encoding: "UTF-8"))
+		unlink = plan.fetch("actions").find { |action| action.fetch("kind") == "unlink" && action.fetch("target") == "~/.agents/skills/legacy" }
+		abort "missing stale external fan-in cleanup" unless unlink
+	'
+	HOME=$home XDG_STATE_HOME=$state "$tilde" apply --plan "$fan_in_plan_json" >"$fan_in_apply_json"
+	[[ ! -L $home/.agents/skills/legacy ]]
 
 	printf 'local seed\n' >"$home/.config/app/seed.txt"
 	printf 'local reset\n' >"$home/.config/app/reset.txt"
