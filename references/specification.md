@@ -716,7 +716,7 @@ The inventory is:
 Example inventory commands:
 
 ```text
-brew formula : brew list --formula -1
+brew formula : brew list --formula --full-name -1
 brew cask    : brew list --cask -1
 deb/dpkg     : dpkg-query -W -f='${binary:Package}\n'
 gem          : gem list --no-versions

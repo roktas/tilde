@@ -28,8 +28,8 @@ write_fake_packages() {
 	cat >"$bindir/brew" <<'EOF'
 #!/usr/bin/env sh
 case "$*" in
-"list --formula -1")
-	printf 'git\n'
+"list --formula --full-name -1")
+	printf 'git\necylmz/tap/cx\n'
 	;;
 "list --cask -1")
 	printf 'visual-studio-code\n'
@@ -176,6 +176,7 @@ EOF
 all:
   packages:
     - brew:git
+    - brew:ecylmz/tap/cx
     - cask:visual-studio-code
     - deb:curl
     - flatpak:org.example.App
@@ -770,7 +771,10 @@ EOF
 	PACKAGE_APPLY_JSON=$package_apply_json HOME_UNDER_TEST=$home ruby -rjson -e '
 		apply = JSON.parse(File.read(ENV.fetch("PACKAGE_APPLY_JSON"), encoding: "UTF-8"))
 		packages = apply.fetch("results").select { |result| result.fetch("kind") == "package" }
-		abort "expected all package types" unless packages.length == 12
+		abort "expected all package types" unless packages.length == 13
+		cx = packages.find { |result| result.fetch("action_id") == "public/packages:package:install:brew:ecylmz/tap/cx" }
+		abort "missing cx result" unless cx
+		abort "tap formula should be unchanged" unless cx.fetch("status") == "unchanged"
 		pyyaml = packages.find { |result| result.fetch("action_id") == "public/packages:package:install:uv:pyyaml" }
 		abort "missing pyyaml result" unless pyyaml
 		abort "pyyaml should install" unless pyyaml.fetch("status") == "ok"

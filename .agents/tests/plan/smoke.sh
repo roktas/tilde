@@ -268,7 +268,7 @@ EOF
 		agents = plan.fetch("modules").find { |mod| mod.fetch("name") == "agents" }
 		abort "missing agents module" unless agents
 		abort "agents should default to normal level" unless agents.fetch("level") == "normal"
-		abort "agents should install shared agent tools" unless agents.fetch("packages_to_install").map { |pkg| pkg.fetch("value") }.sort == %w[brew:playwright-cli brew:rtk]
+		abort "agents should install shared agent tools" unless agents.fetch("packages_to_install").map { |pkg| pkg.fetch("value") }.sort == %w[brew:ecylmz/tap/cx brew:playwright-cli brew:rtk]
 		configure = agents.fetch("special_sections").fetch("Configure").fetch("body")
 		abort "agents should install SimpleEnglish with npx" unless configure.include?("npx -y skills add AminBlg/SimpleEnglish")
 		abort "agents should skip SimpleEnglish without npx" unless configure.include?("if ! command -v npx")

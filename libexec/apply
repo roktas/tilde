@@ -113,7 +113,7 @@ class Apply
     %w[upgrade scoop] => -> (name) { name == "*" ? %w[scoop update *] : ["scoop", "update", name] }
   }.freeze
   PACKAGE_INVENTORY_COMMANDS = {
-    "brew" => %w[brew list --formula -1],
+    "brew" => %w[brew list --formula --full-name -1],
     "cask" => %w[brew list --cask -1],
     "deb" => ["dpkg-query", "-W", "-f", "${binary:Package}\\n"],
     "flatpak" => %w[flatpak list --app --columns=application],
