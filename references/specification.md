@@ -124,17 +124,16 @@ Recommended lock path:
 
 The lock is runtime coordination, not desired-state memory.
 
-If a lock cannot be acquired because another Tilde process is active, Tilde MUST return a clear lock-busy or `deferred` result and MUST NOT mutate targets.
+If a lock cannot be acquired, Tilde MUST identify the process that holds it. A stale apply is an identified Tilde apply
+process that has held the lock for at least three hours. The process age is authoritative. The lock file age is not.
 
-Agents MUST NOT remove the lock file merely because a command timed out or because the path exists. With process-held
-locks such as `flock`, deleting the pathname does not prove the owning process has stopped and may allow a second run to
-start while the first run is still active. Lock cleanup requires bounded read-only process inspection and explicit
-operator approval when the owning process cannot be proven absent.
+For a mutating Tilde operation, Tilde MUST recover one stale apply automatically. It sends `TERM` to the apply process
+tree and waits 10 seconds. It sends `KILL` to remaining processes and waits five seconds. Tilde MUST acquire the
+process-held lock before it continues with the new plan. It MUST NOT remove the lock file to bypass `flock`.
 
-If lock cleanup is explicitly approved or required after a known-dead apply, agents MUST first prove the lock is not
-held. A missing `lsof` command or empty `lsof` output is not proof by itself. Prefer a nonblocking `flock` probe on the
-lock path; if the probe cannot acquire the lock, the run remains `deferred`. If `flock` is unavailable, use bounded
-process inspection for active Tilde/apply processes and treat uncertainty as `deferred`.
+If Tilde cannot identify exactly one lock-holding apply process, determine its age, stop its process tree, or acquire
+the released lock, it MUST return a clear lock-busy or `deferred` result and MUST NOT mutate targets. An apply younger
+than three hours remains active and blocks a second apply.
 
 `state.yml` MUST be written atomically:
 
@@ -381,8 +380,9 @@ Each target host MUST have at most one apply attempt active at a time. A yielded
 execution handle remains observed and MUST be continued as specified in Section 7.1. If the handle is unavailable, the
 command reaches a terminal timeout, the connection is lost, or the runner otherwise stops observing an apply before
 receiving and parsing its result, agents MUST assume the target-side apply may still be running. They MUST perform
-bounded read-only target checks for the lock holder and active Tilde/apply processes before any retry. An active process
-or held lock makes the host `deferred`; agents MUST NOT start a second apply, scrape an agent tool-output cache, or use a
+bounded target checks for the lock holder and active Tilde/apply processes before any retry. If the identified apply is
+at least three hours old, a new apply recovers it as specified in Section 3.2 and continues with newly generated plans.
+Younger or uncertain processes make the host `deferred`. Agents MUST NOT scrape an agent tool-output cache or use a
 later apply as a substitute for the missing result of the first attempt.
 
 Example:
@@ -1179,7 +1179,8 @@ For a host group, every parallel job MUST contain this complete preflight-to-ver
 from an earlier group-wide pass MUST NOT authorize later mutations.
 
 Preflight does not inspect the apply lock and cannot prove that an earlier apply stopped. Before retrying after a
-timeout, lost connection, or lock contention, probe the target process and lock state as required by Section 18.
+timeout, lost connection, or lock contention, probe the target process and lock state as required by Section 18. A new
+apply automatically recovers an identified lock holder after three hours.
 
 `sudo.noninteractive=false` alone is not a handoff trigger. On Linux, `sudo.apt=true` permits ordinary apt work; request
 handoff only when `next` requires it or an actual action returns a sudo deferral.
@@ -1274,8 +1275,9 @@ particular:
   missing result.
 - Do not rerun a failed apply just because a `notok` result might be transient; require a concrete source fix, approved
   recovery, or observed external-state change before the next attempt.
-- A timeout or lost connection means the target apply may still be active. Probe the target process and lock state before
-  retrying; an active process or held lock is `deferred`.
+- A timeout or lost connection means the target apply can still be active. Probe the target process and lock state before
+  retrying. A new apply automatically recovers an identified lock holder after three hours. Younger or uncertain
+  processes are `deferred`.
 - A later successful status read does not convert an earlier failed checkout, plan, apply, or align step into success.
 
 Final reporting MUST distinguish target repository HEAD from the applied anchor and summarize each host separately.

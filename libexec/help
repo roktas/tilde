@@ -189,6 +189,7 @@ print_command_help() {
 		printf '\nRemote note: generate and apply plans on the target host through Tilde SSH transport.\n'
 		printf 'Remote preflight note: first run `"$TILDE" preflight remote HOST --format json` to classify bootstrap, repository backend, runtime, and sudo cleanup state.\n'
 		printf 'Remote freshness note: before target status reads that gate a mutating workflow, plan, or apply, verify target runtime freshness and refresh stale Git-backed target checkouts; defer if they cannot be safely refreshed.\n'
+		printf 'Stale apply note: a new apply automatically stops an identified lock-holding Tilde apply after three hours, acquires the released lock, and continues with new plans.\n'
 		printf 'Remote verification note: after successful mutating apply, run a final target status read before closeout.\n'
 		printf 'Remote state note: do not read controller `~/.local/state/tilde/state.yml`; target bindings and anchors come from the target host.\n'
 		;;

@@ -230,8 +230,9 @@ source fetches are deferred, even when the package manager exits successfully.
 
 One-off operator workflows stay outside the desired-state model. Tilde may assist with checks and execution.
 
-If a run times out or reports `state lock busy`, do not remove the lock file blindly. First verify that no Tilde/apply
-process is active on the target; otherwise treat the run as deferred and retry later.
+If a run times out or reports `state lock busy`, do not remove the lock file. A new apply automatically recovers an
+identified Tilde apply that is at least three hours old. It stops the old process tree, acquires the released lock, and
+continues with the new plan. Younger or uncertain lock holders remain deferred.
 
 ## References
 

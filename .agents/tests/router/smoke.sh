@@ -204,6 +204,7 @@ EOF
 	grep -Fq 'Greedy note: `--greedy` implies `--managed` and adds broad package-manager upgrade actions after update actions.' "$update_help"
 	grep -Fq 'Remote preflight note: first run `"$TILDE" preflight remote HOST --format json` to classify bootstrap, repository backend, runtime, and sudo cleanup state.' "$update_help"
 	grep -Fq 'Remote freshness note: before target status reads that gate a mutating workflow, plan, or apply, verify target runtime freshness and refresh stale Git-backed target checkouts; defer if they cannot be safely refreshed.' "$update_help"
+	grep -Fq 'Stale apply note: a new apply automatically stops an identified lock-holding Tilde apply after three hours, acquires the released lock, and continues with new plans.' "$update_help"
 	grep -Fq 'State recovery note: if target status shows missing `state.yml` or no `applied` anchors, use `plan --mode repair`' "$update_help"
 	grep -Fq 'Remote verification note: after successful mutating apply, run a final target status read before closeout.' "$update_help"
 	"$tilde" help ssh >"$ssh_help"

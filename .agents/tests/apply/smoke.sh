@@ -5,12 +5,17 @@ set -Eeuo pipefail
 unset CDPATH
 
 cleanup_tmpdir=
+cleanup_pid=
 
 # ------------------------------------------------------------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------------------------------------------------------------
 
 cleanup() {
+	if [[ -n $cleanup_pid ]]; then
+		kill "$cleanup_pid" 2>/dev/null || true
+		wait "$cleanup_pid" 2>/dev/null || true
+	fi
 	[[ -z $cleanup_tmpdir ]] || rm -rf "$cleanup_tmpdir"
 }
 
@@ -462,6 +467,10 @@ main() {
 	local fan_in_apply_json
 	local fan_in_plan_json
 	local head
+	local hanging_apply_err
+	local hanging_apply_json
+	local hanging_pid
+	local hanging_plan_json
 	local home
 	local host
 	local mismatch_apply_err
@@ -490,6 +499,7 @@ main() {
 	local split_state
 	local stale_apply_json
 	local stale_plan_json
+	local stale_recovery_apply_json
 	local state
 	local tilde
 	local tmpdir
@@ -525,6 +535,9 @@ main() {
 	fake_bin=$tmpdir/fake-bin
 	fan_in_apply_json=$tmpdir/fan-in-apply.json
 	fan_in_plan_json=$tmpdir/fan-in-plan.json
+	hanging_apply_err=$tmpdir/hanging-apply.err
+	hanging_apply_json=$tmpdir/hanging-apply.json
+	hanging_plan_json=$tmpdir/hanging-plan.json
 	package_apply_json=$tmpdir/package-apply.json
 	package_plan_json=$tmpdir/package-plan.json
 	package_repo=$tmpdir/package-repo
@@ -549,6 +562,7 @@ main() {
 	split_state=$tmpdir/split-state
 	stale_apply_json=$tmpdir/stale-apply.json
 	stale_plan_json=$tmpdir/stale-plan.json
+	stale_recovery_apply_json=$tmpdir/stale-recovery-apply.json
 	uv_apply_json=$tmpdir/uv-refresh-apply.json
 	uv_plan_json=$tmpdir/uv-refresh-plan.json
 
@@ -655,7 +669,58 @@ main() {
 	'
 	grep -Fq "state lock busy" "$lock_apply_err"
 
-	HOME=$home XDG_STATE_HOME=$state "$tilde" apply --plan "$plan_json" >"$apply_json"
+	# shellcheck disable=SC2016
+	PLAN_JSON=$plan_json HANGING_PLAN_JSON=$hanging_plan_json ruby -rjson -rdigest -e '
+		def canonicalize(value)
+			return value.map { |item| canonicalize(item) } if value.is_a?(Array)
+			return value.keys.map(&:to_s).sort.to_h { |key| [key, canonicalize(value[key])] } if value.is_a?(Hash)
+			value
+		end
+
+		plan = JSON.parse(File.read(ENV.fetch("PLAN_JSON"), encoding: "UTF-8"))
+		plan["actions"] = [{
+			"id" => "public/test:section:Configure",
+			"kind" => "section",
+			"module_id" => "public/test",
+			"module_name" => "test",
+			"phase" => "normal",
+			"repo_role" => "public",
+			"name" => "Configure",
+			"bash_only" => true,
+			"bash_blocks" => ["sleep 300"],
+			"body" => "```bash\nsleep 300\n```",
+			"reason" => nil,
+			"conflict" => {"strategy" => "none"}
+		}]
+		content = canonicalize(plan.reject { |key, _value| %w[generated_at plan_id].include?(key) })
+		plan["plan_id"] = "sha256:#{Digest::SHA256.hexdigest(JSON.generate(content))}"
+		File.write(ENV.fetch("HANGING_PLAN_JSON"), JSON.pretty_generate(plan))
+	'
+
+	HOME=$home XDG_STATE_HOME=$state "$tilde" apply --plan "$hanging_plan_json" >"$hanging_apply_json" 2>"$hanging_apply_err" &
+	cleanup_pid=$!
+	for _ in {1..100}; do
+		[[ ! -s $state/tilde/lock ]] || break
+		sleep 0.05
+	done
+	[[ -s $state/tilde/lock ]] || abort "hanging apply should write lock metadata"
+	hanging_pid=$cleanup_pid
+
+	HOME=$home XDG_STATE_HOME=$state TILDE_APPLY_STALE_AFTER=0 "$tilde" apply --plan "$plan_json" >"$stale_recovery_apply_json"
+	if wait "$hanging_pid"; then
+		abort "stale apply should be terminated"
+	fi
+	cleanup_pid=
+
+	STALE_RECOVERY_APPLY_JSON=$stale_recovery_apply_json HANGING_PID=$hanging_pid ruby -rjson -e '
+		apply = JSON.parse(File.read(ENV.fetch("STALE_RECOVERY_APPLY_JSON"), encoding: "UTF-8"))
+		abort "stale recovery apply should complete" unless apply.fetch("completed")
+		abort "wrong stale lock reason" unless apply.dig("recovery", "reason") == "stale state lock"
+		abort "wrong stale lock pid" unless apply.dig("recovery", "pid") == ENV.fetch("HANGING_PID").to_i
+		abort "wrong stale lock threshold" unless apply.dig("recovery", "threshold_seconds").zero?
+	'
+
+	apply_json=$stale_recovery_apply_json
 
 	[[ -L $home/.config/app/source.txt ]]
 	[[ -L $home/.config/app/shared ]]

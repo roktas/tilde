@@ -22,7 +22,9 @@ TILDE_ROOT = Pathname.new(__dir__).parent.expand_path
 
 class Apply
   APPLY_SCHEMA = "tilde.apply/v1"
+  LOCK_SCHEMA = "tilde.lock/v1"
   PLAN_SCHEMA = "tilde.plan/v1"
+  STALE_LOCK_SECONDS = 3 * 60 * 60
   RESULT_OK = %w[ok changed unchanged removed skipped ignored].freeze
   ROLES = %w[public private].freeze
   ROLE_ORDER = {
@@ -235,9 +237,140 @@ class Apply
 
   def acquire_lock
     @lock = File.open(@lock_path.to_s, File::RDWR | File::CREAT, 0o600)
-    return if @lock.flock(File::LOCK_EX | File::LOCK_NB)
+    locked = @lock.flock(File::LOCK_EX | File::LOCK_NB)
+    raise LockBusyError, @lock_path unless locked || recover_stale_lock?
 
-    raise LockBusyError, @lock_path
+    write_lock
+  end
+
+  def apply_process?(info)
+    info.fetch(:uid) == Process.uid && info.fetch(:command).match?(%r{(?:^|\s)\S*/libexec/apply(?:\s|$)})
+  end
+
+  def elapsed_seconds(value)
+    days, clock = value.include?("-") ? value.split("-", 2) : ["0", value]
+    fields = clock.split(":").map(&:to_i)
+    fields.unshift(0) while fields.length < 3
+    (days.to_i * 86_400) + (fields.fetch(0) * 3600) + (fields.fetch(1) * 60) + fields.fetch(2)
+  end
+
+  def lock_metadata
+    @lock.rewind
+    data = JSON.parse(@lock.read)
+    data if data["schema"] == LOCK_SCHEMA
+  rescue JSON::ParserError
+    nil
+  end
+
+  def lock_owner_pid
+    if command_available?("lsof")
+      stdout, _stderr, status = Open3.capture3("lsof", "-t", @lock_path.to_s)
+      pids = stdout.lines.filter_map { |line| Integer(line, exception: false) }.uniq - [Process.pid]
+      return pids.first if status.success? && pids.one?
+    end
+
+    Integer(lock_metadata&.fetch("pid", nil), exception: false)
+  end
+
+  def monotonic_time
+    Process.clock_gettime(Process::CLOCK_MONOTONIC)
+  end
+
+  def process_info(pid)
+    stdout, _stderr, status = Open3.capture3("ps", "-p", pid.to_s, "-o", "uid=", "-o", "etime=", "-o", "command=")
+    return unless status.success?
+
+    uid, elapsed, command = stdout.strip.split(/\s+/, 3)
+    return unless uid && elapsed && command
+
+    {pid:, uid: uid.to_i, elapsed: elapsed_seconds(elapsed), command:}
+  end
+
+  def process_tree(root_pid)
+    stdout, _stderr, status = Open3.capture3("ps", "-axo", "pid=,ppid=,uid=,command=")
+    return [root_pid] unless status.success?
+
+    children = Hash.new { |hash, key| hash[key] = [] }
+    stdout.each_line do |line|
+      pid, ppid, uid, = line.strip.split(/\s+/, 4)
+      next unless pid && ppid && uid && uid.to_i == Process.uid
+
+      children[ppid.to_i] << pid.to_i
+    end
+
+    visit = lambda do |pid|
+      children.fetch(pid, []).flat_map { |child| visit.call(child) } + [pid]
+    end
+
+    visit.call(root_pid)
+  end
+
+  def recover_stale_lock?
+    info = stale_lock_info
+    return false unless info
+
+    pid = info.fetch(:pid)
+    pids = process_tree(pid)
+    warn("warning: terminating stale Tilde apply pid #{pid} after #{info.fetch(:elapsed)} seconds")
+    signal_processes("TERM", pids)
+    recovered = wait_for_lock(pids, 10)
+    unless recovered
+      signal_processes("KILL", pids.select { |process_pid| process_alive?(process_pid) })
+      recovered = wait_for_lock(pids, 5)
+    end
+
+    return false unless recovered
+
+    @apply[:recovery] = {
+      reason: "stale state lock",
+      pid:,
+      elapsed_seconds: info.fetch(:elapsed),
+      threshold_seconds: stale_lock_seconds
+    }
+    true
+  end
+
+  def stale_lock_info
+    pid = lock_owner_pid
+    info = process_info(pid) if pid
+    info if info && apply_process?(info) && info.fetch(:elapsed) >= stale_lock_seconds
+  end
+
+  def process_alive?(pid)
+    stdout, _stderr, status = Open3.capture3("ps", "-p", pid.to_s, "-o", "state=")
+    status.success? && !stdout.strip.start_with?("Z")
+  end
+
+  def signal_processes(signal, pids)
+    pids.each do |pid|
+      Process.kill(signal, pid)
+    rescue Errno::ESRCH
+      nil
+    end
+  end
+
+  def stale_lock_seconds
+    Integer(ENV.fetch("TILDE_APPLY_STALE_AFTER", STALE_LOCK_SECONDS), 10)
+  rescue ArgumentError
+    STALE_LOCK_SECONDS
+  end
+
+  def wait_for_lock(pids, seconds)
+    deadline = monotonic_time + seconds
+    loop do
+      locked = @lock.flock(File::LOCK_EX | File::LOCK_NB)
+      return true if locked && pids.none? { |pid| process_alive?(pid) }
+      return false if monotonic_time >= deadline
+
+      sleep(0.1)
+    end
+  end
+
+  def write_lock
+    @lock.rewind
+    @lock.truncate(0)
+    @lock.write(JSON.generate(schema: LOCK_SCHEMA, pid: Process.pid, started_at: @started_at))
+    @lock.flush
   end
 
   def canonicalize(value)

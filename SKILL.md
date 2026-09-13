@@ -578,10 +578,12 @@ the first apply.
 
 Each host gets one apply attempt at a time. First resume any live execution handle returned by the controller tool. If
 that handle is unavailable, the command reaches a terminal timeout, or the connection is lost, assume the target-side
-apply may still be running. Before any retry, inspect the target lock and active Tilde/apply processes with bounded
-read-only checks. If an apply process or held lock remains, do not retry; report that host as active/deferred and leave
-it running. Never use an agent tool-output cache or a second apply as a substitute for the original captured
-`apply.json`.
+apply may still be running. Before any retry, inspect the target lock and active Tilde/apply processes. A Tilde apply
+that has held the lock for at least three hours is stale. A new `tilde apply` automatically sends `TERM` to its process
+tree, waits 10 seconds, sends `KILL` to survivors, acquires the released lock, and continues with the newly generated
+plans. It does not delete the lock file. Run this recovery at most once per host and prompt. If the holder is younger or
+cannot be identified exactly, report that host as active/deferred. Never use an agent tool-output cache or a second
+apply as a substitute for the original captured `apply.json`.
 
 If `tilde apply` exits non-zero, parse its captured stdout only when that file contains a structured apply result. A
 current runtime emits `completed: false` JSON for lock contention. Empty or malformed stdout is a runtime/protocol
@@ -698,12 +700,10 @@ conflicting target, and rerun apply so the normal declarative action recreates i
 default conflict result to overwrite the target. Broad cleanup, such as clearing an entire font directory after
 package-manager file conflicts, requires a separate explicit approval that names the directory and effect.
 
-If an apply command times out or reports `state lock busy`, do not delete the lock file as a first response. A lock held
-with `flock` belongs to a process, and removing the pathname does not prove the process stopped. Treat this as
-`deferred` or an active-run check: use bounded read-only process inspection on the target, wait when a Tilde/apply
-process is still active, and remove a leftover lock only after proving no process holds it and getting explicit approval.
-Missing `lsof` is not proof that no process holds the lock; prefer a nonblocking `flock` probe when cleanup is approved
-or required.
+If an apply command times out or reports `state lock busy`, do not delete the lock file. A lock held with `flock`
+belongs to a process. Identify the holder and measure the process age. A new apply automatically recovers an identified
+Tilde apply after three hours. It terminates that process tree, acquires the released lock, and continues with new plans.
+If the holder is younger or uncertain, report the run as `deferred`.
 
 If sudo is required and noninteractive sudo fails, report `deferred` and present:
 
@@ -729,14 +729,13 @@ For weaker or low-context agents:
 - Treat `Prerequisites` as read-only checks.
 - Advance `applied` anchors only after every required action succeeds.
 - Keep `applied` anchors unchanged after `deferred`, `conflict`, or `notok`.
-- On timeout or `state lock busy`, do not remove `~/.local/state/tilde/lock` blindly. Check whether an apply process is
-  still active and treat uncertainty as `deferred`.
-- After an apply timeout or lost connection, do not retry that host until bounded target checks prove no apply process
-  and no held lock remain. An active process or held lock means the host is still active/deferred.
+- On timeout or `state lock busy`, do not remove `~/.local/state/tilde/lock`. Identify the holder and use its process age.
+- After an apply timeout or lost connection, recover an identified Tilde apply after three hours. Terminate its process
+  tree, acquire the released lock, regenerate plans, and retry once. Treat younger or uncertain holders as `deferred`.
 - Preflight does not inspect the apply lock. Never infer that a lock cleared from `reachable`, `runtime.current`, clean
   repositories, or a preflight `next` list; probe the target lock and active apply processes explicitly.
-- Do not remove remote Tilde lock files as routine closeout cleanup after a failed or partial apply. Lock cleanup is a
-  separate recovery step after bounded holder checks and, when any uncertainty remains, explicit user approval.
+- Do not remove remote Tilde lock files. Recovery terminates an identified apply process tree after three hours and
+  acquires the process-held lock. Treat uncertainty as `deferred`.
 - Never plan a remote host from the controller.
 - For mutating remote workflows, verify target Tilde runtime freshness and Git-backed desired-state checkout freshness
   before the first target `status`, `plan`, or `apply`.
