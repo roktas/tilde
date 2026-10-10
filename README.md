@@ -142,28 +142,28 @@ Do not rely on bare `tilde` on the controller `PATH`.
 
 The public surface is deliberately small:
 
-| Command | Kind | Use |
-| --- | --- | --- |
-| `deploy` | agent | Prepare a new or reset host and apply desired state. |
-| `update` | agent | Refresh package managers, reconcile current desired state, and run `Update` sections. |
-| `repair` | agent | Reapply desired state without package refreshes or `Update` sections. |
-| `align` | dual | Reconcile links, directories, copies, seeds, and resets only. |
-| `status` | runtime | Show fast repository bindings and applied anchors. |
-| `doctor` | runtime | Diagnose state, repository, and managed-surface health. |
-| `handoff` | runtime | Print and copy the sudo handoff command. |
-| `help` | runtime | Show command help. |
+| Command   | Kind    | Use                                                                                   |
+| --------- | ------- | ------------------------------------------------------------------------------------- |
+| `deploy`  | agent   | Prepare a new or reset host and apply desired state.                                  |
+| `update`  | agent   | Refresh package managers, reconcile current desired state, and run `Update` sections. |
+| `repair`  | agent   | Reapply desired state without package refreshes or `Update` sections.                 |
+| `align`   | dual    | Reconcile links, directories, copies, seeds, and resets only.                         |
+| `status`  | runtime | Show fast repository bindings and applied anchors.                                    |
+| `doctor`  | runtime | Diagnose state, repository, and managed-surface health.                               |
+| `handoff` | runtime | Print and copy the sudo handoff command.                                              |
+| `help`    | runtime | Show command help.                                                                    |
 
 There is no public `create`, `init`, `adopt`, `clean`, `organize`, or `upgrade` command. Keep those workflows as
 ordinary proposal-first agent work until they are mature enough to deserve command semantics.
 
 `update` options:
 
-| Prompt | Meaning |
-| --- | --- |
-| `/tilde update` | Default update: system package-manager refresh plus desired-state reconciliation. |
-| `/tilde update --managed` | Also refresh managed non-system package declarations. |
-| `/tilde update --greedy` | Managed update plus broad package-manager upgrade actions. |
-| `/tilde repair` | Desired-state convergence without package refreshes, broad upgrades, or `Update` sections. |
+| Prompt                    | Meaning                                                                                    |
+| ------------------------- | ------------------------------------------------------------------------------------------ |
+| `/tilde update`           | Default update: system package-manager refresh plus desired-state reconciliation.          |
+| `/tilde update --managed` | Also refresh managed non-system package declarations.                                      |
+| `/tilde update --greedy`  | Managed update plus broad package-manager upgrade actions.                                 |
+| `/tilde repair`           | Desired-state convergence without package refreshes, broad upgrades, or `Update` sections. |
 
 If target status shows missing `state.yml` or no `applied` anchors, an update workflow uses repair mode for that run to
 recover bindings and anchors. Missing state is recovery, not proof that the host was never deployed.

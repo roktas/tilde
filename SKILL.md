@@ -171,14 +171,14 @@ resolved runtime entrypoint with undotted route names such as `"$TILDE" plan` an
 
 Agent commands map to planning modes and module sections as follows.
 
-| Prompt command | Plan mode | Module behavior |
-| --- | --- | --- |
-| `deploy` | `apply` | `Prerequisites`, declared package installs, `Install`, `Post Install` when the install phase changed, declared files and links, then `Configure` |
-| `update` | `refresh`; `repair` for state recovery | package refresh, `Prerequisites`, declared package installs, `Install`, `Post Install` when the install phase changed, declared files and links, `Update`, then `Configure` |
-| `update --managed` | `refresh --managed` | update behavior, plus managed non-system package refreshes |
-| `update --greedy` | `refresh --greedy` | managed update behavior, then broad package-manager upgrade actions |
-| `repair` | `repair` | `Prerequisites`, declared package installs, `Install`, `Post Install` when the install phase changed, declared files and links, then `Configure` |
-| `align` | `align` | directories, links, copies, seeds, and resets only; no bootstrap, packages, or module code |
+| Prompt command     | Plan mode                              | Module behavior                                                                                                                                                             |
+| ------------------ | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `deploy`           | `apply`                                | `Prerequisites`, declared package installs, `Install`, `Post Install` when the install phase changed, declared files and links, then `Configure`                            |
+| `update`           | `refresh`; `repair` for state recovery | package refresh, `Prerequisites`, declared package installs, `Install`, `Post Install` when the install phase changed, declared files and links, `Update`, then `Configure` |
+| `update --managed` | `refresh --managed`                    | update behavior, plus managed non-system package refreshes                                                                                                                  |
+| `update --greedy`  | `refresh --greedy`                     | managed update behavior, then broad package-manager upgrade actions                                                                                                         |
+| `repair`           | `repair`                               | `Prerequisites`, declared package installs, `Install`, `Post Install` when the install phase changed, declared files and links, then `Configure`                            |
+| `align`            | `align`                                | directories, links, copies, seeds, and resets only; no bootstrap, packages, or module code                                                                                  |
 
 The prompt command is `update`; the ordinary plan mode is `refresh`. Do not call or invent `--mode update`. If target
 status shows missing `state.yml` or no `applied` anchors, recover state with `plan --mode repair` for that run; do not
@@ -614,18 +614,18 @@ absent from `sh`.
 In the default remote form, `sh`-compatible means POSIX `sh`, not "Bash without a Bash shebang." Do not use the Bash
 skill prelude in these remote scripts. Avoid common Bashisms:
 
-| Bashism | POSIX `sh` form |
-| --- | --- |
-| `set -o pipefail` | avoid critical pipelines; check each command separately |
-| `[[ -n $x ]]` | `[ -n "$x" ]` |
-| `[[ $x =~ re ]]` | `case $x in pattern) ... ;; esac` |
-| `arr=(a b)` and `${arr[@]}` | newline-separated strings, positional parameters, or repeated commands |
-| `source file` | `. file` |
-| `function name { ...; }` | `name() { ...; }` |
-| `local x=...`, `declare`, `mapfile`, `readarray`, `select` | simple variables and explicit loops |
-| `< <(cmd)` and `<<< "$text"` | temp files, pipes, or here-documents |
-| `{foo,bar}` brace expansion | spell out the words |
-| `$'...\n...'` strings | `printf '%s\n' ...` |
+| Bashism                                                    | POSIX `sh` form                                                        |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `set -o pipefail`                                          | avoid critical pipelines; check each command separately                |
+| `[[ -n $x ]]`                                              | `[ -n "$x" ]`                                                          |
+| `[[ $x =~ re ]]`                                           | `case $x in pattern) ... ;; esac`                                      |
+| `arr=(a b)` and `${arr[@]}`                                | newline-separated strings, positional parameters, or repeated commands |
+| `source file`                                              | `. file`                                                               |
+| `function name { ...; }`                                   | `name() { ...; }`                                                      |
+| `local x=...`, `declare`, `mapfile`, `readarray`, `select` | simple variables and explicit loops                                    |
+| `< <(cmd)` and `<<< "$text"`                               | temp files, pipes, or here-documents                                   |
+| `{foo,bar}` brace expansion                                | spell out the words                                                    |
+| `$'...\n...'` strings                                      | `printf '%s\n' ...`                                                    |
 
 Also remember that `dash` is a common `/bin/sh`; scripts that only work in Bash are not acceptable in the plain remote
 form.
