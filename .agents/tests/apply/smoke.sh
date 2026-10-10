@@ -501,6 +501,7 @@ main() {
 	local stale_plan_json
 	local stale_recovery_apply_json
 	local state
+	local state_failure_apply_json
 	local tilde
 	local tmpdir
 	local uv_apply_json
@@ -563,6 +564,7 @@ main() {
 	stale_apply_json=$tmpdir/stale-apply.json
 	stale_plan_json=$tmpdir/stale-plan.json
 	stale_recovery_apply_json=$tmpdir/stale-recovery-apply.json
+	state_failure_apply_json=$tmpdir/state-failure-apply.json
 	uv_apply_json=$tmpdir/uv-refresh-apply.json
 	uv_plan_json=$tmpdir/uv-refresh-plan.json
 
@@ -613,6 +615,20 @@ main() {
 		abort "split apply should preserve public anchor" unless state.fetch("applied").fetch("public") == ENV.fetch("PUBLIC_HEAD")
 		abort "split apply should write private anchor" unless state.fetch("applied").fetch("private") == ENV.fetch("PRIVATE_HEAD")
 	'
+
+	rm "$split_state/tilde/state.yml"
+	mkdir "$split_state/tilde/state.yml"
+	if HOME=$split_home XDG_STATE_HOME=$split_state "$tilde" apply --plan "$split_private_plan_json" >"$state_failure_apply_json"; then
+		abort "state write failure should fail apply"
+	fi
+	STATE_FAILURE_APPLY_JSON=$state_failure_apply_json ruby -rjson -e '
+		apply = JSON.parse(File.read(ENV.fetch("STATE_FAILURE_APPLY_JSON"), encoding: "UTF-8"))
+		abort "state write failure should not complete" if apply.fetch("completed")
+		abort "state write failure should preserve action results" if apply.fetch("results").empty?
+		abort "state write failure should report the error" if apply.dig("error", "reason").to_s.empty?
+	'
+	[[ -d $split_state/tilde/state.yml ]]
+	[[ -z $(ls -A "$split_state/tilde/state.yml") ]]
 
 	HOME=$home XDG_STATE_HOME=$refresh_state "$tilde" plan --repo "$repo" --mode refresh --platform linux --host "$host" >"$refresh_plan_json"
 	HOME=$home XDG_STATE_HOME=$refresh_state PATH=$fake_bin:$PATH "$tilde" apply --plan "$refresh_plan_json" >"$refresh_apply_json"

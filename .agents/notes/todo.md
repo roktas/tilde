@@ -14,3 +14,7 @@
       The apply smoke test observes this output before exercising stale-lock recovery.
 
 Apply caches and module `done` maps are absent from the current stateless model. They are not repair prerequisites.
+
+- [x] Load `stringio` before package refresh replaces Ruby. A kant update processed its actions but failed during
+      `YAML.dump` after Homebrew upgraded Ruby. Apply now preserves structured results on execution and state-write
+      errors, and state writes use an atomic rename that rejects a directory at `state.yml`.

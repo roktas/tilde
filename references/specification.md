@@ -1115,6 +1115,10 @@ exit-code markers, logs, or summaries MUST NOT be appended to it. Malformed or m
 Before processing each action, apply writes its action ID to stderr. This identifies the active action during a silent
 package command or module block without changing the JSON result on stdout.
 
+If execution or the atomic state write raises an error after apply starts, apply emits `completed: false` with the
+action results collected so far and an error reason. State serialization dependencies load before package refresh can
+replace the running Ruby installation.
+
 A `notok` action is not a transient-success probe. Agents MUST NOT immediately run a second apply or repeat the same
 update merely to see whether the failure clears. They MUST inspect the captured result from the failed attempt and retry
 only after a concrete source fix, approved operator recovery, or observed external-state change explains why the next

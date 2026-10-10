@@ -10,6 +10,9 @@ require "optparse"
 require "pathname"
 require "rbconfig"
 require "socket"
+
+# YAML.dump loads it lazily after package refresh can replace Ruby.
+require "stringio"
 require "tempfile"
 require "time"
 require "tmpdir"
@@ -159,6 +162,13 @@ class Apply
       lock: display_path(e.path)
     }
     warn("error: #{e.message}")
+    puts(JSON.pretty_generate(@apply))
+  rescue StandardError, LoadError => e
+    raise unless @apply
+
+    @apply[:completed] = false
+    @apply[:error] = {reason: e.message}
+    warn("error: #{e.class}: #{e.message}")
     puts(JSON.pretty_generate(@apply))
   end
 
@@ -1588,9 +1598,9 @@ class Apply
   end
 
   def write_state
-    temp = @state_path.dirname.join(".#{@state_path.basename}.tmp-#{$PROCESS_ID}")
+    temp = @state_path.dirname.join(".#{@state_path.basename}.tmp-#{Process.pid}")
     temp.write(YAML.dump(state_hash))
-    FileUtils.mv(temp.to_s, @state_path.to_s)
+    temp.rename(@state_path)
   ensure
     FileUtils.rm_f(temp) if temp&.exist?
   end
