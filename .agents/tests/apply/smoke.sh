@@ -700,9 +700,10 @@ main() {
 	HOME=$home XDG_STATE_HOME=$state "$tilde" apply --plan "$hanging_plan_json" >"$hanging_apply_json" 2>"$hanging_apply_err" &
 	cleanup_pid=$!
 	for _ in {1..100}; do
-		[[ ! -s $state/tilde/lock ]] || break
+		grep -Fq 'tilde apply: public/test:section:Configure' "$hanging_apply_err" && break
 		sleep 0.05
 	done
+	grep -Fq 'tilde apply: public/test:section:Configure' "$hanging_apply_err"
 	[[ -s $state/tilde/lock ]] || abort "hanging apply should write lock metadata"
 	hanging_pid=$cleanup_pid
 

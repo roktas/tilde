@@ -17,7 +17,7 @@ check_file_provider() {
 	status=$(fileproviderctl evaluate "$repo" 2>/dev/null) || return
 
 	[[ $status != *'isDownloading = 1;'* ]] || warn "W: checkout is downloading: $repo"
-	[[ $status != *'isKeepDownloaded = 0;'* ]] || warn "W: checkout is not marked keep downloaded: $repo"
+	[[ $status != *'isKeepDownloaded = 0;'* ]] || warn "W: checkout is not marked keep downloaded: $repo. In Finder, right-click this checkout and select Make available offline."
 	[[ $status != *'isRecursivelyDownloaded = 0;'* ]] || warn "W: checkout is not recursively downloaded: $repo"
 }
 

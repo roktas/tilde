@@ -1112,6 +1112,9 @@ Agents MUST parse the apply result as JSON. They MUST NOT use `grep`, `rg`, or l
 apply stdout is captured for later inspection, it MUST remain exactly one parseable JSON document; status sentinels,
 exit-code markers, logs, or summaries MUST NOT be appended to it. Malformed or mixed apply output is a failed workflow.
 
+Before processing each action, apply writes its action ID to stderr. This identifies the active action during a silent
+package command or module block without changing the JSON result on stdout.
+
 A `notok` action is not a transient-success probe. Agents MUST NOT immediately run a second apply or repeat the same
 update merely to see whether the failure clears. They MUST inspect the captured result from the failed attempt and retry
 only after a concrete source fix, approved operator recovery, or observed external-state change explains why the next

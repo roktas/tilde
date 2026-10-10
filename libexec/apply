@@ -1195,6 +1195,7 @@ class Apply
   end
 
   def process_action?(action, failed_modules)
+    warn("tilde apply: #{action.fetch("id")}")
     result = result_for(action, failed_modules)
     record(result)
     failed_modules[action.fetch("module_id")] = true if module_failure?(action, result)

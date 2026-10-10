@@ -576,6 +576,9 @@ compact summary. Do not run `tilde apply` a second time merely to reconstruct th
 JSON was not captured, report that validation gap instead of pretending a later successful status read or rerun describes
 the first apply.
 
+Apply writes each action ID to stderr before processing it. Use the latest ID to identify a silent action while
+continuing the original execution handle. The ID is progress information, not a completed action result.
+
 Each host gets one apply attempt at a time. First resume any live execution handle returned by the controller tool. If
 that handle is unavailable, the command reaches a terminal timeout, or the connection is lost, assume the target-side
 apply may still be running. Before any retry, inspect the target lock and active Tilde/apply processes. A Tilde apply
