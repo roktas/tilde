@@ -100,7 +100,7 @@ class Doctor
     return nil unless path.symlink?
 
     link = File.readlink(path.to_s)
-    problems = link_problems(path, link)
+    problems = link_problems(path)
     return nil if problems.empty?
 
     finding("home", path, problems, "link" => link)
@@ -117,18 +117,13 @@ class Doctor
     "active"
   end
 
-  def host_absolute?(link)
-    link == @home.to_s || link.start_with?("#{@home}/")
-  end
-
   def issue(kind, path, problems, extra = {})
     finding(kind, path, problems, extra)
   end
 
-  def link_problems(path, link)
+  def link_problems(path)
     problems = []
     problems << "broken" unless resolved?(path)
-    problems << "host-absolute" if host_absolute?(link)
     problems
   end
 
@@ -244,7 +239,7 @@ class Doctor
     puts("## Home Links")
     findings = link_items(report)
     if findings.empty?
-      puts("- No broken or host-absolute home-entrypoint links found.")
+      puts("- No broken home-entrypoint links found.")
     else
       findings.each do |item|
         puts("- `#{item.fetch(:target)}`: #{item.fetch(:problems).join(", ")} (`#{item.fetch(:area)}`)")

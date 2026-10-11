@@ -89,7 +89,7 @@ EOF
 		abort "missing applied anchor finding" unless findings.any? { |item| item.fetch("kind") == "repository" && item.fetch("problems") == ["public repository differs from applied anchor"] }
 		abort "missing private repository finding" unless findings.any? { |item| item.fetch("kind") == "repository" && item.fetch("problems") == ["private repository missing"] }
 		by_target = findings.to_h { |item| [item.fetch("target"), item] }
-		abort "home entrypoint should be host-absolute" unless by_target.fetch("~/AGENTS.md").fetch("problems") == ["host-absolute"]
+		abort "working absolute home entrypoint should be healthy" if by_target.key?("~/AGENTS.md")
 		abort "tilde skill link should be broken" unless by_target.fetch("~/.agents/skills/tilde").fetch("problems") == ["broken"]
 	'
 
