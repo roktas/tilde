@@ -238,6 +238,28 @@ EOF
 	' "$out"
 	rm -f "$remote_home/.agents/skills/tilde/scratch.txt"
 
+	rm -rf "$remote_home/.agents/skills/tilde"
+	for target in "$remote_home/Dropbox/tilde" ../../Dropbox/tilde; do
+		ln -s "$target" "$remote_home/.agents/skills/tilde"
+		PATH=$tmpdir:$PATH TILDE_FAKE_REMOTE_HOME=$remote_home TILDE_FAKE_SSH_ARGS=$ssh_args \
+			"$tilde" preflight remote spinoza --format json >"$out"
+		ruby -rjson -e '
+		  data = JSON.parse(File.read(ARGV[0]))
+		  abort "Dropbox runtime link" unless data.dig("runtime", "dropbox_link") == true
+		  abort "runtime link should not need replacement" if data["next"].include?("remove-or-replace-runtime-link")
+		  abort "runtime is already linked" if data["next"].include?("link-dropbox-runtime")
+		' "$out"
+		rm "$remote_home/.agents/skills/tilde"
+	done
+	ln -s ../../Dropbox/home "$remote_home/.agents/skills/tilde"
+	PATH=$tmpdir:$PATH TILDE_FAKE_REMOTE_HOME=$remote_home TILDE_FAKE_SSH_ARGS=$ssh_args \
+		"$tilde" preflight remote spinoza --format json >"$out"
+	ruby -rjson -e '
+	  data = JSON.parse(File.read(ARGV[0]))
+	  abort "wrong runtime link" unless data.dig("runtime", "dropbox_link") == false
+	  abort "wrong runtime link needs replacement" unless data["next"].include?("remove-or-replace-runtime-link")
+	' "$out"
+
 	echo "deploy smoke ok"
 }
 

@@ -370,7 +370,7 @@ if [ -d "$dropbox_runtime/.git" ]; then
 else
 	emit dropbox_runtime_git false
 fi
-if [ -L "$runtime" ] && { [ "$runtime_target" = "$dropbox_runtime" ] || [ "$runtime_target" = "$(display_path "$dropbox_runtime")" ]; }; then
+if [ -L "$runtime" ] && [ -d "$runtime" ] && [ -d "$dropbox_runtime" ] && [ "$(cd "$runtime" && pwd -P)" = "$(cd "$dropbox_runtime" && pwd -P)" ]; then
 	emit runtime_dropbox_link true
 else
 	emit runtime_dropbox_link false
